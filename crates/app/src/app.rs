@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use gridwatch_store::{
-    CapSet, Clock, Detail, Inbox, InputEvent, KeyCode, Level, Msg, Severity, Store, Ts,
+    CapSet, Clock, ControlMsg, Detail, Inbox, InputEvent, KeyCode, Level, Msg, Severity, SourceId,
+    Store, Ts,
 };
 use gridwatch_ui::component::{BuildCx, Chrome, Command, Component, Outcome, Size, pick_tier};
 use gridwatch_ui::layout::{
@@ -85,12 +86,15 @@ pub struct Shell {
     last_click: Option<(Instant, usize)>,
     last_area: Rect,
     pub stats: FrameStats,
+    /// When the process reached the shell — the origin for P18's timestamps.
+    pub startup: Instant,
     pub bytes_counter: Option<Arc<AtomicU64>>,
     clock: Clock,
     prev_buf: Option<Buffer>,
     fps: u16,
     unfocused_fps: u16,
     pub stats_log: Option<std::path::PathBuf>,
+    view_warnings: Vec<String>,
 }
 
 impl Shell {
@@ -149,6 +153,32 @@ impl Shell {
                 }
             }
         }
+        // §4.6: a placement may name a preferred tier; an unknown name is a
+        // config warning and is ignored (the richest fitting tier is used).
+        // Only here can it be checked — the tier list lives on the component.
+        let mut view_warnings = Vec::new();
+        for page in &loaded.pages {
+            for p in &page.place {
+                let Some(view) = &p.view else { continue };
+                let key = match &p.target {
+                    PlaceTarget::Id(id) => id.clone(),
+                    PlaceTarget::Kind(k) => format!("kind:{k}"),
+                };
+                let Some(component) = instances.get(&key).and_then(|i| i.component.as_ref()) else {
+                    continue;
+                };
+                if !component.tiers().iter().any(|t| t.name == view) {
+                    let known: Vec<&str> = component.tiers().iter().map(|t| t.name).collect();
+                    let msg = format!(
+                        "{key}: view = \"{view}\" is not a tier of `{}` (have {}) — ignored",
+                        component.manifest().kind,
+                        known.join(" ")
+                    );
+                    tracing::warn!("{msg}");
+                    view_warnings.push(msg);
+                }
+            }
+        }
         Shell {
             store,
             registry,
@@ -180,13 +210,27 @@ impl Shell {
             last_click: None,
             last_area: Rect::default(),
             stats: FrameStats::default(),
+            startup: Instant::now(),
             bytes_counter: None,
             clock,
             prev_buf: None,
             fps: loaded.config.fps,
             unfocused_fps: loaded.config.perf.unfocused_fps,
             stats_log: None,
+            view_warnings,
         }
+    }
+
+    /// Config warnings that need the registry to detect (§4.6): a placement
+    /// naming a tier the component does not have.
+    pub fn view_warnings(&self) -> &[String] {
+        &self.view_warnings
+    }
+
+    /// Surface a config warning in the UI as well as the log — a warning the
+    /// user cannot see is not a warning.
+    pub fn warn_toast(&mut self, text: impl Into<String>) {
+        self.toast(Severity::Warn, text);
     }
 
     pub fn set_fps(&mut self, fps: u16) {
@@ -490,6 +534,8 @@ impl Shell {
                 .map(|c| c.load(Ordering::Relaxed))
                 .unwrap_or(0);
             let stats = overlay::HudStats {
+                first_frame_ms: self.stats.first_frame_ms,
+                sources_live_ms: self.stats.sources_live_ms,
                 frame_p50_us: self.stats.p50_us(),
                 frame_p95_us: self.stats.p95_us(),
                 changed_cells: self.stats.changed_cells,
@@ -1082,10 +1128,22 @@ where
     B::Error: std::fmt::Display,
 {
     let mut last_draw = Instant::now() - HEARTBEAT;
+    // The stats log samples on its own 1 Hz wall clock, not on the heartbeat:
+    // the heartbeat only fires when *nothing else* drew for a second, so a busy
+    // app — the one whose P6/P8/P19 rows we need — would never log a line.
+    let mut last_stats = Instant::now();
     let mut dirty = true;
+    // P18's two timestamps: exec (process start, as close as the loop can see
+    // it) → first frame, and → every source's first sample.
+    let started = shell.startup;
+    let mut first_frame_ms: Option<u64> = None;
     loop {
         // Park on input; sources wake us within a frame via the 250 ms poll (P5 budget: render ≤ 4/s idle).
-        let timeout = if shell.animated_visible() && shell.terminal_focused {
+        // The first pass does not park at all: P18 gates the first frame at
+        // 300 ms, and parking for 250 ms before drawing spent most of it.
+        let timeout = if first_frame_ms.is_none() {
+            Duration::ZERO
+        } else if shell.animated_visible() && shell.terminal_focused {
             Duration::from_millis(1000 / u64::from(shell.effective_fps().max(1)))
         } else {
             Duration::from_millis(250)
@@ -1126,16 +1184,25 @@ where
         if last_draw.elapsed() >= HEARTBEAT {
             dirty = true;
             cause_beat = true;
-            if let Some(path) = shell.stats_log.clone() {
-                let line = shell.stats.json_line();
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                {
-                    use std::io::Write as _;
-                    let _ = writeln!(f, "{line}");
-                }
+        }
+        if last_stats.elapsed() >= HEARTBEAT
+            && let Some(path) = shell.stats_log.clone()
+        {
+            last_stats = Instant::now();
+            let line = shell.stats.json_line(
+                shell
+                    .bytes_counter
+                    .as_ref()
+                    .map(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+                    .unwrap_or(0),
+            );
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                use std::io::Write as _;
+                let _ = writeln!(f, "{line}");
             }
         }
         if dirty {
@@ -1147,6 +1214,21 @@ where
                 })
                 .map_err(|e| e.to_string())?;
             shell.stats.record_frame(t.elapsed());
+            if first_frame_ms.is_none() {
+                let ms = started.elapsed().as_millis() as u64;
+                first_frame_ms = Some(ms);
+                shell.stats.first_frame_ms = ms;
+            }
+            if shell.stats.sources_live_ms == 0 && !shell.demands.is_empty() {
+                let live = shell
+                    .demands
+                    .keys()
+                    .filter(|name| shell.store.last_sample(SourceId(name)).is_some())
+                    .count();
+                if live == shell.demands.len() {
+                    shell.stats.sources_live_ms = started.elapsed().as_millis() as u64;
+                }
+            }
             if cause_data {
                 shell.stats.redraw_data += 1;
             }
@@ -1173,11 +1255,29 @@ pub fn shot_frame(shell: &mut Shell, w: u16, h: u16) -> Buffer {
 }
 
 /// Feed the seeded synth straight into the shell's store (demo/headless).
+/// The status message is part of the feed: a source that is publishing batches
+/// is `Ok`, and without it every headless shot showed the one working source as
+/// `starting` — including the dump in the README.
 pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
     let mut synth = gridwatch_store::demo::CpuSynth::new(seed);
+    let src = gridwatch_store::keys::cpu::SOURCE;
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let b = synth.tick(at);
         shell.store.apply(&Msg::Batch(b));
+        if i == 0 {
+            shell.store.apply(&Msg::Control(ControlMsg::Status(
+                src,
+                gridwatch_store::SourceStatus {
+                    state: gridwatch_store::SourceState::Ok,
+                    reason: Some(std::sync::Arc::from("synthetic (demo)")),
+                    hint: None,
+                    since: at,
+                    last_sample: Some(at),
+                    dropped: 0,
+                    restarts: 0,
+                },
+            )));
+        }
     }
 }

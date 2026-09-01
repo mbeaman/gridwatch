@@ -10,6 +10,9 @@ use crate::theme::{Role, Theme};
 /// Frame statistics for the F12 HUD (filled by the app, P6/P8/P19).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HudStats {
+    /// P18: shell start → first drawn frame, and → every source's first sample.
+    pub first_frame_ms: u64,
+    pub sources_live_ms: u64,
     pub frame_p50_us: u64,
     pub frame_p95_us: u64,
     pub changed_cells: u64,
@@ -36,6 +39,11 @@ pub fn hud(stats: &HudStats, area: Rect, theme: &Theme, buf: &mut Buffer) {
             stats.frames, stats.redraw_data, stats.redraw_anim, stats.redraw_heartbeat
         ),
         format!("mode {}", stats.mode),
+        // P18's two timestamps, so `--stats` shows what its row promises.
+        format!(
+            "start {:>4}ms  live {:>5}ms",
+            stats.first_frame_ms, stats.sources_live_ms
+        ),
     ];
     let w = lines.iter().map(|l| l.len()).max().unwrap_or(0) as u16 + 2;
     let h = lines.len() as u16 + 2;

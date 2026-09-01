@@ -10,6 +10,10 @@ pub struct FrameStats {
     pub redraw_data: u64,
     pub redraw_anim: u64,
     pub redraw_heartbeat: u64,
+    /// P18: milliseconds from the shell starting to the first drawn frame, and
+    /// to every source having published at least one sample.
+    pub first_frame_ms: u64,
+    pub sources_live_ms: u64,
 }
 
 impl FrameStats {
@@ -41,17 +45,22 @@ impl FrameStats {
 }
 
 impl FrameStats {
-    /// One JSON object per heartbeat for `--stats-log` (P-gate evidence).
-    pub fn json_line(&self) -> String {
+    /// One JSON object per second for `--stats-log` (P-gate evidence). `bytes`
+    /// is the terminal writer's own total, so P6's "the HUD counter must agree
+    /// with Δwchar within 5 %" can be checked from a single run.
+    pub fn json_line(&self, bytes: u64) -> String {
         format!(
-            r#"{{"frames":{},"p50_us":{},"p95_us":{},"changed_cells":{},"redraw_data":{},"redraw_anim":{},"redraw_heartbeat":{}}}"#,
+            r#"{{"frames":{},"p50_us":{},"p95_us":{},"changed_cells":{},"bytes":{},"redraw_data":{},"redraw_anim":{},"redraw_heartbeat":{},"first_frame_ms":{},"sources_live_ms":{}}}"#,
             self.frames,
             self.p50_us(),
             self.p95_us(),
             self.changed_cells,
+            bytes,
             self.redraw_data,
             self.redraw_anim,
-            self.redraw_heartbeat
+            self.redraw_heartbeat,
+            self.first_frame_ms,
+            self.sources_live_ms
         )
     }
 }

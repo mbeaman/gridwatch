@@ -265,6 +265,12 @@ pub fn load_embedded() -> Result<Loaded, ConfigError> {
     load_from(DEFAULT_CONFIG, DEFAULT_LAYOUT, None, None, false)
 }
 
+/// Load an explicit pair of documents — how fixtures (and, from arc 3, the hot
+/// reload) get a `Loaded` without touching `$XDG_CONFIG_HOME`.
+pub fn load_texts(config_text: &str, layout_text: &str) -> Result<Loaded, ConfigError> {
+    load_from(config_text, layout_text, None, None, false)
+}
+
 fn load_from(
     config_text: &str,
     layout_text: &str,

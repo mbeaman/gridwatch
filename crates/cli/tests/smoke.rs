@@ -36,7 +36,7 @@ fn plain(cells: &str) -> String {
     out
 }
 
-/// The frame carries the shell chrome and the arc-1a tiles.
+/// The frame carries the shell chrome and the arc-1a/1b tiles.
 #[test]
 fn shot_has_chrome_and_tiles() {
     let frame = gridwatch_app::shot(registry(), 1, 250, 70, "retrowave", 1, "cells").unwrap();
@@ -53,6 +53,13 @@ fn shot_has_chrome_and_tiles() {
         frame.contains('▀') || frame.contains('█'),
         "big-text clock missing"
     );
+    // Arc 1b: the htop tile at its `cores` tier — meters, CCD blocks, PSI.
+    assert!(
+        text.contains("ccd0") && text.contains("ccd1"),
+        "cpu tile is not at `cores`"
+    );
+    assert!(text.contains("pids,"), "the task line is missing");
+    assert!(text.contains("psi cpu"), "the pressure row is missing");
 }
 
 /// Every builtin theme renders the overview without panicking.
@@ -66,11 +73,18 @@ fn shot_all_themes_all_sizes() {
     }
 }
 
-/// Page 2 (Audio) renders too — chips for arc-5 kinds, cpu meters live.
+/// Page 2 (Audio) renders too — chips for arc-5 kinds, and its 12x3 cpu tile
+/// stays at the `meters` tier its placement pins (§4.6).
 #[test]
 fn shot_second_page() {
     let out = gridwatch_app::shot(registry(), 7, 250, 70, "retrowave", 2, "cells").unwrap();
     assert!(!out.is_empty());
+    let text = plain(&out).to_lowercase();
+    assert!(text.contains("pids,"), "the cpu strip is missing");
+    assert!(
+        !text.contains("ccd0"),
+        "`view = \"meters\"` grew into `cores`"
+    );
 }
 
 /// §6: dense mode hides the tab bar; configured mode shows it.

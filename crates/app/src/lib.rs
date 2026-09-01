@@ -106,6 +106,11 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     let mut shell = Shell::new(
         registry, &loaded, theme, caps, tz, clock, demands, opts.stats,
     );
+    // Config warnings are otherwise only in the log the user cannot see from
+    // inside the alternate screen (§4.6: an unknown `view` name is a warning).
+    for w in shell.view_warnings().to_vec() {
+        shell.warn_toast(w);
+    }
     shell.bytes_counter = Some(bytes);
     if let Some(fps) = opts.fps {
         shell.set_fps(fps); // CLI beats config (§9 layering)
@@ -149,7 +154,9 @@ pub fn shot(
         false,
     );
     shell.set_page(page.saturating_sub(1));
-    feed_synth(&mut shell, seed, 3);
+    // 40 ticks ≈ a minute of synthetic history, so sparklines and the CCD bars
+    // have something to show in a screenshot; still byte-deterministic (§12.5).
+    feed_synth(&mut shell, seed, 40);
     let buf = shot_frame(&mut shell, w, h);
     Ok(match format {
         "cells" => gridwatch_ui::dump::cells(&buf),
