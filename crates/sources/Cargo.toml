@@ -1,0 +1,14 @@
+[package]
+name = "gridwatch-sources"
+description = "gridwatch data sources and the source supervisor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+gridwatch-store.workspace = true
+gridwatch-ui.workspace = true
+toml.workspace = true
+tracing.workspace = true
