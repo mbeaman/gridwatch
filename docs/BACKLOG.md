@@ -43,3 +43,7 @@ Arc 2 journal + CI screenshots · arc 3 astral-watch v0.8.0 pre-req + capability
 - Sixel/kitty album art on this terminal — Ptyxis doesn't enable Sixel (MACHINE.md); half-blocks stand. Revisit only if the terminal changes.
 - A second rendering stack for WASM plugins pre-1.0 — post-1.0 host crate at most (D32).
 - Winamp realism beyond MPRIS: no real EQ (would need a PipeWire filter-chain), no true bitrate/kHz metadata (derived from `audio.sink`), no MPRIS TrackList playlist (players don't implement it — the playlist is local metadata history). The EQ weights the visualizer bands and is otherwise decorative; recorded so arc 6 isn't reviewed against a bar the platform cannot meet.
+
+- **Dense border merging** (arc 4): `Block::merge_borders(MergeStrategy::Exact)` for the one-cell-overlap shared borders (§6, deferred by D42).
+- **`shot --config`**: screenshots of the user's own layout (shot is pinned to embedded defaults for §12.5 determinism since the arc-1a review).
+- **Control redelivery across source restarts**: a `SetOption` sent in the instant between supervisor generations is dropped (D42); queue-and-replay if a real source ever cares.

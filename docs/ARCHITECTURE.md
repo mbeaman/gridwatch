@@ -153,7 +153,9 @@ pub struct ComponentDef { pub manifest: &'static Manifest, pub build: fn(&mut Bu
 pub struct Registry { components: BTreeMap<&'static str, ComponentDef>, sources: BTreeMap<&'static str, SourceDef> }
 
 pub struct RenderCx<'a> { pub inner: Rect, pub tier: usize, pub view_fallback: bool, pub focused: bool, pub captured: bool, pub zoomed: bool,
-                          pub dense: bool, pub store: &'a Store, pub theme: &'a Theme, pub now: Ts, pub wall: SystemTime, pub frame: u64 }
+                          pub dense: bool, pub store: &'a Store, pub theme: &'a Theme, pub now: Ts, pub wall: SystemTime, pub tz_offset_s: i32, pub frame: u64 }
+// `tz_offset_s`: local-time offset computed once by the app (libc `localtime_r`, the one unsafe seam) so components render local wall time
+// deterministically — testkit passes 0. Under a virtual clock, `wall` is driven by the clock, so `shot --seed N` is byte-deterministic (D41).
 pub struct TickCx<'a>   { pub store: &'a Store, pub now: Ts, pub visible: bool, pub tier: usize }
 pub struct InputCx<'a>  { pub store: &'a Store, pub inner: Rect, pub caps: &'a CapSet, pub readonly: bool }
 /// The semantic view tree (D32). Components describe *what* is shown; the theme's `Renderer` decides *how*. Small on purpose.
@@ -191,8 +193,8 @@ pub trait Component: Send {
     fn on_visibility(&mut self, visible: bool) {}
 }
 pub enum Command { Quit, Page(usize), Zoom, Ack(AlertId), Toast(Severity, String), Record(bool), SaveLayout,
-                   Source(SourceId, Control), Run(Box<dyn Action>) }
-pub trait Action: Any + Debug + Send { fn run(self: Box<Self>, cx: &ExecCx) -> Result<String, String>; }
+                   Source(SourceId, Control), Run(ActionId, Box<dyn Action>) }          // ActionId makes "keys in, commands out" tests addressable (D42)
+pub trait Action: Any + Debug + Send { fn run(self: Box<Self>) -> Result<String, String>; }   // gains &ExecCx with the executor thread (arc 8, D42)
 ```
 
 **Tier selection.** Tiers are cumulative supersets; the shell picks the richest tier whose `min` fits the inner rect, skipping `zoom_only` tiers unless the component is zoomed or the placement names that tier as its `view`. Tool-parity `full` tiers (htop's screens and F-key bar, nvtop's sortable process table with the signal menu) are `zoom_only`: on the grid a 6x3 tile shows the tool's *dashboard* face — meters, cores and a top-N table — and `z` gives the whole tool. A placement's `view = "table"` names a *preferred* tier: it is used when its `min` fits, otherwise the richest fitting tier is used and `view_fallback` is set so the title shows a `view↓` chip; an unknown `view` name is a config warning and is ignored. Zoom gives the component the whole body, hence its richest tier. There is no `SizeClass`, `Shape` or `footprint` in the render context: the inner rect and the tier index are the whole truth. `tick(&mut self)` hosts animation and derived state (Winamp peak-fall, htop tomb rows, the process table sorted once per source generation); `view(&self)` is byte-deterministic, and so is the default renderer for a given theme. `Command::Run(Box<dyn Action>)` keeps the command set open; actions are `Debug`-printable for "keys in, commands out" tests and executed on the executor thread.

@@ -246,3 +246,15 @@ Supersedes D16's "process lists and the full tier follow in the parity arc"; ame
 
 **Why.** Matt (2026-08-31): "should every session run fable as an orchestrator and opus as a sub agent executing tasks?" Orchestration serializes every task through prompts — pure overhead when tasks depend on each other, and it burns the expensive model's context supervising work the brief already constrains. The places Fable's depth actually changes outcomes are the brief, the seams, and the refutation of findings — all reachable without owning the session.
 
+
+## D41 — deterministic wall-clock seam (arc 1a, 2026-08-31)
+`RenderCx` gains `pub tz_offset_s: i32`: the app computes the local-UTC offset once at startup (libc `localtime_r` in `app::sys`, the crate's single `#[allow(unsafe_code)]` module) and components derive local wall time from `cx.wall + tz_offset_s` — no `chrono`, no per-frame syscalls, testkit passes 0. Under `Clock::Virtual` (shot, replay, tests) `wall` comes from the virtual clock instead of `SystemTime::now`, making `gridwatch shot --seed N` byte-deterministic end to end. Logged per D33 as a seam addition to §4.6.
+
+## D42 — arc-1a review outcomes at the seams (2026-08-31)
+The Template A review (4 lenses, 15 agents, 11/11 findings adversarially confirmed) forced these seam rulings:
+- **§5 render cache implemented in full**: the key is `(source generations, tier, inner rect, theme id, focused, zoomed)` **plus the view fingerprint** (hash of the snapshot serialisation, `ui::view::fingerprint`); the spec's `animation frame` term joins the key when `Animated` lands in arc 5. This is the backstop that keeps store-reading tiles with empty manifests (the sources tile) honest.
+- **`generation` counts data batches only.** A `ControlMsg::Status` does not bump it; repaint-on-state-change is carried by the view fingerprint plus the control-drain dirty flag. Components must not treat `generation` as "anything changed".
+- **`Command::Run(ActionId, Box<dyn Action>)`** stays as implemented (spec said `Run(Box<dyn Action>)`): the id makes "keys in, commands out" tests addressable. `Action::run` takes no `ExecCx` until the executor thread exists (arc 8); §4.6 amended.
+- **§6 dense mode**: the tab bar is now hidden (as spec'd); `Block::merge_borders(MergeStrategy::Exact)` for shared-border junctions is **deferred to arc 4** (visual polish) — until then dense borders overlap without junction merging. BACKLOG entry added.
+- **Supervisor control channel**: the handle's sender is re-pointed at every restart (`Arc<Mutex<Sender>>`); a control sent in the instant between generations is dropped — acceptable for telemetry tuning, Stop rides the atomic flag. `SourceCtx` now carries the supervisor-owned restart count and stamps it onto every status.
+- **D39 status**: the 250×70 Ptyxis assumption was exercised headlessly everywhere (smoke, perf rows, tests at 131×37/120×40/80×24) and held; the real terminal size still needs one `stty size` from Matt, then propagate or mark "assumption held".

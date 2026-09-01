@@ -101,3 +101,6 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | date | arc | theme class | page / state | game | gridwatch CPU | wake/s | KB/s | frames/s | Ptyxis Δ CPU | Ptyxis sm | NVML ms/s | scan ms | frame p50/p95 | RSS |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-31 | 1 | quiet | arc1a demo overview 250x70 focused | ? | 0.00% | 4 | 0 KB/s | ? | 0.63% | 0.0 | ? | ? | ? | 10092 kB |
+| 2026-08-31 | 1 | quiet | arc1a demo overview 250x70 UNFOCUSED | ? | 0.00% | 4 | 0 KB/s | ? | 0.60% | 0.0 | ? | ? | ? | 10112 kB |
+| 2026-08-31 | 1 | quiet | arc1a POST-FIX demo overview 250x70 focused | ? | 0.00% | 4 | 0 KB/s | ? | 0.65% | 0.0 | ? | ? | ? | 7928 kB |

@@ -32,6 +32,7 @@ Verified 2026-08-30 with read-only commands. Re-verify anything marked *(assumpt
 - Kitty keyboard protocol: not supported by VTE — legacy key encoding only.
 - **Ptyxis is a GPU client:** `nvidia-smi` lists `/usr/bin/ptyxis` (PID 11805) as `C+G` with 44 MiB — terminal output is composited on the GPU, so redraw volume is GPU load by proxy (see `PERFORMANCE.md` P9/P10).
 - **Window size: unknown** *(assumption: 250×70 used throughout the plan)* — measure with the arc-1 `F12` HUD.
+  *Arc-1a status (2026-08-31): all headless smoke/perf runs used the assumed 250×70 (plus 131×37 / 120×40 / 80×24 in tests); the assumption held everywhere it was exercised. The real Ptyxis size still needs one `stty size` (or F12 HUD read) from Matt's terminal — propagate per D39 if it differs.*
 
 ## Toolchain
 
