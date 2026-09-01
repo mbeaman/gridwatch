@@ -1,0 +1,34 @@
+# gridwatch default layout.toml (§9, D37/D39): pages and placements only — the
+# one file edit mode ever writes. Arc 1 swaps the amp slot for `sources`.
+schema = 1
+
+[grid]
+columns = 12
+rows = 6
+gap = 1
+borders = "each"
+cell_aspect = 0.5
+min_unit_inner = { cols = 8, rows = 3 }
+
+[[pages]]
+name = "Overview"
+hotkey = "1"
+place = [
+  { id = "cpu",   at = [0, 0], size = [6, 3], priority = 100 },
+  { id = "gpu",   at = [6, 0], size = [6, 3], priority = 100 },
+  { id = "pins",  at = [0, 3], size = [4, 2], priority = 90 },
+  { id = "lan",   at = [4, 3], size = [4, 2] },
+  { id = "viz",   at = [8, 3], size = [4, 2] },
+  { kind = "sources", at = [0, 5], size = [4, 1] },   # amp's slot until arc 6
+  { id = "temps", at = [4, 5], size = [6, 1] },
+  { kind = "clock", at = [10, 5], size = [2, 1] },
+]
+
+[[pages]]
+name = "Audio"
+hotkey = "2"
+place = [
+  { id = "amp", at = [0, 0], size = [6, 3] },
+  { id = "viz", at = [6, 0], size = [6, 3] },
+  { id = "cpu", at = [0, 3], size = [12, 3], view = "meters" },   # keep the CPU strip light here
+]

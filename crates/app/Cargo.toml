@@ -1,0 +1,23 @@
+[package]
+name = "gridwatch-app"
+description = "gridwatch application shell: terminal lifecycle, event loop, config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+gridwatch-store.workspace = true
+gridwatch-ui.workspace = true
+gridwatch-sources.workspace = true
+gridwatch-components.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+color-eyre.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+libc.workspace = true

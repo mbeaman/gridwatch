@@ -1,0 +1,53 @@
+# gridwatch default config.toml (§9). Copied to ~/.config/gridwatch/config.toml
+# by `gridwatch config default`.
+schema = 1
+theme = "retrowave"           # modern | retrowave | mono | <file>
+fps = 30
+fps_max = 60
+color = "auto"                # auto | always | never | 16 | 256 | truecolor
+mouse = true
+readonly = false
+confirm_kill = true
+
+[store]
+history = "10m"
+max_mb = 32
+
+[effects]
+enabled = true
+budget_ms = 4
+
+[perf]
+unfocused_fps = 2
+phase_ms = 250
+
+[sources.cpu]
+refresh_ms = 1500
+
+[[components]]
+id = "cpu"
+kind = "htop"
+
+[[components]]
+id = "gpu"
+kind = "gpu"
+
+[[components]]
+id = "pins"
+kind = "pins"
+
+[[components]]
+id = "lan"
+kind = "net"
+
+[[components]]
+id = "viz"
+kind = "audio"
+
+[[components]]
+id = "amp"
+kind = "winamp"
+
+[[components]]
+id = "temps"
+kind = "sensors"
