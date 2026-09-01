@@ -179,6 +179,29 @@ fn catalogue_covers_every_emitted_key_and_decodes_records() {
         revived.as_any().downcast_ref::<cpu::CoreBreakdown>(),
         Some(&rec)
     );
+
+    // Every Record in the catalogue round-trips, not just the first one (§4.5).
+    let topo = demo::CpuSynth::topology();
+    let meta = lookup("cpu.topology").unwrap();
+    let revived = (meta.decode.unwrap())(topo.to_json()).unwrap();
+    assert_eq!(
+        revived.as_any().downcast_ref::<cpu::CpuTopology>(),
+        Some(&topo),
+        "cpu.topology must survive the journal"
+    );
+    let table = cpu::ProcTable::default();
+    let meta = lookup("proc.table").unwrap();
+    let revived = (meta.decode.unwrap())(table.to_json()).unwrap();
+    assert_eq!(
+        revived.as_any().downcast_ref::<cpu::ProcTable>(),
+        Some(&table)
+    );
+    // And the map the synth publishes is torch's, so the CCD grouping the
+    // `cores` tier draws is pinned here as well as in the sources tests.
+    let dies = topo.dies();
+    assert_eq!(dies.len(), 2);
+    assert_eq!(dies[0].1[0], vec![0, 16], "SMT sibling of cpu0 is cpu16");
+    assert_eq!(dies[1].1[7], vec![15, 31]);
 }
 
 #[test]

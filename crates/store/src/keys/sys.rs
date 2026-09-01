@@ -38,12 +38,26 @@ pub static METAS: &[KeyMeta] = &[
         Count,
         "digits of /proc/sys/kernel/pid_max, clamped 5..19 (PID column width)"
     ),
-    meta!("tasks.total", Count, "processes"),
+    meta!(
+        "tasks.total",
+        Count,
+        "pid directories in /proc — every process incl. kernel threads; htop's \
+         Tasks meter excludes them and needs the arc-2 scan to do so"
+    ),
     meta!(
         "tasks.threads",
         Count,
-        "threads (from loadavg + status, no task walk)"
+        "all tasks from /proc/loadavg (kernel threads included); htop's \
+         userland-thread count needs the arc-2 scan"
     ),
-    meta!("tasks.running", Count, "runnable tasks"),
-    meta!("tasks.kernel", Count, "kernel threads"),
+    meta!(
+        "tasks.running",
+        Count,
+        "runnable tasks (/proc/stat procs_running)"
+    ),
+    meta!(
+        "tasks.kernel",
+        Count,
+        "kernel threads (PF_KTHREAD per pid) — produced from arc 2"
+    ),
 ];

@@ -52,6 +52,9 @@ pub struct CpuSynth {
     rng: XorShift,
     core: [f64; CORES],
     mem_used_frac: f64,
+    /// The die map is published once per source generation, exactly as the live
+    /// sampler does it — demo and live must emit the same keys (§12.5).
+    topology_sent: bool,
 }
 
 impl CpuSynth {
@@ -60,12 +63,23 @@ impl CpuSynth {
             rng: XorShift::new(seed),
             core: [0.3; CORES],
             mem_used_frac: 0.18,
+            topology_sent: false,
         }
     }
 
     fn busy_ccd(core: usize) -> bool {
         // CCD0 = cpus 0–7 and SMT siblings 16–23 (torch topology): the game side.
         (core % 16) < 8
+    }
+
+    /// Torch's die/core map (§8, D43): 16 physical cores, SMT sibling of cpu N
+    /// is cpu N+16, die 0 = cpus 0–7 + 16–23.
+    pub fn topology() -> cpu::CpuTopology {
+        cpu::CpuTopology {
+            die_of: (0..CORES as u16).map(|c| u16::from(c % 16 >= 8)).collect(),
+            core_of: (0..CORES as u16).map(|c| c % 16).collect(),
+            die_temp: vec!["k10temp:Tccd1".into(), "k10temp:Tccd2".into()],
+        }
     }
 
     pub fn tick(&mut self, at: Ts) -> Batch {
@@ -85,15 +99,18 @@ impl CpuSynth {
                 id: cpu::FREQ_MHZ.idx(i as u16).id,
                 datum: Datum::Scalar(mhz),
             });
+            // Segments sum to the core's load exactly (htop draws nice/user/
+            // kernel/virt and counts iowait as idle), so the bar and `core_pct`
+            // can never disagree.
             let l = *load;
             samples.push(Sample {
                 id: cpu::BREAKDOWN.idx(i as u16).id,
                 datum: Datum::Record(Arc::new(cpu::CoreBreakdown {
-                    nice: (l * 0.03) as f32,
-                    user: (l * 0.72) as f32,
-                    kernel: (l * 0.2) as f32,
+                    nice: (l * 0.02) as f32,
+                    user: (l * 0.75) as f32,
+                    kernel: (l * 0.23) as f32,
                     virt: 0.0,
-                    iowait: (l * 0.05) as f32,
+                    iowait: (l * 0.04) as f32,
                 })),
             });
         }
@@ -101,6 +118,17 @@ impl CpuSynth {
         samples.push(Sample {
             id: cpu::TOTAL_PCT.id.clone(),
             datum: Datum::Scalar(total_pct),
+        });
+        let agg = (total / CORES as f64) as f32;
+        samples.push(Sample {
+            id: cpu::BREAKDOWN.id.clone(),
+            datum: Datum::Record(Arc::new(cpu::CoreBreakdown {
+                nice: agg * 0.02,
+                user: agg * 0.75,
+                kernel: agg * 0.23,
+                virt: 0.0,
+                iowait: agg * 0.04,
+            })),
         });
 
         let mem_total = 91.0 * 1024.0 * 1024.0 * 1024.0;
@@ -115,6 +143,7 @@ impl CpuSynth {
             (&cpu::MEM_SHARED_B, mem_total * 0.011),
             (&cpu::SWAP_TOTAL_B, 16.0 * 1024.0 * 1024.0 * 1024.0),
             (&cpu::SWAP_USED_B, 0.0),
+            (&cpu::SWAP_CACHED_B, 0.0),
         ] {
             samples.push(Sample {
                 id: key.id.clone(),
@@ -135,7 +164,9 @@ impl CpuSynth {
                 2412.0 + (self.rng.f64() * 30.0).floor(),
             ),
             (&sys::TASKS_RUNNING, 2.0 + (self.rng.f64() * 4.0).floor()),
-            (&sys::TASKS_KERNEL, 431.0),
+            // No `tasks.kernel`: counting kernel threads needs the pid-level
+            // scan (PF_KTHREAD per pid), which is arc 2 — the live source
+            // cannot emit it in 1b, so the synth must not either (§12.5).
             (
                 &cpu::PSI_CPU,
                 (total_pct / 40.0 + self.rng.f64()).clamp(0.0, 30.0),
@@ -161,6 +192,14 @@ impl CpuSynth {
                     label: Label::Name(name),
                 },
                 datum: Datum::Scalar(base + self.rng.jitter() * 1.5),
+            });
+        }
+
+        if !self.topology_sent {
+            self.topology_sent = true;
+            samples.push(Sample {
+                id: cpu::TOPOLOGY.id.clone(),
+                datum: Datum::Record(Arc::new(Self::topology())),
             });
         }
 
@@ -206,6 +245,14 @@ impl Source for CpuDemoSource {
     fn run(self: Box<Self>, cx: SourceCtx) {
         let mut synth = CpuSynth::new(self.seed);
         let info = self.info();
+        // Prime the pump like the live source does (P18: every source live
+        // within 2 s), so `--demo` paints data on the first frames — but a
+        // paused source emits nothing, restart or not (§4.3).
+        if cx.demand.level() != Level::Paused {
+            let at = cx.clock.now();
+            let first = synth.tick(at);
+            cx.emit(at, first.samples);
+        }
         cx.status(SourceStatus {
             state: SourceState::Ok,
             reason: Some(Arc::from("synthetic (demo)")),
