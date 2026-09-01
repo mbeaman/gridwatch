@@ -33,6 +33,7 @@ clap             = { version = "4.6.6", features = ["derive"] }
 tracing          = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 libc             = "0.2"
+procfs           = { version = "0.18.0", default-features = false }   # sources only (D17): htop formulas, no chrono/flate2
 # dev
 insta            = { version = "1.48", features = ["yaml"] }
 proptest         = "1.11"

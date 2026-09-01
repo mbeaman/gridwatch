@@ -1,8 +1,9 @@
 //! gridwatch-sources: the supervisor and built-in sources (§4.3, §11).
-//! Real sources land per arc; arc 1a ships the supervisor and the cpu stub.
+//! Real sources land per arc; arc 1b ships the cpu source (procfs meters).
 
 #![forbid(unsafe_code)]
 
+pub mod cpu;
 pub mod registry;
 pub mod stub;
 pub mod supervisor;
