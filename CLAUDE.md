@@ -1,6 +1,6 @@
 # gridwatch — working agreement
 
-Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ratatui 0.30). **Status: planning approved; repo live at `github.com/mbeaman/gridwatch` (2026-08-31) — no code yet; next: arc 1a (Fable, `docs/briefs/arc-1a.md`).** Name: **`gridwatch`** (crates `gridwatch-*`). The on-disk directory remains `~/workspace/opsTui`; don't rename it (Claude memory is keyed to the path — migrate `~/.claude/projects/-home-mattbeam-workspace-opsTui/memory/` first if it ever moves).
+Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ratatui 0.30). **Status: arc 1a (core seam) committed on `main` 2026-08-31 — reviewed, all gates green, first perf rows in; `v0.1.0` tags when 1b lands. Next: arc 1b (Opus, `docs/briefs/arc-1b.md`).** Name: **`gridwatch`** (crates `gridwatch-*`). The on-disk directory remains `~/workspace/opsTui`; don't rename it (Claude memory is keyed to the path — migrate `~/.claude/projects/-home-mattbeam-workspace-opsTui/memory/` first if it ever moves).
 
 ## Model strategy (D36 — details in `docs/MODELS.md`)
 

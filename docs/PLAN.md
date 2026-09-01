@@ -1,6 +1,6 @@
 # gridwatch — the plan
 
-> **Status: planning baseline, 2026-08-30; open decisions resolved 2026-08-31 (D35) — the project is named `gridwatch`.** Nothing is built yet; no git repo, no GitHub repo (the workspace directory on disk remains `~/workspace/opsTui` until the repo exists). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
+> **Status: arc 1a (core seam) built, reviewed and committed 2026-08-31 (D41/D42); arc 1b is next (Opus, `briefs/arc-1b.md`).** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
 
 ## What we are building
 
