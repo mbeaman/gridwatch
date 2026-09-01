@@ -1,0 +1,31 @@
+---
+source: crates/ui/tests/ui.rs
+expression: "gridwatch_ui::testkit::role_swatch(&t)"
+---
+- Bg Reset
+- Surface Reset
+- Panel Reset
+- Border Reset
+- BorderFocused Reset
+- Title Reset
+- Text Reset
+- TextMuted Reset
+- TextGhost Reset
+- AccentPrimary Reset
+- AccentSecondary Reset
+- AccentTertiary Reset
+- Ok Reset
+- Warn Reset
+- Crit Reset
+- Info Reset
+- SelectionFg Reset
+- SelectionBg Reset
+- Cursor Reset
+- "Load [Reset, Reset, Reset, Reset, Reset, Reset, Reset, Reset]"
+- "Temp [Reset, Reset, Reset, Reset, Reset, Reset, Reset, Reset]"
+- "Power [Reset, Reset, Reset, Reset, Reset, Reset, Reset, Reset]"
+- "Mem [Reset, Reset, Reset, Reset, Reset, Reset, Reset, Reset]"
+- "NetRx [Reset, Reset, Reset, Reset, Reset, Reset, Reset, Reset]"
+- "NetTx [Reset, Reset, Reset, Reset, Reset, Reset, Reset, Reset]"
+- "Audio [Reset, Reset, Reset, Reset, Reset, Reset, Reset, Reset]"
+- "Title [Reset, Reset, Reset, Reset, Reset, Reset, Reset, Reset]"

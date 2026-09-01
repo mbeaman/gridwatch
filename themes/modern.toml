@@ -1,0 +1,60 @@
+# gridwatch built-in theme: modern (Catppuccin Mocha values, every flourish off).
+[meta]
+name = "modern"
+schema = 1
+variant = "dark"
+
+[colors]
+bg = "#1e1e2e"
+surface = "#181825"
+panel = "#181825"
+border = "#45475a"
+border_focused = "#89b4fa"
+title = "#cdd6f4"
+text = "#cdd6f4"
+text_muted = "#a6adc8"
+text_ghost = "#313244"
+cursor = "#f5e0dc"
+
+[colors.accent]
+primary = "#89b4fa"
+secondary = "#94e2d5"
+tertiary = "#cba6f7"
+
+[colors.severity]
+ok = "#a6e3a1"
+warn = "#f9e2af"
+crit = "#f38ba8"
+info = "#89dceb"
+
+[colors.selection]
+fg = "#1e1e2e"
+bg = "#89b4fa"
+
+[gradients]
+load = ["#a6e3a1", "#f9e2af", "#fab387", "#f38ba8"]
+temp = ["#94e2d5", "#f9e2af", "#fab387", "#f38ba8"]
+power = ["#94e2d5", "#f9e2af", "#f38ba8"]
+mem = ["#89b4fa", "#cba6f7", "#f5c2e7"]
+netrx = ["#94e2d5", "#89b4fa"]
+nettx = ["#cba6f7", "#f5c2e7"]
+audio = ["#89b4fa", "#cba6f7", "#f5c2e7"]
+title = ["#cdd6f4", "#cdd6f4"]
+
+[glyphs]
+set = "unicode"
+
+[borders]
+set = "rounded"
+focused_set = "thick"
+
+[title]
+style = "plain"
+bold = true
+
+[widgets]
+gauge = "bar"
+bars = "eighths"
+sparkline = "eighths"
+table_header = "reverse"
+big_number = "quadrant"

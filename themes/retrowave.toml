@@ -1,0 +1,75 @@
+# gridwatch built-in theme: retrowave (§9, self-contained per D37).
+# Ships in arc 1b; embedded now so builtin() is total over BUILTIN_THEMES.
+[meta]
+name = "retrowave"
+schema = 1
+variant = "dark"
+
+[palette]
+indigo = "#0b0324"
+violet = "#7a3fb5"
+pink = "#ff2975"
+cyan = "#00f0ff"
+purple = "#b967ff"
+orange = "#ff8b39"
+mint = "#05ffa1"
+sun = "#fede5d"
+red = "#fe4450"
+snow = "#efe9ff"
+dusk = "#8a7fb0"
+
+[colors]
+bg = "$indigo"
+surface = "#1a0b3d"
+panel = "#241b2f"
+border = "$violet"
+border_focused = "$pink"
+title = "$snow"
+text = "$snow"
+text_muted = "$dusk"
+text_ghost = "#3d2a63"
+cursor = "$pink"
+
+[colors.accent]
+primary = "$pink"
+secondary = "$cyan"
+tertiary = "$purple"
+
+[colors.severity]
+ok = "$mint"
+warn = "$sun"
+crit = "$red"
+info = "$cyan"
+
+[colors.selection]
+fg = "#ffffff"
+bg = "#3d1a63"
+
+[gradients]
+load = ["$cyan", "$purple", "$pink", "$orange"]
+temp = ["$cyan", "$purple", "$pink", "$red"]
+power = ["$cyan", "$purple", "$pink", "$red"]
+mem = ["$purple", "$pink"]
+netrx = ["$cyan", "$purple"]
+nettx = ["$purple", "$pink"]
+audio = ["$cyan", "$pink", "$sun"]
+title = ["#f6f0ff", "#c8b8ff", "$pink", "$violet"]
+
+[glyphs]
+set = "unicode"
+
+[borders]
+set = "double"
+focused_set = "thick"
+
+[title]
+style = "gradient"
+case = "upper"
+bold = true
+
+[widgets]
+gauge = "line"
+bars = "eighths"
+sparkline = "eighths"
+table_header = "reverse"
+big_number = "quadrant"

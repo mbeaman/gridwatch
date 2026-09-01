@@ -1,0 +1,61 @@
+# gridwatch built-in theme: mono — the real NO_COLOR theme (§7). Severity is
+# carried by modifiers and glyphs, never colour.
+[meta]
+name = "mono"
+schema = 1
+variant = "dark"
+
+[colors]
+bg = "default"
+surface = "default"
+panel = "default"
+border = "default"
+border_focused = "default"
+title = "default"
+text = "default"
+text_muted = "default"
+text_ghost = "default"
+cursor = "default"
+
+[colors.accent]
+primary = "default"
+secondary = "default"
+tertiary = "default"
+
+[colors.severity]
+ok = "default"
+warn = "default"
+crit = "default"
+info = "default"
+
+[colors.selection]
+fg = "default"
+bg = "default"
+
+[gradients]
+load = ["default", "default"]
+temp = ["default", "default"]
+power = ["default", "default"]
+mem = ["default", "default"]
+netrx = ["default", "default"]
+nettx = ["default", "default"]
+audio = ["default", "default"]
+title = ["default", "default"]
+
+[glyphs]
+set = "unicode"
+
+[borders]
+set = "plain"
+focused_set = "thick"
+
+[title]
+style = "plain"
+bold = true
+
+[widgets]
+gauge = "bar"
+bars = "eighths"
+sparkline = "eighths"
+table_header = "reverse"
+big_number = "quadrant"
