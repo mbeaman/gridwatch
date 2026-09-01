@@ -75,6 +75,34 @@ pub fn render_component(
     (tier, buf)
 }
 
+/// The view a component builds at a size — the input to the renderer and to
+/// `view::fingerprint`, exposed so tests can measure or inspect it directly.
+pub fn view_of(c: &dyn Component, store: &Store, th: &Theme, size: Size) -> crate::view::View {
+    let inner = Rect {
+        x: 0,
+        y: 0,
+        width: size.w,
+        height: size.h,
+    };
+    let (tier, fallback) = pick_tier(c.tiers(), size, false, None);
+    let cx = crate::component::RenderCx {
+        inner,
+        tier,
+        view_fallback: fallback,
+        focused: false,
+        captured: false,
+        zoomed: false,
+        dense: false,
+        store,
+        theme: th,
+        now: store.latest(),
+        wall: std::time::SystemTime::UNIX_EPOCH,
+        tz_offset_s: 0,
+        frame: 0,
+    };
+    c.view(&cx)
+}
+
 /// The semantic snapshot: tier name + view tree at a size.
 pub fn view_snapshot(
     c: &dyn Component,
