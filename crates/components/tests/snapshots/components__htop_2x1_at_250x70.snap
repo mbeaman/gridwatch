@@ -1,0 +1,128 @@
+---
+source: crates/components/tests/components.rs
+assertion_line: 59
+expression: "view_snapshot(h.as_ref(), &history, &th, size)"
+---
+size: 38x8
+tier: meters
+view:
+  stack:
+    children:
+      - - Len(3)
+        - stack:
+            children:
+              - - Len(1)
+                - segmented:
+                    label: CPU
+                    segments:
+                      - - AccentTertiary
+                        - 0.008929303847253323
+                      - - Ok
+                        - 0.33484888076782227
+                      - - Crit
+                        - 0.10268699377775192
+                      - - Info
+                        - 0
+                    text: 44.6%
+              - - Len(1)
+                - segmented:
+                    label: MEM
+                    segments:
+                      - - Ok
+                        - 0.1825650930404663
+                      - - AccentPrimary
+                        - 0.010999999940395355
+                      - - AccentTertiary
+                        - 0.009999999776482582
+                      - - Warn
+                        - 0.2199999988079071
+                    text: 17.6G/91.0G
+              - - Len(1)
+                - segmented:
+                    label: SWP
+                    segments:
+                      - - Crit
+                        - 0
+                      - - Warn
+                        - 0
+                    text: 0.00K/16.0G
+            dir: V
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Text
+                s: "638 pids, 2430 tasks; 4 running"
+      - - Fill(1)
+        - sparkline:
+            gradient: Load
+            max: 100
+            n: 38
+            series:
+              - 32.240081787109375
+              - 36.091163635253906
+              - 38.412315368652344
+              - 39.60268783569336
+              - 40.375675201416016
+              - 41.60244369506836
+              - 41.36821746826172
+              - 42.30147933959961
+              - 42.6070671081543
+              - 42.056983947753906
+              - 41.736961364746094
+              - 42.58759307861328
+              - 42.29230499267578
+              - 42.82126998901367
+              - 42.66040802001953
+              - 43.51015853881836
+              - 43.7466926574707
+              - 44.16597366333008
+              - 44.701290130615234
+              - 43.88252639770508
+              - 43.94908142089844
+              - 44.33559036254883
+              - 43.59581756591797
+              - 44.479530334472656
+              - 42.28839874267578
+              - 42.60289001464844
+              - 43.472442626953125
+              - 44.13790512084961
+              - 44.355709075927734
+              - 44.502994537353516
+              - 45.880218505859375
+              - 44.61550521850586
+              - 45.34556579589844
+              - 44.65518569946289
+              - 44.10500717163086
+              - 44.4130744934082
+              - 44.21654510498047
+              - 45.88029479980469
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "PSI "
+              - bold: false
+                role: TextMuted
+                s: "cpu "
+              - bold: false
+                role: Text
+                s: "1.43"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: "mem "
+              - bold: false
+                role: Text
+                s: "0.29"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: "io "
+              - bold: false
+                role: Text
+                s: "1.18"
+    dir: V

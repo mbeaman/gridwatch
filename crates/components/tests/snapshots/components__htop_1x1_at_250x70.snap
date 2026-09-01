@@ -1,0 +1,38 @@
+---
+source: crates/components/tests/components.rs
+assertion_line: 59
+expression: "view_snapshot(h.as_ref(), &history, &th, size)"
+---
+size: 17x8
+tier: big-number
+view:
+  stack:
+    children:
+      - - Len(4)
+        - big:
+            role: AccentSecondary
+            text: 45%
+      - - Fill(1)
+        - sparkline:
+            gradient: Load
+            max: 100
+            n: 17
+            series:
+              - 34.16562271118164
+              - 39.00749969482422
+              - 41.11544418334961
+              - 42.45427322387695
+              - 41.89697265625
+              - 42.567054748535156
+              - 43.08528518676758
+              - 43.95633316040039
+              - 44.15544509887695
+              - 44.142337799072266
+              - 44.03767395019531
+              - 42.78791046142578
+              - 44.24680709838867
+              - 45.19160461425781
+              - 44.87208557128906
+              - 44.25904083251953
+              - 45.04841995239258
+    dir: V
