@@ -1,0 +1,24 @@
+[package]
+name = "gridwatch"
+description = "A modular, themeable ops dashboard for the terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "gridwatch"
+path = "src/main.rs"
+
+[dependencies]
+gridwatch-app.workspace = true
+gridwatch-store.workspace = true
+gridwatch-ui.workspace = true
+gridwatch-sources.workspace = true
+gridwatch-components.workspace = true
+clap.workspace = true
+color-eyre.workspace = true
+
+[features]
+default = []
