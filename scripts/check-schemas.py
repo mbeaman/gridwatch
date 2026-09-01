@@ -32,4 +32,7 @@ for theme in sorted((ROOT / "themes").glob("*.toml")):
 check("config.schema.json", toml_doc(ROOT / "crates/app/src/defaults/config.toml"), "defaults/config.toml")
 check("layout.schema.json", toml_doc(ROOT / "crates/app/src/defaults/layout.toml"), "defaults/layout.toml")
 
+for layout in sorted((ROOT / "fixtures/layouts").glob("*.toml")):
+    check("layout.schema.json", toml_doc(layout), f"fixtures/layouts/{layout.name}")
+
 sys.exit(1 if FAILED else 0)

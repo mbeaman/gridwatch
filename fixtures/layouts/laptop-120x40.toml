@@ -1,0 +1,27 @@
+# A 120×40 laptop terminal: the size that lands in `dense` mode (§6 — the
+# configured threshold is 131×37, the dense one 109×27). Every tile must still
+# be above chip level here, and the cpu tile must still reach the `cores` tier
+# (6x3 dense = 59×18, and `cores` needs 56×12) — the arc-1b acceptance the
+# tests in `crates/app/tests/shell.rs` assert against this file.
+schema = 1
+
+[grid]
+columns = 12
+rows = 6
+gap = 1
+borders = "each"
+cell_aspect = 0.5
+min_unit_inner = { cols = 8, rows = 3 }
+
+[[pages]]
+name = "Overview"
+hotkey = "1"
+place = [
+  { id = "cpu",   at = [0, 0], size = [6, 3], priority = 100 },
+  { id = "gpu",   at = [6, 0], size = [6, 3], priority = 100 },
+  { id = "pins",  at = [0, 3], size = [4, 2], priority = 90 },
+  { id = "lan",   at = [4, 3], size = [4, 2] },
+  { id = "viz",   at = [8, 3], size = [4, 2] },
+  { kind = "sources", at = [0, 5], size = [8, 1] },
+  { kind = "clock",   at = [8, 5], size = [4, 1] },
+]
