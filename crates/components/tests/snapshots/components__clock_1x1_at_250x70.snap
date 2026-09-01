@@ -1,0 +1,11 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(c.as_ref(), &store, &th, size)"
+---
+size: 17x8
+tier: mini
+view:
+  text:
+    - - bold: true
+        role: AccentSecondary
+        s: "00:00"

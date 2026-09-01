@@ -1,0 +1,17 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(s.as_ref(), &store, &th, size)"
+---
+size: 17x8
+tier: list
+view:
+  text:
+    - - bold: false
+        role: Text
+        s: cpu
+      - bold: false
+        role: TextGhost
+        s: " "
+      - bold: false
+        role: Info
+        s: starting

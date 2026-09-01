@@ -1,0 +1,12 @@
+---
+source: crates/components/tests/components.rs
+expression: "gridwatch_ui::dump::cells(&buf)"
+---
+[#94e2d5/-/NONE]▟▀▜▖▟▀▜▖ ▄  ▟▀▜▖▟▀▜▖[-/-/NONE]                  
+[#94e2d5/-/NONE]█▗█▌█▗█▌ ▀  █▗█▌█▗█▌[-/-/NONE]                  
+[#94e2d5/-/NONE]█▛▐▌█▛▐▌ ▄  █▛▐▌█▛▐▌[-/-/NONE]                  
+[#94e2d5/-/NONE]▝▀▀ ▝▀▀  ▀  ▝▀▀ ▝▀▀ [-/-/NONE]                  
+[-/-/NONE]                                      
+[-/-/NONE]                                      
+[-/-/NONE]                                      
+[-/-/NONE]

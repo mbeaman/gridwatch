@@ -1,0 +1,27 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(s.as_ref(), &store, &th, size)"
+---
+size: 248x66
+tier: table
+view:
+  table:
+    columns:
+      - SRC
+      - STATE
+      - GEN
+      - AGE
+      - DROP
+      - RST
+      - NOTE
+    rows:
+      - - cpu
+        - starting
+        - "3"
+        - 0s
+        - "0"
+        - "0"
+        - ""
+    scroll: 0
+    selected: ~
+    sort: ~

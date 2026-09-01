@@ -1,0 +1,18 @@
+[package]
+name = "gridwatch-components"
+description = "gridwatch built-in components"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+gridwatch-store.workspace = true
+gridwatch-ui.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+gridwatch-ui = { workspace = true, features = ["testkit"] }
+insta.workspace = true
