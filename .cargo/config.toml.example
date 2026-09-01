@@ -1,0 +1,4 @@
+# Copy to .cargo/config.toml (git-ignored) to develop against the sibling
+# astral-watch checkout instead of the pinned git revision (needed from arc 3).
+[patch."https://github.com/mbeaman/astral-watch"]
+astral-watch = { path = "../astral-watch" }

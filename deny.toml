@@ -1,0 +1,30 @@
+# cargo-deny gates (ARCHITECTURE §14, D21/D26/D37/D39).
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",                      # ring (via ureq/rustls, arc 3+)
+    "CC0-1.0",
+    "Zlib",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",      # webpki-roots (via ureq/rustls, arc 3+)
+]
+
+[bans]
+multiple-versions = "warn"
+deny = [
+    { crate = "cpal", reason = "needs libasound2-dev, not installed; audio uses pw-record (D14)" },
+    { crate = "mpris", reason = "links libdbus, not installed; use zbus (D18)" },
+    { crate = "pipewire", reason = "needs libpipewire-0.3-dev, not installed (D14)" },
+    { crate = "libpulse-binding", reason = "needs libpulse dev headers, not installed" },
+    { crate = "libpulse-simple-binding", reason = "needs libpulse dev headers, not installed" },
+    { crate = "ansi_colours", reason = "LGPL; nearest-colour mapper is in-tree (D11)" },
+    { crate = "enum-map", reason = "3.x MSRV 1.95 > ours; roles use plain arrays (D11)" },
+    { crate = "sysinfo", reason = "MSRV 1.95 and lacks htop's per-class breakdown; procfs instead (D17/D37)" },
+]
+
+[advisories]
+yanked = "deny"

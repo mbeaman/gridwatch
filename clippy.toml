@@ -1,0 +1,9 @@
+# The app owns terminal setup/restore and the panic hook (ARCHITECTURE §11).
+# ratatui's helpers install a hook that restores the terminal before any chained
+# hook runs, which would defeat per-thread panic containment.
+disallowed-methods = [
+    { path = "ratatui::init", reason = "the app owns terminal init/restore and the panic hook (ARCHITECTURE §11)" },
+    { path = "ratatui::try_init", reason = "the app owns terminal init/restore and the panic hook (ARCHITECTURE §11)" },
+    { path = "ratatui::run", reason = "the app owns terminal init/restore and the panic hook (ARCHITECTURE §11)" },
+    { path = "ratatui::restore", reason = "the app owns terminal init/restore and the panic hook (ARCHITECTURE §11)" },
+]
