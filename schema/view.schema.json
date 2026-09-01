@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gridwatch view tree (§4.6, D32) — the wire shape dump::view_value emits",
+  "$ref": "#/$defs/view",
+  "$defs": {
+    "view": {
+      "oneOf": [
+        { "const": "empty" },
+        { "type": "object", "required": ["text"], "additionalProperties": false, "properties": { "text": { "type": "array" } } },
+        { "type": "object", "required": ["kv"], "additionalProperties": false, "properties": { "kv": { "type": "array" } } },
+        { "type": "object", "required": ["gauge"], "additionalProperties": false, "properties": { "gauge": { "type": "object", "required": ["label", "value", "gradient"] } } },
+        { "type": "object", "required": ["segmented"], "additionalProperties": false, "properties": { "segmented": { "type": "object", "required": ["label", "segments"] } } },
+        { "type": "object", "required": ["bars"], "additionalProperties": false, "properties": { "bars": { "type": "object", "required": ["n", "values", "gradient"] } } },
+        { "type": "object", "required": ["sparkline"], "additionalProperties": false, "properties": { "sparkline": { "type": "object", "required": ["n", "gradient"] } } },
+        { "type": "object", "required": ["chart"], "additionalProperties": false, "properties": { "chart": { "type": "array" } } },
+        { "type": "object", "required": ["table"], "additionalProperties": false, "properties": { "table": { "type": "object", "required": ["columns", "rows"] } } },
+        { "type": "object", "required": ["big"], "additionalProperties": false, "properties": { "big": { "type": "object", "required": ["text", "role"] } } },
+        { "type": "object", "required": ["stack"], "additionalProperties": false, "properties": { "stack": { "type": "object", "required": ["dir", "children"] } } },
+        { "type": "object", "required": ["custom"], "additionalProperties": false, "properties": { "custom": { "type": "string" } } }
+      ]
+    }
+  }
+}

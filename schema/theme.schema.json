@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gridwatch theme file (\u00a77, D37: self-contained until inherits lands)",
+  "type": "object",
+  "required": [
+    "meta",
+    "colors",
+    "gradients"
+  ],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "name",
+        "schema"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "schema": {
+          "const": 1
+        },
+        "variant": {
+          "enum": [
+            "dark",
+            "light"
+          ]
+        },
+        "inherits": {
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "quiet",
+            "showcase"
+          ]
+        }
+      }
+    },
+    "palette": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/color"
+      }
+    },
+    "colors": {
+      "type": "object",
+      "required": [
+        "bg",
+        "surface",
+        "panel",
+        "border",
+        "border_focused",
+        "title",
+        "text",
+        "text_muted",
+        "text_ghost",
+        "cursor",
+        "accent",
+        "severity",
+        "selection"
+      ],
+      "properties": {
+        "accent": {
+          "type": "object",
+          "required": [
+            "primary",
+            "secondary",
+            "tertiary"
+          ]
+        },
+        "severity": {
+          "type": "object",
+          "required": [
+            "ok",
+            "warn",
+            "crit",
+            "info"
+          ]
+        },
+        "selection": {
+          "type": "object",
+          "required": [
+            "fg",
+            "bg"
+          ]
+        }
+      }
+    },
+    "gradients": {
+      "type": "object",
+      "required": [
+        "load",
+        "temp",
+        "power",
+        "mem",
+        "netrx",
+        "nettx",
+        "audio",
+        "title"
+      ],
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/color"
+        },
+        "minItems": 1
+      }
+    },
+    "glyphs": {
+      "type": "object"
+    },
+    "borders": {
+      "type": "object"
+    },
+    "title": {
+      "type": "object"
+    },
+    "widgets": {
+      "type": "object"
+    },
+    "flourish": {
+      "type": "object"
+    },
+    "effects": {
+      "type": "object"
+    },
+    "ambient": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^(#[0-9a-fA-F]{6}|default|\\$[A-Za-z_][A-Za-z0-9_]*)$"
+    }
+  }
+}

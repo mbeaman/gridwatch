@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gridwatch layout.toml (§9): pages and placements only",
+  "type": "object",
+  "required": ["schema", "grid", "pages"],
+  "properties": {
+    "schema": { "const": 1 },
+    "grid": {
+      "type": "object",
+      "properties": {
+        "columns": { "type": "integer", "minimum": 1, "maximum": 24 },
+        "rows": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "gap": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "borders": { "enum": ["each", "shared", "none"] },
+        "cell_aspect": { "type": "number" },
+        "min_unit_inner": { "type": "object", "required": ["cols", "rows"] }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "place"],
+        "properties": {
+          "name": { "type": "string" },
+          "hotkey": { "type": "string", "maxLength": 1 },
+          "place": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["at", "size"],
+              "properties": {
+                "id": { "type": "string" },
+                "kind": { "type": "string" },
+                "at": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "minItems": 2, "maxItems": 2 },
+                "size": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2 },
+                "view": { "type": "string" },
+                "priority": { "type": "integer" }
+              },
+              "oneOf": [{ "required": ["id"] }, { "required": ["kind"] }],
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

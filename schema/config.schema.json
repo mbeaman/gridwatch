@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gridwatch config.toml (\u00a79)",
+  "type": "object",
+  "required": [
+    "schema"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "theme": {
+      "type": "string"
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 120
+    },
+    "fps_max": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 120
+    },
+    "color": {
+      "enum": [
+        "auto",
+        "always",
+        "never",
+        "16",
+        "256",
+        "truecolor"
+      ]
+    },
+    "mouse": {
+      "type": "boolean"
+    },
+    "readonly": {
+      "type": "boolean"
+    },
+    "confirm_kill": {
+      "type": "boolean"
+    },
+    "store": {
+      "type": "object",
+      "properties": {
+        "history": {
+          "type": "string"
+        },
+        "max_mb": {
+          "type": "integer"
+        }
+      }
+    },
+    "effects": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "budget_ms": {
+          "type": "integer"
+        }
+      }
+    },
+    "perf": {
+      "type": "object",
+      "properties": {
+        "unfocused_fps": {
+          "type": "integer"
+        },
+        "phase_ms": {
+          "type": "integer"
+        }
+      }
+    },
+    "sources": {
+      "type": "object"
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "options": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rules": {
+      "type": "array"
+    },
+    "record": {
+      "type": "object",
+      "description": "Recording config \u2014 parsed and ignored until arc 2 (\u00a79)."
+    }
+  },
+  "additionalProperties": false
+}
