@@ -1,6 +1,6 @@
 # gridwatch — the plan
 
-> **Status: arc 1a (core seam) built, reviewed and committed 2026-08-31 (D41/D42); arc 1b is next (Opus, `briefs/arc-1b.md`).** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
+> **Status: arc 1 complete — 1a (core seam) committed, 1b (cpu source + htop tiers + retrowave + first live perf rows) built and reviewed 2026-08-31 (D41–D45), awaiting Matt's commit and the `v0.1.0` tag. Arc 2 (GPU + journal) is next.** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
 
 ## What we are building
 
@@ -79,7 +79,7 @@ Fable 5 builds the foundation — arc 1a's core seam, the schemas and testkit, t
 
 ## How a session starts
 
-`CLAUDE.md` is the working agreement (arcs; implement → adversarial review → fix → report → you say commit; commit *before* any shell-enabled review; read-only guard in every agent prompt). Pre-flight completed 2026-08-31: repo live at `github.com/mbeaman/gridwatch`, planning corpus committed, LICENSE (MIT) and CHANGELOG in place. Next session: Fable on `docs/briefs/arc-1a.md`. Nothing is blocked.
+`CLAUDE.md` is the working agreement (arcs; implement → adversarial review → fix → report → you say commit; commit *before* any shell-enabled review; read-only guard in every agent prompt). Arc 1a (Fable) and arc 1b (Opus) are both built and reviewed. Next session: **arc 2** — write `docs/briefs/arc-2.md` in a Fable session first (D36's spec-first ritual), then implement it. Open against Matt: the real `stty size`, a perf re-take beside the game, the Ptyxis glyph check and the README PNG.
 
 ## Map of `docs/`
 

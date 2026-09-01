@@ -47,3 +47,12 @@ Arc 2 journal + CI screenshots · arc 3 astral-watch v0.8.0 pre-req + capability
 - **Dense border merging** (arc 4): `Block::merge_borders(MergeStrategy::Exact)` for the one-cell-overlap shared borders (§6, deferred by D42).
 - **`shot --config`**: screenshots of the user's own layout (shot is pinned to embedded defaults for §12.5 determinism since the arc-1a review).
 - **Control redelivery across source restarts**: a `SetOption` sent in the instant between supervisor generations is dropped (D42); queue-and-replay if a real source ever cares.
+
+Raised by the arc-1b review (2026-08-31), verified real, deliberately not fixed in 1b:
+
+- **Segmented meters are unreadable in `mono`** (arc 4, theme/renderer): every segment draws the same `|` glyph, so with no colour the MEM bar's used/shared/buffers/cache boundaries vanish and it reads far fuller than it is. The fix belongs to the renderer (a per-segment glyph in the `mono` widget set), not to a component.
+- **The key bar is clipped mid-word below ~118 columns** (arc-1a code): it is one fixed string. Build it from `(key, label)` pairs and drop whole entries from the right the way `htop::view::info_line` already does for its clauses.
+- **`[sources.<id>]` options are not validated**: a mistyped `refres_ms` is silently ignored, where a mistyped *component* option is a build error (`deny_unknown_fields`). Needs a per-source options type or a key-set check at load; §9 only mandates the disjointness rule, which is tested.
+- **Per-source/per-component Cargo features**: `WORKSPACE.md` plans one feature per source and component, but `procfs` is an unconditional dependency and both registries register unconditionally, so the CI feature matrix has nothing to select. Do it when the second source lands (arc 2) or amend `WORKSPACE.md` §15 to say features arrive then.
+- **Frame counting is coupled to changed-cell accounting**: `--stats-log` and the F12 HUD both clone the frame buffer and diff 17 500 cells per frame, so P-rows measure the product plus its instrument (`docs/PERFORMANCE.md`, arc-1b notes). Split the frame counter from the cell diff so P4's 0.3 % row can be taken with frame counts.
+- **`/proc/stat` CPU lines are positional**: entry *i* is assumed to be CPU *i*, which an offline CPU would break while `cpu.topology` still indexed by CPU id. Torch never offlines a CPU; revisit with the hotplug path in arc 2.

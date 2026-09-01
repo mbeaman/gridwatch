@@ -104,3 +104,58 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 2026-08-31 | 1 | quiet | arc1a demo overview 250x70 focused | ? | 0.00% | 4 | 0 KB/s | ? | 0.63% | 0.0 | ? | ? | ? | 10092 kB |
 | 2026-08-31 | 1 | quiet | arc1a demo overview 250x70 UNFOCUSED | ? | 0.00% | 4 | 0 KB/s | ? | 0.60% | 0.0 | ? | ? | ? | 10112 kB |
 | 2026-08-31 | 1 | quiet | arc1a POST-FIX demo overview 250x70 focused | ? | 0.00% | 4 | 0 KB/s | ? | 0.65% | 0.0 | ? | ? | ? | 7928 kB |
+| 2026-08-31 | 1b | quiet | **live** overview 250x70, cpu tile focused (pty) | no | 0.38% | 6 | 3.4 KB/s | 2.00 | — | — | n/a | 0.29 | 0.69 / 1.10 ms | 10504 kB |
+| 2026-08-31 | 1b | quiet | demo overview 250x70 (pty) — synth jitters every core each tick | no | 0.20% | 6 | 24.8 KB/s | 1.9 | — | — | n/a | n/a | 0.84 / 1.45 ms | 10856 kB |
+
+**Arc 1b notes (2026-08-31).** Release binary under a `script` pty sized 250×70
+(`sleep N | script -qec "stty rows 70 cols 250; gridwatch run --stats-log …"
+/dev/null`), a 45 s window after a 12 s settle, on an **idle torch with no game
+running**. Per-thread voluntary context switches from
+`/proc/<pid>/task/*/status`; bytes from `/proc/<pid>/io` `wchar` **minus the
+stats log's own growth**; frames, frame times and both P18 timestamps from
+`--stats-log` (the F12 HUD shows the same numbers).
+
+| gate | ceiling | measured | verdict |
+|---|---|---|---|
+| P1 | ≤ 2 % of one core | 0.38 % | ✓ **on an idle box** — the "beside a game" row is owed |
+| P5 | ≤ 40 wake-ups/s | 6 /s | ✓ |
+| P6 | ≤ 25 KB/s, HUD within 5 % of Δ`wchar` | 3.4 KB/s; HUD 3.37 KB/s vs Δ`wchar`−log 3.43 KB/s = **1.99 %** | ✓ (brief task 4's cross-check) |
+| P8 | every frame caused; ≈ 2/s on the Overview | **2.00 /s** over the 45 s window; every frame in the whole ~57 s run had a cause — 112 data, 1 heartbeat, 0 animated | ✓ — the cpu tile is *focused*, so its source runs the 500 ms cadence |
+| P18 | first frame ≤ 300 ms; every source live ≤ 2 s | **≈ 14 ms** end to end (13 ms exec → first bytes on the terminal, over three runs, + 1 ms shell → first drawn frame) and **252 ms** | ✓ |
+| P19 | p95 ≤ 8 ms, mean ≤ 3 ms | p50 0.69 ms, p95 1.10 ms | ✓ |
+| P17 | RSS ≤ 60 MB | 10.5 MB | ✓ |
+| P4, P21 | unfocused ≤ 0.3 %; focus reporting | — | **owed**: a pty sends no focus events |
+| P9, P10 | Ptyxis Δ CPU and `pmon sm` | — | **owed**: needs the real terminal beside the game |
+
+- **`first_frame_ms` is measured from `Shell::new`, not from `exec`** — everything
+  before it (config, theme, capability probe, source spawn, terminal setup) is
+  covered by the separate 13 ms exec→first-bytes measurement, and the two legs
+  are added above rather than one being passed off as the other.
+- **Two defects the P18 measurement found and this arc fixed:** the frame loop
+  parked on input for up to 250 ms *before* drawing (first frame 251 ms → 1 ms),
+  and both cpu sources waited for their first cadence boundary before sampling,
+  so with the demand still `Hidden` the first batch landed at 3.0 s (→ 252 ms,
+  and the first *delta* now arrives a whole period earlier).
+- **The demo row is the pathological case, not the product**: `demo::CpuSynth`
+  moves all 32 cores ±8 % every tick, so ~660 cells change per frame against the
+  live source's ~95. It lands at 24.8 KB/s, just inside P6 — that is the
+  headroom a genuinely busy machine has under the `cores` tier, and the honest
+  reason to re-take P6 with the game running.
+- **The instrument costs something.** `--stats-log` (and the F12 HUD) turn on
+  changed-cell accounting, which clones the frame buffer and compares 17 500
+  cells per frame. The rows above therefore measure the product *plus its
+  instrument*; the direction is conservative for P1/P19, and P4's 0.3 % row
+  should be taken without `--stats-log`.
+- **Scan cost:** a full meters pass (`/proc/stat` + `meminfo` + `loadavg` +
+  `uptime` + 3 PSI files + one `/proc` readdir + 32 `scaling_cur_freq` + 3
+  k10temp inputs) is **0.29 ms mean, 0.35 ms worst** over 20 runs — 0.06 % of a
+  core at the focused 500 ms cadence
+  (`cargo test -p gridwatch-sources --release --test cpu -- --ignored`).
+- **View cost:** the `cores` tier at 122×31 costs 0.051 ms to build and render
+  and 0.079 ms to fingerprint for the render cache (release, 500 runs) — inside
+  §13's 0.3 ms view budget, so `ui::view::fingerprint`'s note about a
+  hand-rolled walker stays unclaimed.
+- **Still owed by a human on torch** (all need the real terminal, not a pty):
+  P4 and P21 (focus events), P9/P10 (Ptyxis Δ CPU and `pmon sm`), and every row
+  re-taken **at Matt's actual window size** (D42's open `stty size` item) **with
+  the game running** — P1's and P6's ceilings are both specified beside a game.
