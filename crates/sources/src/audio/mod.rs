@@ -51,9 +51,11 @@ pub const REPROBE: Duration = Duration::from_secs(10);
 /// A picker's `enumerate = true` arms the 2 s `pw-dump` poll for this long;
 /// the picker re-arms it while open, a page switch lets it lapse.
 pub const ENUMERATE_FOR: Duration = Duration::from_secs(10);
-/// `audio.sink` follows a default-sink change under `auto`: `pw-dump`
-/// (≈ 10 ms) this often while visible and no picker is open.
-pub const SINK_RECHECK: Duration = Duration::from_secs(5);
+/// `audio.sink` follows a default-sink change under `auto`: `pw-dump` this
+/// often while visible with no picker open. It spawns a process and parses
+/// ≈ 280 KB, so it is rare (measured: a 5 s re-check cost ~200 wake-ups/s on
+/// the source thread — P5 is 40/s for the whole process).
+pub const SINK_RECHECK: Duration = Duration::from_secs(60);
 
 pub use gridwatch_store::keys::audio::SetSink;
 
@@ -712,7 +714,9 @@ impl Source for AudioSource {
             } else {
                 SINK_RECHECK
             };
-            if last_dump.is_none_or(|t| now.saturating_duration_since(t) >= every) {
+            // A pinned sink cannot change under us, so only `auto` re-checks.
+            let follows = enumerating || self.options.target == Target::Auto;
+            if follows && last_dump.is_none_or(|t| now.saturating_duration_since(t) >= every) {
                 last_dump = Some(now);
                 if let Ok(d) = sink::enumerate() {
                     let at = cx.clock.now();
