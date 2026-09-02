@@ -81,7 +81,7 @@ fn store_with(temps: &[(&str, f64, Option<f64>, Option<f64>)]) -> Store {
 }
 
 #[test]
-fn the_hottest_is_the_smallest_margin_and_roles_follow_max_and_crit() {
+fn the_hottest_is_the_closest_to_its_limit_and_roles_follow_max_and_crit() {
     let store = store_with(&[
         ("k10temp:Tctl", 59.0, None, None),
         ("nvme:Composite", 80.0, Some(81.85), Some(84.85)),
@@ -92,7 +92,9 @@ fn the_hottest_is_the_smallest_margin_and_roles_follow_max_and_crit() {
     let (tier, buf) = render_component(&mut c, &store, &th, Size::new(17, 8), false);
     assert_eq!(c.tiers()[tier].name, "hottest");
     let text = plain_text(&buf);
-    // nvme is 1.85° from its max; k10temp has no max at all.
+    // nvme is at 98 % of its max; the DIMM at 80 %; k10temp exports no max
+    // and is ranked against the assumed 95 °C (62 %) — it is *shown*, which
+    // ranking by the raw margin never did (review).
     assert!(text.contains("nvme"), "{text}");
     // 17 cells: `nvme Composite 80` — the degree sign is the first thing
     // the width takes.
@@ -100,6 +102,25 @@ fn the_hottest_is_the_smallest_margin_and_roles_follow_max_and_crit() {
     let hottest = c.model().hottest().unwrap();
     assert_eq!(hottest.key, "nvme:Composite");
     assert!(!hottest.over_max() && !hottest.over_crit());
+    let keys: Vec<&str> = c.model().temps.iter().map(|r| r.key.as_str()).collect();
+    assert_eq!(keys, ["nvme:Composite", "spd5118:temp1", "k10temp:Tctl"]);
+    let tctl = c
+        .model()
+        .temps
+        .iter()
+        .find(|r| r.chip == "k10temp")
+        .unwrap();
+    assert!(tctl.assumed());
+    assert_eq!(tctl.limit(), 95.0, "AMD documents Tctl's ceiling");
+    assert!((tctl.heat() - 59.0 / 95.0).abs() < 1e-9);
+    // A reading past its crit outranks everything, however cool it is.
+    let store = store_with(&[
+        ("nvme:Composite", 60.0, Some(81.85), Some(84.85)),
+        ("spd5118:temp1", 86.0, Some(55.0), Some(85.0)),
+    ]);
+    let mut c2 = tile();
+    tick(&mut c2, &store, TIER_TABLE);
+    assert_eq!(c2.model().hottest().unwrap().chip, "spd5118");
     // Over max, then over crit.
     let store = store_with(&[("nvme:Composite", 86.0, Some(81.85), Some(84.85))]);
     let mut c = tile();
@@ -131,7 +152,10 @@ fn the_sort_key_and_the_chip_filter() {
     let mut c = tile();
     tick(&mut c, &store, TIER_TABLE);
     let keys: Vec<&str> = c.model().temps.iter().map(|r| r.key.as_str()).collect();
-    assert_eq!(keys[0], "nvme:Composite", "hottest = the smallest margin");
+    assert_eq!(
+        keys[0], "nvme:Composite",
+        "hottest = the closest to its limit"
+    );
     assert_eq!(c.sort(), Sort::Hottest);
     assert!(matches!(
         c.on_key(
@@ -177,7 +201,29 @@ fn the_full_tier_carries_rapl_psi_and_the_gpu_row() {
     let (_, buf) = render_component(&mut c, &demo, &th, Size::new(248, 66), true);
     let text = plain_text(&buf);
     assert!(!text.contains("no gpu source"), "{text}");
-    assert!(text.contains("fan"), "{text}");
+    // The fan really reads (the label is `dev:fan`, not the device index).
+    let fan = text
+        .split("fan ")
+        .nth(1)
+        .and_then(|t| t.split_whitespace().next())
+        .unwrap_or("");
+    assert!(fan.ends_with('%') && fan.len() > 1, "the gpu fan: {fan:?}");
+}
+
+/// A chip that stops answering must not stay on the tile for ever: the
+/// store has no retraction, so the tile drops readings older than a few
+/// cadences (review).
+#[test]
+fn a_reading_that_stopped_arriving_leaves_the_tile() {
+    let store = store_with(&[("nvme:Composite", 80.0, Some(81.85), None)]);
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    assert_eq!(c.model().temps.len(), 1);
+    let mut m = gridwatch_components::sensors::Model::default();
+    m.refresh(&store, &[], Sort::Hottest, Ts(1_000_000_000));
+    assert_eq!(m.temps.len(), 1, "fresh");
+    m.refresh(&store, &[], Sort::Hottest, Ts(20_000_000_000));
+    assert!(m.temps.is_empty(), "19 s old: gone");
 }
 
 #[test]

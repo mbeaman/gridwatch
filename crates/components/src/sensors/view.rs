@@ -69,23 +69,43 @@ fn hottest(s: &Sensors, cx: &RenderCx<'_>) -> View {
     let Some(r) = s.model().hottest() else {
         return empty(cx);
     };
+    // The reading is what the tier promises: it is placed first and the
+    // chip and label take whatever room is left (review: at 17 cells the
+    // number itself was being truncated away).
     let w = usize::from(cx.inner.width);
+    let value = degrees(r.value);
+    let mark = if r.over_max() { 2 } else { 0 };
+    let spare = w.saturating_sub(value.chars().count() + mark + 1);
     let mut head: Line = Vec::new();
-    let chip: String = r.chip.chars().take(w.saturating_sub(5).max(3)).collect();
-    if w >= 16 {
-        head.push(Span::new(Role::TextMuted, format!("{chip} {} ", r.label)));
-    } else if w >= 10 {
-        head.push(Span::new(Role::TextMuted, format!("{chip} ")));
+    if spare >= 4 {
+        let label_room = spare.saturating_sub(r.chip.chars().count() + 1);
+        let chip: String = r.chip.chars().take(spare.min(16)).collect();
+        let mut prefix = chip;
+        if label_room >= 4 {
+            prefix.push(' ');
+            prefix.extend(r.label.chars().take(label_room - 1));
+        }
+        prefix.push(' ');
+        head.push(Span::new(Role::TextMuted, prefix));
     }
-    head.push(Span::bold(role_of(r), degrees(r.value)));
+    head.push(Span::bold(role_of(r), value));
     if r.over_max() {
         head.push(Span::bold(Role::Crit, " ▲"));
     }
+    // The gauge's text needs room beside its bar; below ~14 cells the bar
+    // alone says it (the renderer draws nothing when the text crowds it).
+    let gauge_text = (w >= 14).then(|| {
+        Cow::Owned(if r.assumed() {
+            format!("of ~{:.0}°", r.limit())
+        } else {
+            format!("max {:.0}°", r.limit())
+        })
+    });
     let gauge = View::Gauge {
         label: Cow::Borrowed(""),
         value: r.frac().min(1.0),
         gradient: GradientId::Temp,
-        text: r.max.map(|m| Cow::Owned(format!("max {m:.0}°"))),
+        text: gauge_text,
     };
     View::Stack {
         dir: Dir::V,
@@ -143,11 +163,11 @@ fn strip(s: &Sensors, cx: &RenderCx<'_>) -> View {
                 label: Cow::Owned(format!("{} {}", h.chip, h.label)),
                 value: h.frac().min(1.0),
                 gradient: GradientId::Temp,
-                text: Some(Cow::Owned(format!(
-                    "{} / max {}",
-                    degrees(h.value),
-                    h.max.map(degrees).unwrap_or_else(|| "—".into())
-                ))),
+                text: Some(Cow::Owned(if h.assumed() {
+                    format!("{} of ~{}", degrees(h.value), degrees(h.limit()))
+                } else {
+                    format!("{} / max {}", degrees(h.value), degrees(h.limit()))
+                })),
             },
         ));
     }
@@ -171,17 +191,19 @@ fn table_rows(temps: &[Reading], with_bar: bool) -> Vec<Vec<Line>> {
                 vec![Span::bold(role_of(r), format!("{:.1}°C", r.value))],
                 vec![Span::new(
                     Role::TextMuted,
-                    r.max
-                        .map(|m| format!("{m:.0}°"))
-                        .unwrap_or_else(|| "—".into()),
+                    if r.assumed() {
+                        format!("~{:.0}°", r.limit())
+                    } else {
+                        format!("{:.0}°", r.limit())
+                    },
                 )],
             ];
             if with_bar {
+                // The column the rows are ordered by, always shown — an
+                // invisible sort key is a puzzle (review).
                 row.push(vec![Span::new(
                     role_of(r),
-                    r.max
-                        .map(|_| format!("{:>3.0} %", f64::from(r.frac()) * 100.0))
-                        .unwrap_or_default(),
+                    format!("{:>3.0} %", r.heat() * 100.0),
                 )]);
             }
             row
@@ -210,27 +232,32 @@ fn table_view(s: &Sensors, cx: &RenderCx<'_>, rows: Vec<Vec<Line>>) -> View {
             right: true,
         },
         Column {
-            title: "max".into(),
+            title: "limit".into(),
             width: ColWidth::Fixed(5),
             right: true,
         },
     ];
     if with_bar {
         columns.push(Column {
-            title: "of max".into(),
+            title: "of lim".into(),
             width: ColWidth::Fixed(6),
             right: true,
         });
     }
-    let selected = cx
-        .captured
-        .then_some(s.scroll().min(rows.len().saturating_sub(1)));
+    // `scroll` is the table's top row: derive it from the cursor so the
+    // selection stays visible and the last page is never scrolled past
+    // (review: 20 downs left one row on screen).
+    let body = usize::from(cx.inner.height).saturating_sub(2).max(1);
+    let cursor = s.scroll().min(rows.len().saturating_sub(1));
+    let top = cursor
+        .saturating_sub(body.saturating_sub(1))
+        .min(rows.len().saturating_sub(body.min(rows.len())));
     View::Table {
         columns,
         rows,
-        selected,
+        selected: cx.captured.then_some(cursor),
         sort: None,
-        scroll: s.scroll(),
+        scroll: top,
     }
 }
 
@@ -267,11 +294,7 @@ fn table_tier(s: &Sensors, cx: &RenderCx<'_>, footer: Option<Line>) -> View {
 fn chart_view(s: &Sensors, cx: &RenderCx<'_>) -> View {
     let m = s.model();
     let mut picks: Vec<&Reading> = m.temps.iter().collect();
-    picks.sort_by(|a, b| {
-        a.margin()
-            .partial_cmp(&b.margin())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    picks.sort_by(|a, b| super::hottest_first(a, b));
     picks.truncate(4);
     let age = cx.now.as_secs_f64();
     let span = if age < 600.0 {
@@ -302,7 +325,7 @@ fn chart_view(s: &Sensors, cx: &RenderCx<'_>) -> View {
             data,
         });
     }
-    if !lo.is_finite() {
+    if lo == f64::MAX || hi == f64::MIN {
         lo = 20.0;
         hi = 100.0;
     }
@@ -323,11 +346,7 @@ fn chart_view(s: &Sensors, cx: &RenderCx<'_>) -> View {
 fn chart_legend(s: &Sensors, span_min: u64) -> Line {
     let m = s.model();
     let mut picks: Vec<&Reading> = m.temps.iter().collect();
-    picks.sort_by(|a, b| {
-        a.margin()
-            .partial_cmp(&b.margin())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    picks.sort_by(|a, b| super::hottest_first(a, b));
     let mut line: Line = vec![Span::new(
         Role::TextMuted,
         format!("chart · {span_min} min · "),
@@ -376,7 +395,10 @@ fn rapl_line(s: &Sensors) -> Line {
             Role::Warn,
             "RAPL: needs a udev rule — see doctor",
         )],
-        _ => vec![Span::new(Role::TextMuted, "RAPL: absent")],
+        (None, Some(RaplState::Absent)) => {
+            vec![Span::new(Role::TextMuted, "RAPL: absent on this machine")]
+        }
+        _ => vec![Span::new(Role::TextMuted, "RAPL: waiting for the source")],
     }
 }
 
@@ -402,7 +424,10 @@ fn psi_line(cx: &RenderCx<'_>) -> Line {
 fn gpu_line(cx: &RenderCx<'_>) -> Line {
     let last = |k: gridwatch_store::Key<f64>| cx.store.last(&k).map(|(_, v)| v);
     let temp = last(gpu::TEMP_C.idx(0));
-    let fan = last(gpu::FAN_PCT.idx(0));
+    let fan = cx
+        .store
+        .last(&gpu::FAN_PCT.named(&gpu::fan_label(0, 0)))
+        .map(|(_, v)| v);
     let power = last(gpu::POWER_W.idx(0));
     if temp.is_none() && fan.is_none() && power.is_none() {
         return vec![Span::new(Role::TextMuted, "gpu —  (no gpu source)")];
@@ -418,10 +443,7 @@ fn gpu_line(cx: &RenderCx<'_>) -> Line {
         Span::new(Role::Text, f(fan, "%")),
         Span::new(Role::TextMuted, " · "),
         Span::new(Role::Text, f(power, " W")),
-        Span::new(
-            Role::TextMuted,
-            "  (from the gpu source, never polled twice)",
-        ),
+        Span::new(Role::TextMuted, "  (from the gpu source)"),
     ]
 }
 
@@ -448,7 +470,7 @@ fn full(s: &Sensors, cx: &RenderCx<'_>) -> View {
     if others.is_empty() {
         others.push(Span::new(
             Role::TextMuted,
-            "fans / volts / power: none exported (torch's hwmon lists temperatures only)",
+            "fans / volts / power: no hwmon chip here exports them",
         ));
     }
     let table = if m.temps.is_empty() {
@@ -456,14 +478,18 @@ fn full(s: &Sensors, cx: &RenderCx<'_>) -> View {
     } else {
         table_view(s, cx, table_rows(&m.temps, true))
     };
+    let rows = u16::try_from(m.temps.len().saturating_add(1)).unwrap_or(u16::MAX);
     View::Stack {
         dir: Dir::V,
         children: vec![
-            (Constraint::Fill(1), table),
+            // The table takes its rows, not the whole tile: the RAPL, PSI
+            // and gpu lines belong under the data (review).
+            (Constraint::Len(rows.min(cx.inner.height)), table),
             (Constraint::Len(1), View::Text(vec![others])),
             (Constraint::Len(1), View::Text(vec![rapl_line(s)])),
             (Constraint::Len(1), View::Text(vec![psi_line(cx)])),
             (Constraint::Len(1), View::Text(vec![gpu_line(cx)])),
+            (Constraint::Fill(1), View::Empty),
         ],
     }
 }

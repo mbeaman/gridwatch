@@ -45,10 +45,10 @@ view:
                 s: " · "
               - bold: false
                 role: TextMuted
-                s: "nvme#3 "
+                s: "k10temp "
               - bold: true
                 role: Text
-                s: 37°
+                s: 53°
       - - Len(1)
         - gauge:
             gradient: Temp

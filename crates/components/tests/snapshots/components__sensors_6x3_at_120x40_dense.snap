@@ -14,8 +14,8 @@ view:
               - chip
               - sensor
               - value
-              - max
-              - of max
+              - limit
+              - of lim
             rows:
               - - spd5118
                 - temp1
@@ -37,51 +37,51 @@ view:
                 - 46.8°C
                 - 84°
                 - " 56 %"
-              - - "nvme#3"
-                - Composite
-                - 37.2°C
-                - 75°
-                - " 50 %"
+              - - k10temp
+                - Tctl
+                - 52.9°C
+                - ~95°
+                - " 56 %"
+              - - k10temp
+                - Tccd1
+                - 50.2°C
+                - ~95°
+                - " 53 %"
+              - - nvme
+                - Sensor 2
+                - 52.8°C
+                - ~100°
+                - " 53 %"
+              - - nvme
+                - Sensor 1
+                - 51.4°C
+                - ~100°
+                - " 51 %"
+              - - mt7925_phy0
+                - temp1
+                - 50.6°C
+                - ~100°
+                - " 51 %"
+              - - k10temp
+                - Tccd2
+                - 48.0°C
+                - ~95°
+                - " 51 %"
               - - "r8169_0_c00:00"
                 - temp1
                 - 55.2°C
                 - 110°
+                - " 50 %"
+              - - "nvme#3"
+                - Composite
+                - 37.2°C
+                - 75°
                 - " 50 %"
               - - "r8169_0_b00:00"
                 - temp1
                 - 58.2°C
                 - 120°
                 - " 49 %"
-              - - k10temp
-                - Tctl
-                - 52.9°C
-                - —
-                - ""
-              - - nvme
-                - Sensor 2
-                - 52.8°C
-                - —
-                - ""
-              - - nvme
-                - Sensor 1
-                - 51.4°C
-                - —
-                - ""
-              - - mt7925_phy0
-                - temp1
-                - 50.6°C
-                - —
-                - ""
-              - - k10temp
-                - Tccd1
-                - 50.2°C
-                - —
-                - ""
-              - - k10temp
-                - Tccd2
-                - 48.0°C
-                - —
-                - ""
             scroll: 0
             selected: ~
             sort: ~

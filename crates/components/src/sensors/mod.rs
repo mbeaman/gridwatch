@@ -124,6 +124,11 @@ pub struct Options {
 
 pub const OPTION_NAMES: &[&str] = &["chips", "sort"];
 
+/// A reading older than this is not shown: the store has no retraction, so
+/// a removed NVMe would otherwise stay "hottest" for ever (review). Three
+/// times the source's 1 s cadence, with room for a slow re-walk.
+pub const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// One temperature reading as the tile sees it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reading {
@@ -136,7 +141,38 @@ pub struct Reading {
     pub crit: Option<f64>,
 }
 
+/// The limit assumed for a chip that exports none, so a reading without a
+/// threshold can still be ranked (review: k10temp exports no `max`, and
+/// ranking by the margin alone hid the CPU behind every DIMM). AMD documents
+/// Tctl's ceiling at 95 °C; anything else gets a conservative 100 °C.
+pub fn assumed_limit(chip: &str, label: &str) -> f64 {
+    if chip.starts_with("k10temp") || label.starts_with("Tctl") || label.starts_with("Tccd") {
+        95.0
+    } else {
+        100.0
+    }
+}
+
 impl Reading {
+    /// The threshold this reading is judged against: the chip's own `max`,
+    /// else the assumed one.
+    pub fn limit(&self) -> f64 {
+        self.max
+            .filter(|m| m.is_finite() && *m > 0.0)
+            .unwrap_or_else(|| assumed_limit(&self.chip, &self.label))
+    }
+
+    /// True when the limit is this crate's assumption, not the chip's.
+    pub fn assumed(&self) -> bool {
+        self.max.is_none()
+    }
+
+    /// How close to its limit, 0..: **the rank**. The column the table
+    /// prints is this number, so the order is visible (review).
+    pub fn heat(&self) -> f64 {
+        self.value / self.limit()
+    }
+
     /// Over the chip's `max`; `crit` when it exports one and the value is
     /// past it.
     pub fn over_max(&self) -> bool {
@@ -147,16 +183,14 @@ impl Reading {
         self.crit.is_some_and(|c| self.value >= c)
     }
 
-    /// The margin to `max` in °C (the sort key for "hottest": the smallest
-    /// margin first, then the highest value).
+    /// The margin to its limit in °C (shown; no longer the sort key).
     pub fn margin(&self) -> f64 {
-        self.max.map(|m| m - self.value).unwrap_or(f64::INFINITY)
+        self.limit() - self.value
     }
 
-    /// Value / max as a fraction for the bar; without a max, value / 100.
+    /// The bar's fraction: the same `heat` the order uses, capped at 1.5.
     pub fn frac(&self) -> f32 {
-        let den = self.max.unwrap_or(100.0).max(1.0);
-        (self.value / den).clamp(0.0, 1.5) as f32
+        self.heat().clamp(0.0, 1.5) as f32
     }
 }
 
@@ -166,6 +200,19 @@ pub struct Other {
     pub kind: &'static str,
     pub key: String,
     pub value: f64,
+}
+
+/// Hottest first: anything past its critical threshold, then past its max,
+/// then by how close it is to its limit, then by the raw value. A reading
+/// whose chip exports no threshold is ranked against `assumed_limit`, so a
+/// 62 °C `Tctl` outranks a 44 °C DIMM at 55 °C max (review).
+pub fn hottest_first(a: &Reading, b: &Reading) -> std::cmp::Ordering {
+    b.over_crit()
+        .cmp(&a.over_crit())
+        .then(b.over_max().cmp(&a.over_max()))
+        .then(b.heat().total_cmp(&a.heat()))
+        .then(b.value.total_cmp(&a.value))
+        .then(a.key.cmp(&b.key))
 }
 
 #[derive(Clone, Debug, Default)]
@@ -197,7 +244,13 @@ fn glob(pattern: &str, name: &str) -> bool {
 impl Model {
     /// Derive from the store: every `sensor.temp_c` label with its
     /// thresholds; fans/volts/power; the inventory.
-    pub fn refresh(&mut self, store: &gridwatch_store::Store, chips: &[String], sort: Sort) {
+    pub fn refresh(
+        &mut self,
+        store: &gridwatch_store::Store,
+        chips: &[String],
+        sort: Sort,
+        now: Ts,
+    ) {
         let allowed = |chip: &str| chips.is_empty() || chips.iter().any(|p| glob(p, chip));
         let labels: Vec<Label> = store.labels(sensors::TEMP_C.id.name).cloned().collect();
         self.temps.clear();
@@ -210,9 +263,14 @@ impl Model {
             }
             let Label::Name(name) = &l else { continue };
             let key = sensors::TEMP_C.named(name);
-            let Some((_, value)) = store.last(&key) else {
+            let Some((at, value)) = store.last(&key) else {
                 continue;
             };
+            // A chip that stopped answering keeps its last value in the
+            // store for ever; the tile drops it instead (review).
+            if now.since(at) > STALE_AFTER || !value.is_finite() {
+                continue;
+            }
             self.temps.push(Reading {
                 key: name.to_string(),
                 max: store.last(&sensors::MAX_C.named(name)).map(|(_, v)| v),
@@ -223,16 +281,7 @@ impl Model {
             });
         }
         match sort {
-            Sort::Hottest => self.temps.sort_by(|a, b| {
-                a.margin()
-                    .partial_cmp(&b.margin())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then(
-                        b.value
-                            .partial_cmp(&a.value)
-                            .unwrap_or(std::cmp::Ordering::Equal),
-                    )
-            }),
+            Sort::Hottest => self.temps.sort_by(hottest_first),
             Sort::Chip => self.temps.sort_by(|a, b| a.key.cmp(&b.key)),
         }
         self.others.clear();
@@ -256,35 +305,16 @@ impl Model {
         self.info = store.record(&sensors::INFO).map(|(_, i)| i.clone());
     }
 
-    /// The hottest reading (the first after the sort, when sorted hottest;
-    /// else the smallest margin).
+    /// The hottest reading, whatever the tile's sort is.
     pub fn hottest(&self) -> Option<&Reading> {
-        self.temps.iter().min_by(|a, b| {
-            a.margin()
-                .partial_cmp(&b.margin())
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(
-                    b.value
-                        .partial_cmp(&a.value)
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                )
-        })
+        self.temps.iter().min_by(|a, b| hottest_first(a, b))
     }
 
     /// One reading per chip, hottest first (the strip).
     pub fn per_chip(&self) -> Vec<&Reading> {
         let mut out: Vec<&Reading> = Vec::new();
         let mut sorted: Vec<&Reading> = self.temps.iter().collect();
-        sorted.sort_by(|a, b| {
-            a.margin()
-                .partial_cmp(&b.margin())
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(
-                    b.value
-                        .partial_cmp(&a.value)
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                )
-        });
+        sorted.sort_by(|a, b| hottest_first(a, b));
         for r in sorted {
             if !out.iter().any(|o| o.chip == r.chip) {
                 out.push(r);
@@ -374,7 +404,8 @@ impl Component for Sensors {
             return Redraw::No;
         }
         self.seen = Some(at);
-        self.model.refresh(cx.store, &self.options.chips, self.sort);
+        self.model
+            .refresh(cx.store, &self.options.chips, self.sort, cx.now);
         Redraw::Yes
     }
 
@@ -390,7 +421,8 @@ impl Component for Sensors {
             }
             KeyCode::Char('o') => {
                 self.sort = self.sort.next();
-                self.model.refresh(cx.store, &self.options.chips, self.sort);
+                self.model
+                    .refresh(cx.store, &self.options.chips, self.sort, cx.store.latest());
                 self.scroll = 0;
                 Outcome::Consumed
             }

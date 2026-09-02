@@ -12,7 +12,7 @@ view:
         - text:
             - - bold: false
                 role: TextMuted
-                s: "spd5118 temp1 "
+                s: "spd5118 temp "
               - bold: true
                 role: Text
                 s: 41°
