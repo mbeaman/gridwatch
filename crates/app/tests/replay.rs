@@ -264,3 +264,63 @@ fn the_overload_fixture_raises_the_banner_on_page_two_at_the_scripted_instant() 
     let (b, _, _) = replay_once(&path, 250, 70);
     assert_eq!(a, b, "alerts in the stream keep the replay deterministic");
 }
+
+/// Arc 5a: `torch-audio.jsonl` (60 s live on torch, `--record`, nothing
+/// playing — the silence path) replays deterministically: the bands arrive
+/// at the silence cadence, the level Record opens silent, the sink is named,
+/// and page 2 at 30 s draws the audio tile's axis with its `silent` note.
+#[test]
+fn the_audio_fixture_replays_the_silence_path_deterministically() {
+    use gridwatch_store::keys::audio;
+    let path = fixture("torch-audio.jsonl");
+    let replay = gridwatch_store::Replay::load(&path).expect("fixture loads");
+    let header = replay.header.as_ref().expect("header");
+    assert!(
+        header.sources.iter().any(|s| s == "audio"),
+        "{:?}",
+        header.sources
+    );
+    let mut bands = 0;
+    let mut levels: Vec<(Ts, bool)> = Vec::new();
+    let mut sinks = 0;
+    for (t, m) in &replay.entries {
+        if let Msg::Batch(b) = m
+            && b.source == audio::SOURCE
+        {
+            for s in &b.samples {
+                match s.id.name {
+                    "audio.bands" => bands += 1,
+                    "audio.sink" => sinks += 1,
+                    "audio.level" => {
+                        if let gridwatch_store::Datum::Record(r) = &s.datum {
+                            let l = r
+                                .as_any()
+                                .downcast_ref::<audio::AudioLevel>()
+                                .expect("an AudioLevel");
+                            levels.push((*t, l.silent));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    // Two channels per tick at 2 Hz for 60 s ≈ 240; anything above 100 is
+    // the silence cadence doing its job (the sound path would be ≈ 3 600).
+    assert!(bands >= 100, "bands samples: {bands}");
+    assert!(
+        sinks >= 1,
+        "the sink Record is published once per generation"
+    );
+    assert!(!levels.is_empty(), "the level Record");
+    assert!(levels[0].1, "opens silent: {levels:?}");
+    let a =
+        gridwatch_app::shot_replay(registry(), &path, 30.0, 250, 70, "mono", 2, "cells").unwrap();
+    let b =
+        gridwatch_app::shot_replay(registry(), &path, 30.0, 250, 70, "mono", 2, "cells").unwrap();
+    assert_eq!(hash(&a), hash(&b), "two shots of the fixture differ");
+    assert!(a.contains("Hz"), "the axis on page 2:\n{a}");
+    if levels.iter().all(|(_, s)| *s) {
+        assert!(a.contains("silent"), "the silence note:\n{a}");
+    }
+}
