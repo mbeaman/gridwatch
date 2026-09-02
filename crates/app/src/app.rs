@@ -39,6 +39,11 @@ const TOAST_TTL: Duration = Duration::from_secs(4);
 
 struct Instance {
     kind: String,
+    /// Seam 5 (arc 5): the last drawn tick returned `Redraw::Yes` under an
+    /// `Animated` policy — cleared at the top of every frame, so only
+    /// visible, drawn tiles count.
+    animated: bool,
+    anim_fps: u8,
     /// The `[[components]] options` it was built with: a reload keeps an
     /// instance whose `(kind, options)` did not change (§9).
     options: toml::Table,
@@ -63,6 +68,10 @@ pub type Controls = BTreeMap<&'static str, Arc<dyn Fn(Control) + Send + Sync>>;
 #[derive(Clone, PartialEq)]
 struct CacheKey {
     gens: Vec<u64>,
+    /// The animation frame (§5): `self.frame` while the tile is `Animated`
+    /// and moving, else 0 — so an animated tile re-renders every frame and a
+    /// quiet one never does.
+    anim: u64,
     tier: usize,
     w: u16,
     h: u16,
@@ -168,6 +177,7 @@ pub struct Shell {
     clock: Clock,
     prev_buf: Option<Buffer>,
     fps: u16,
+    fps_max: u16,
     unfocused_fps: u16,
     pub stats_log: Option<std::path::PathBuf>,
     view_warnings: Vec<String>,
@@ -259,6 +269,7 @@ impl Shell {
             clock,
             prev_buf: None,
             fps: loaded.config.fps,
+            fps_max: loaded.config.fps_max,
             unfocused_fps: loaded.config.perf.unfocused_fps,
             stats_log: None,
             view_warnings,
@@ -395,6 +406,7 @@ impl Shell {
         self.grid = loaded.grid;
         self.pages = loaded.pages.clone();
         self.fps = loaded.config.fps; // as at start; `set_fps` is the CLI's clamp
+        self.fps_max = loaded.config.fps_max;
         self.unfocused_fps = loaded.config.perf.unfocused_fps;
         if self.page >= self.pages.len() {
             self.page = 0;
@@ -794,17 +806,27 @@ impl Shell {
         }
     }
 
+    /// Seam 5 (§5): a visible, drawn tile whose `Animated` tick returned
+    /// `Redraw::Yes` this frame, or the effects/ambient layers (arc 4b).
     pub fn animated_visible(&self) -> bool {
-        // arc 5: the audio tile reports Animated; until then the effects
-        // layer and the ambient layer animate (arc 4b).
-        self.effects_running()
+        self.effects_running() || self.animated_tile_fps().is_some()
+    }
+
+    /// The highest fps among the animating tiles, capped by `fps_max`.
+    pub fn animated_tile_fps(&self) -> Option<u16> {
+        self.instances
+            .values()
+            .filter(|i| i.animated)
+            .map(|i| u16::from(i.anim_fps).max(1))
+            .max()
+            .map(|f| f.min(self.fps_max.max(1)))
     }
 
     pub fn effective_fps(&self) -> u16 {
         if !self.terminal_focused {
             return self.unfocused_fps.max(1);
         }
-        match &self.ambient {
+        let layers = match &self.ambient {
             // The rain runs at its own (governed) fps, not the config's.
             Some(a) if self.ambient_active() => u16::from(a.fps()),
             // An event effect gets the full rate for its ≤ 600 ms; the
@@ -812,6 +834,13 @@ impl Shell {
             _ if self.effects.running_event() => self.fps,
             _ if self.effects.running() => crate::effects::PULSE_FPS,
             _ => self.fps,
+        };
+        // An animating tile raises the rate to what it asks for (≤ fps_max);
+        // nothing here lowers what a layer already needs.
+        match self.animated_tile_fps() {
+            Some(t) if self.effects_running() || self.ambient_active() => layers.max(t),
+            Some(t) => t,
+            None => layers,
         }
     }
 
@@ -855,6 +884,10 @@ impl Shell {
     pub fn draw_frame(&mut self, area: Rect, buf: &mut Buffer) {
         self.frame += 1;
         self.last_area = area;
+        // Seam 5: only the tiles drawn this frame may report animation.
+        for i in self.instances.values_mut() {
+            i.animated = false;
+        }
         self.check_recorder();
         let t_bg = self.theme.color(Role::Bg);
         for y in area.y..area.y + area.height {
@@ -1540,11 +1573,19 @@ impl Shell {
                 visible: true,
                 tier,
             };
-            component.tick(&tick_cx);
-            component.view(&render_cx)
+            let redraw = component.tick(&tick_cx);
+            let anim = match component.redraw_policy() {
+                gridwatch_ui::component::RedrawPolicy::Animated { fps }
+                    if redraw == gridwatch_ui::component::Redraw::Yes =>
+                {
+                    Some(fps)
+                }
+                _ => None,
+            };
+            (anim, component.view(&render_cx))
         }));
         crate::terminal::CONTAINED.with(|f| f.set(false));
-        let view = match viewed {
+        let (anim, view) = match viewed {
             Ok(v) => v,
             Err(_) => {
                 self.disable_instance(&key);
@@ -1553,18 +1594,27 @@ impl Shell {
             }
         };
         let m = component.manifest();
+        // Seam 5: the tile's animation state for this frame (read by the
+        // frame loop through `animated_visible`/`effective_fps`).
+        inst.animated = anim.is_some();
+        inst.anim_fps = anim.unwrap_or(0);
+        let frame = self.frame;
         let gens: Vec<u64> = m
             .sources
             .iter()
             .chain(m.optional_sources)
             .map(|s| self.store.generation(*s))
             .collect();
-        // (§5: an `animation frame` term joins this key with `Animated` in arc 5.)
-        // The fingerprint serialises the whole tree (0.11 ms at the table
-        // tier), so it is only computed when the cheap terms already match:
-        // a moved generation forces the render regardless.
+        // §5: the animation-frame term — `self.frame` while the tile is
+        // `Animated` and moving, else 0 — so an animated tile re-renders
+        // every frame and a quiet one never does; the fingerprint stays the
+        // backstop. The fingerprint serialises the whole tree (0.11 ms at
+        // the table tier), so it is only computed when the cheap terms
+        // already match: a moved generation forces the render regardless.
+        let anim_term = if anim.is_some() { frame } else { 0 };
         let cheap_match = self.cache.get(&cell.index).is_some_and(|(k, _)| {
             k.gens == gens
+                && k.anim == anim_term
                 && k.tier == tier
                 && k.w == inner.width
                 && k.h == inner.height
@@ -1579,6 +1629,7 @@ impl Shell {
         };
         let cache_key = CacheKey {
             gens,
+            anim: anim_term,
             tier,
             w: inner.width,
             h: inner.height,
@@ -1714,6 +1765,27 @@ impl Shell {
                     .map(|(_, i)| Duration::from_millis(u64::from(i.interval_ms)))
             })
             .flatten();
+        if id == gridwatch_store::keys::audio::SOURCE.0 {
+            // Arc 5: the audio source runs at `[sources.audio] fps` while
+            // there is sound and at 2 Hz under the silence rule — a silent
+            // sink is not a stale one.
+            let fps = self
+                .source_options
+                .get(id)
+                .and_then(|t| t.get("fps"))
+                .and_then(|v| v.as_integer())
+                .map(|f| Duration::from_millis(1000 / (f.clamp(5, 60) as u64)))
+                .unwrap_or(visible);
+            let silent = self
+                .store
+                .record(&gridwatch_store::keys::audio::LEVEL)
+                .is_some_and(|(_, l)| l.silent);
+            return Some(if silent {
+                fps.max(Duration::from_millis(500))
+            } else {
+                fps
+            });
+        }
         Some(live.or(configured).unwrap_or(visible))
     }
 
@@ -2876,6 +2948,8 @@ fn build_instance(
     caps: &CapSet,
 ) -> Instance {
     let mk = |component, reason: String, hint: String| Instance {
+        animated: false,
+        anim_fps: 0,
         kind: kind.to_string(),
         options: options.clone(),
         component,
@@ -2913,6 +2987,8 @@ fn build_instances(
     // A stand-in for an instance the caller is about to replace with the one
     // it kept: same kind and options, never drawn.
     let stand_in = |kind: &str, options: &toml::Table| Instance {
+        animated: false,
+        anim_fps: 0,
         kind: kind.to_string(),
         options: options.clone(),
         component: None,
@@ -3225,10 +3301,13 @@ pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
     let mut synth = gridwatch_store::demo::CpuSynth::new(seed);
     let mut gpu = gridwatch_store::demo::GpuSynth::new(seed);
     let mut pins = gridwatch_store::demo::PinsSynth::new(seed);
+    let mut audio = gridwatch_store::demo::AudioSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let b = synth.tick_at(at, Detail::Table);
         shell.store.apply(&Msg::Batch(b));
+        // The audio synth (arc 5a): silent for its first 1.5 s, then the song.
+        shell.store.apply(&Msg::Batch(audio.tick_at(at)));
         // Every synth, as `--demo` runs every source (arcs 2b, 3a); the pins
         // synth's scripted alert events go through `apply_control` so the
         // banner and the toasts see them exactly as the frame loop would.
@@ -3247,6 +3326,7 @@ pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
                 gridwatch_store::keys::cpu::SOURCE,
                 gridwatch_store::keys::gpu::SOURCE,
                 gridwatch_store::keys::pins::SOURCE,
+                gridwatch_store::keys::audio::SOURCE,
             ] {
                 shell.store.apply(&Msg::Control(ControlMsg::Status(
                     src,

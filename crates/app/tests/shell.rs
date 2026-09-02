@@ -918,14 +918,15 @@ fn stale_sources_are_badged_after_three_cadences() {
     sh.set_clock(Ts(60_000_000_000));
     let fresh = page_text(&mut sh, 250, 70);
     assert!(!fresh.contains("stale"), "{fresh}");
-    // 4 s later: the cpu source (1.5 s visible → 4.5 s) is not stale yet,
-    // the gpu (0.5 s → 1.5 s) and pins (0.5 s → 1.5 s) are.
+    // 4 s later: the cpu source (1.5 s visible → 4.5 s) is not stale yet;
+    // the gpu (0.5 s → 1.5 s), pins (0.5 s → 1.5 s) and audio (33 ms, or
+    // 500 ms while silent → 1.5 s; arc 5) are.
     sh.set_clock(Ts(64_000_000_000));
     let partly = page_text(&mut sh, 250, 70);
-    assert_eq!(partly.matches("stale 4s").count(), 2, "{partly}");
+    assert_eq!(partly.matches("stale 4s").count(), 3, "{partly}");
     sh.set_clock(Ts(70_000_000_000));
     let all = page_text(&mut sh, 250, 70);
-    assert_eq!(all.matches("stale 10s").count(), 3, "{all}");
+    assert_eq!(all.matches("stale 10s").count(), 4, "{all}");
     // Dimmed: the cpu tile's cells are drawn in the muted role — in mono
     // that is `Reset` either way, so check the badge style instead.
     let frame = shot_frame(&mut sh, 250, 70);
@@ -997,10 +998,11 @@ fn stale_threshold_follows_the_configured_cadence() {
     );
     gridwatch_app::feed_synth(&mut sh, 42, 40);
     // 4 s past the last sample: gpu (4 s → 12 s threshold) is fresh, pins
-    // (0.5 s → 1.5 s) is stale, cpu (1.5 s → 4.5 s) not yet.
+    // (0.5 s → 1.5 s) and audio (33 ms → 100 ms) are stale, cpu (1.5 s →
+    // 4.5 s) not yet.
     sh.set_clock(Ts(64_000_000_000));
     let text = page_text(&mut sh, 250, 70);
-    assert_eq!(text.matches("stale 4s").count(), 1, "{text}");
+    assert_eq!(text.matches("stale 4s").count(), 2, "{text}");
     // The badge is on the border row (row 1 of the pins tile's frame), and
     // no data row lost its right end: the pins tile's top-right value.
     let frame = shot_frame(&mut sh, 250, 70);
@@ -1033,7 +1035,12 @@ fn stale_threshold_follows_the_configured_cadence() {
         },
     ));
     let text = page_text(&mut sh, 250, 70);
-    assert!(!text.contains("stale"), "{text}");
+    // Only the audio tile's badge remains (its 33 ms cadence, arc 5).
+    assert_eq!(text.matches("stale").count(), 1, "{text}");
+    assert!(
+        !text.contains("pins ─stale") && !text.contains("pins ━stale"),
+        "{text}"
+    );
 }
 
 /// Review (arc 3b): under `--replay` the journal drives the virtual clock and
@@ -1059,8 +1066,8 @@ fn a_finished_replay_goes_stale_in_real_time() {
     ));
     std::thread::sleep(std::time::Duration::from_millis(1700));
     let text = page_text(&mut sh, 250, 70);
-    // gpu and pins (1.5 s thresholds) are stale after 1.7 s of real time.
-    assert_eq!(text.matches("stale 1s").count(), 2, "{text}");
+    // gpu, pins and audio (1.5 s thresholds) are stale after 1.7 s of real time.
+    assert_eq!(text.matches("stale 1s").count(), 3, "{text}");
 }
 
 /// Review (arc 3b): resuming from a pause does not flash STALE while the
