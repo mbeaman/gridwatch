@@ -10,8 +10,8 @@ every line is what `gridwatch run --record` writes and nothing else:
 
 | file | recorded | what the box was doing | lines | size |
 |---|---|---|---|---|
-| `torch-idle.jsonl` | 2026-09-01, arc 2a | idle desktop, Ptyxis, no game; the Overview's cpu tile focused (500 ms cadence) | 129 | 710 KB |
-| `torch-game.jsonl` | **owed** | a game running — Matt starts it; an agent must not (MACHINE.md) | — | — |
+| `torch-idle.jsonl` | 2026-09-01, arc 2b (re-recorded with the gpu source; 2a's cpu-only file replaced) | idle desktop, Ptyxis, no game; the Overview's cpu tile focused (500 ms cadence), the gpu tile visible (500 ms fast tier, 1 s slow tier) | see `wc -l` | — |
+| `torch-game.jsonl` | **owed** | a game running — Matt starts it; an agent must not (MACHINE.md). No game was up during 2a or 2b | — | — |
 
-Session 2b re-records both with the gpu source and replaces them (brief 2a task 6).
+Record the game fixture with the same command, `torch-game.jsonl` in place of `torch-idle.jsonl`, while the game runs.
 Validated line by line against `schema/journal.schema.json` by `scripts/check-schemas.py`.
