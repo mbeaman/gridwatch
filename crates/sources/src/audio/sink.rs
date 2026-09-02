@@ -55,7 +55,12 @@ pub fn parse_dump(json: &str) -> Result<Dump, String> {
     for o in objects {
         let ty = o.get("type").and_then(Value::as_str).unwrap_or("");
         let info = o.get("info").unwrap_or(&Value::Null);
-        let props = info.get("props").unwrap_or(&Value::Null);
+        // Nodes carry their props under `info`; a Metadata object carries
+        // them at the top level (verified on torch's pw-dump, 1.6.2).
+        let props = info
+            .get("props")
+            .or_else(|| o.get("props"))
+            .unwrap_or(&Value::Null);
         match ty {
             "PipeWire:Interface:Node" => {
                 if prop(props, "media.class").and_then(Value::as_str) != Some("Audio/Sink") {
@@ -151,7 +156,7 @@ pub(crate) const EXCERPT: &str = r#"[
     "info": { "state": "running",
       "props": { "object.serial": 80, "media.class": "Stream/Output/Audio", "node.name": "firefox" } } },
   { "id": 33, "type": "PipeWire:Interface:Metadata", "version": 3,
-    "info": { "props": { "metadata.name": "default" } },
+    "props": { "metadata.name": "default" },
     "metadata": [
       { "subject": 0, "key": "default.configured.audio.sink", "type": "Spa:String:JSON", "value": { "name": "alsa_output.pci-0000_0d_00.4.analog-stereo" } },
       { "subject": 0, "key": "default.audio.sink", "type": "Spa:String:JSON", "value": { "name": "alsa_output.usb-Generic_USB_Audio-00.HiFi__Headphones__sink" } },

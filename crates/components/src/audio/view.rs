@@ -294,7 +294,13 @@ fn full(a: &Audio, cx: &RenderCx<'_>) -> View {
         Span::new(
             Role::TextMuted,
             a.sink()
-                .map(|s| format!(" (serial {}, {} Hz, {})", s.serial, s.rate, s.state))
+                .map(|s| {
+                    if s.rate > 0 {
+                        format!(" (serial {}, {} Hz, {})", s.serial, s.rate, s.state)
+                    } else {
+                        format!(" (serial {}, {})", s.serial, s.state)
+                    }
+                })
                 .unwrap_or_default(),
         ),
     ];
