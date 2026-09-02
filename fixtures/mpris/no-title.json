@@ -1,0 +1,5 @@
+{
+  "mpris:trackid": {"str": "/org/mpris/MediaPlayer2/vlc/playlist/3"},
+  "xesam:url": {"str": "file:///home/mattbeam/music/track.mp3"},
+  "mpris:length": {"int": 214000000}
+}

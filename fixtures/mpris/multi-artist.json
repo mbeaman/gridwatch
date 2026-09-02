@@ -1,0 +1,8 @@
+{
+  "mpris:trackid": {"str": "/org/mpris/MediaPlayer2/player/track/7"},
+  "xesam:title": {"str": "Dayvan Cowboy"},
+  "xesam:artist": {"strs": ["Boards of Canada", "Autechre"]},
+  "xesam:album": {"str": "The Campfire Headphase"},
+  "mpris:artUrl": {"str": "data:image/png;base64,iVBORw0KGgo="},
+  "mpris:length": {"int": 302000000}
+}

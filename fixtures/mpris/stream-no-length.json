@@ -1,0 +1,6 @@
+{
+  "mpris:trackid": {"str": "/org/mpris/MediaPlayer2/firefox"},
+  "xesam:title": {"str": "Groove Salad: a nicely chilled plate of ambient beats"},
+  "xesam:artist": {"strs": ["SomaFM"]},
+  "xesam:url": {"str": "https://ice1.somafm.com/groovesalad-256-mp3"}
+}

@@ -1,0 +1,9 @@
+{
+  "mpris:trackid": {"str": "/org/mpris/MediaPlayer2/firefox"},
+  "xesam:title": {"str": "Probably Stolen ROCK BOTTOM: The First Crate Of Many (Days 51-65)"},
+  "xesam:album": {"str": ""},
+  "xesam:artist": {"strs": ["CthuLuck"]},
+  "mpris:artUrl": {"str": "file:///home/mattbeam/snap/firefox/common/.mozilla/firefox/firefox-mpris/9649_107.png"},
+  "xesam:url": {"str": "https://www.youtube.com/watch?v=wkWwIgUmtrk"},
+  "mpris:length": {"int": 7170000000}
+}

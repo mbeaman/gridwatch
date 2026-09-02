@@ -30,6 +30,31 @@ fn exemplar(name: &str) -> Option<Arc<dyn RecordValue>> {
         "gpu.procs" => Arc::new(demo::gpu_procs(3, 3)),
         "pins.info" => Arc::new(demo::pins_info()),
         "sensor.info" => Arc::new(demo::sensors_info()),
+        "media.now" => Arc::new(demo::MediaSynth::now_at(Ts(5_000_000_000))),
+        "media.players" => Arc::new(gridwatch_store::keys::media::Players {
+            list: vec![gridwatch_store::keys::media::PlayerInfo {
+                bus: gridwatch_store::demo::MEDIA_BUS.into(),
+                identity: "Demo Player".into(),
+                status: gridwatch_store::keys::media::PlayStatus::Playing,
+                is_current: true,
+            }],
+        }),
+        // A 2x1 cover keeps the journal line small; the real Record is
+        // 64x64 (the synth) or up to 256 px (the source).
+        "media.art" => Arc::new(gridwatch_store::keys::media::Art {
+            track: 7,
+            w: 2,
+            h: 1,
+            rgb: vec![1, 2, 3, 4, 5, 6],
+        }),
+        "media.history" => Arc::new(gridwatch_store::keys::media::History {
+            tracks: vec![gridwatch_store::keys::media::HistoryItem {
+                track: 7,
+                title: "Short Interlude".into(),
+                artist: "Demo Set".into(),
+                at: Ts(1_000_000_000),
+            }],
+        }),
         "audio.sink" => Arc::new(demo::audio_sink()),
         "audio.sinks" => Arc::new(audio::AudioSinks {
             sinks: vec![demo::audio_sink()],
