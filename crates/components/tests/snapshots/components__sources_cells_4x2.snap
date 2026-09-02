@@ -3,7 +3,7 @@ source: crates/components/tests/components.rs
 expression: "gridwatch_ui::dump::cells(&buf)"
 ---
 [#cdd6f4/-/REVERSED]SRC     [-/-/NONE] [#cdd6f4/-/REVERSED]STATE      [-/-/NONE] [#cdd6f4/-/REVERSED]   GEN[-/-/NONE] [#cdd6f4/-/REVERSED]   AGE[-/-/NONE] [#cdd6f4/-/REVERSED] DROP[-/-/NONE] [#cdd6f4/-/REVERSED]RST[-/-/NONE] [#cdd6f4/-/REVERSED]NOTE                               
-[#cdd6f4/-/NONE]cpu[-/-/NONE]      [#89dceb/-/NONE]starting[-/-/NONE]         [#cdd6f4/-/NONE]3[-/-/NONE]     [#a6adc8/-/NONE]0s[-/-/NONE]     [#a6adc8/-/NONE]0[-/-/NONE]   [#a6adc8/-/NONE]0[-/-/NONE]                                    
+[#cdd6f4/-/NONE]cpu[-/-/NONE]      [#89dceb/-/NONE]starting[-/-/NONE]         [#cdd6f4/-/NONE]3[-/-/NONE]     [#a6adc8/-/NONE]0s[-/-/NONE]     [#a6adc8/-/NONE]0[-/-/NONE]   [#a6adc8/-/NONE]0[-/-/NONE] [#313244/-/NONE]scan 6.5 ms[-/-/NONE]                        
 [-/-/NONE]                                                                                
 [-/-/NONE]                                                                                
 [-/-/NONE]                                                                                

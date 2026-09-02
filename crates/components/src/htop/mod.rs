@@ -3,23 +3,26 @@
 //! number comes from the cpu source through the store; the component never
 //! reads a file, names a colour or picks a glyph (§4.6).
 //!
-//! Arc 1b ships `tiny` → `cores`; the top-N process table (`table`) and htop's
-//! whole Main screen (`full`, zoom-only) arrive in arcs 2 and 8 with the
-//! pid-level scan behind `Detail::Table` (§8.1).
+//! Arc 1b shipped `tiny` → `cores`; arc 2a adds the top-N process table
+//! (`table`, min 56×18) over the pid-level scan behind `Detail::Table`
+//! (§8.1). htop's whole Main screen (`full`, zoom-only) is arc 8.
 
-mod format;
+pub mod format;
+pub mod table;
 mod view;
 
 use std::borrow::Cow;
 
-use gridwatch_store::Detail;
 use gridwatch_store::keys::cpu;
+use gridwatch_store::{Detail, KeyCode, KeyEvent};
 use gridwatch_ui::component::{
-    BuildCx, BuildError, Chrome, Component, ComponentDef, Footprint, KeyHint, Manifest, Redraw,
-    RenderCx, Size, TickCx, Tier,
+    BuildCx, BuildError, Chrome, Component, ComponentDef, Footprint, InputCx, KeyHint, Manifest,
+    Outcome, Redraw, RenderCx, Size, TickCx, Tier,
 };
 use gridwatch_ui::view::View;
 use serde::{Deserialize, Serialize};
+
+use table::{Col, Derived};
 
 pub static MANIFEST: Manifest = Manifest {
     kind: "htop",
@@ -41,10 +44,20 @@ pub static MANIFEST: Manifest = Manifest {
     sources: &[cpu::SOURCE],
     optional_sources: &[],
     chrome: Chrome::Themed,
-    keys: &[KeyHint {
-        key: "z",
-        does: "zoom (the sortable process table arrives in arc 2)",
-    }],
+    keys: &[
+        KeyHint {
+            key: "↑/↓ j/k PgUp/PgDn Home/End",
+            does: "select a process",
+        },
+        KeyHint {
+            key: "< > F6",
+            does: "sort column",
+        },
+        KeyHint {
+            key: "I",
+            does: "invert the sort",
+        },
+    ],
     example_options: "options = { table_rows = 10, sort = \"cpu\" }",
 };
 
@@ -66,8 +79,9 @@ static TIERS: &[Tier] = &[
     Tier {
         name: "meters",
         min: Size::new(30, 6),
-        // The tasks line always fits; load and uptime are appended per clause
-        // as the tile widens, and the pressure row when a spare line remains.
+        // The tasks line is shortened clause by clause to fit; load and uptime
+        // are appended per clause as the tile widens, and the pressure row
+        // when a spare line remains.
         adds: &["cpu/mem/swap meters", "pids · tasks · load · uptime", "PSI"],
         zoom_only: false,
     },
@@ -77,12 +91,23 @@ static TIERS: &[Tier] = &[
         adds: &["per-core bars in CCD blocks", "MHz", "Tccd"],
         zoom_only: false,
     },
+    // 12 rows of `cores` + a header + htop's five-row floor (§8.1).
+    Tier {
+        name: "table",
+        min: Size::new(56, 18),
+        adds: &["top-N process table", "kthr in the task line"],
+        zoom_only: false,
+    },
 ];
 
 pub const TIER_TINY: usize = 0;
 pub const TIER_BIG_NUMBER: usize = 1;
 pub const TIER_METERS: usize = 2;
 pub const TIER_CORES: usize = 3;
+pub const TIER_TABLE: usize = 4;
+
+/// Rows the tiers below the table occupy inside it (§8.1 `rows_above`).
+pub const ROWS_ABOVE_TABLE: u16 = 12;
 
 /// View-only instance options (§9): every one of htop's grid-relevant settings
 /// parses today; the ones that only matter to the process table are inert until
@@ -174,15 +199,144 @@ impl Options {
 
 pub struct Htop {
     options: Options,
+    /// The enabled columns in htop's order, from `options.columns`.
+    columns: Vec<Col>,
+    derived: Derived,
+    /// The `proc.table` timestamp the rows were derived from: the cpu
+    /// generation moves every meters tick, the table only every scan.
+    table_seen: Option<gridwatch_store::Ts>,
+    sort: Col,
+    desc: bool,
+    /// Selection keyed by PID so a re-sort never moves the cursor (§8.1).
+    selected: Option<i32>,
+    /// First visible row, kept so the cursor moves within the page and the
+    /// page scrolls only at its edges (htop's behaviour).
+    scroll: usize,
 }
 
 impl Htop {
     pub fn new(options: Options) -> Htop {
-        Htop { options }
+        let sort = Col::from_id(&options.sort).unwrap_or(Col::Cpu);
+        let columns = options
+            .columns
+            .iter()
+            .filter_map(|c| Col::from_id(c))
+            .collect();
+        Htop {
+            desc: table::default_dir(sort),
+            sort,
+            columns,
+            derived: Derived::default(),
+            table_seen: None,
+            selected: None,
+            scroll: 0,
+            options,
+        }
     }
 
     pub fn options(&self) -> &Options {
         &self.options
+    }
+
+    /// The sorted, filtered rows as of the last `tick` (tests).
+    pub fn rows(&self) -> &[cpu::ProcRow] {
+        &self.derived.rows
+    }
+
+    pub fn sort(&self) -> (Col, bool) {
+        (self.sort, self.desc)
+    }
+
+    pub fn selected(&self) -> Option<i32> {
+        self.selected
+    }
+
+    pub fn scroll(&self) -> usize {
+        self.scroll
+    }
+
+    /// The body rows a table in `inner` shows on the grid (§8.1's budget);
+    /// the zoomed body is larger, which only makes this a conservative page.
+    fn page_rows(&self, inner_height: u16) -> usize {
+        usize::from(inner_height.saturating_sub(ROWS_ABOVE_TABLE + 1))
+            .min(usize::from(self.options.table_rows))
+            .max(1)
+    }
+
+    /// Keep the selected row inside `[scroll, scroll + rows)`.
+    fn follow_selection(&mut self, rows: usize) {
+        let Some(i) = self
+            .selected
+            .and_then(|pid| self.derived.rows.iter().position(|r| r.pid == pid))
+        else {
+            return;
+        };
+        if i < self.scroll {
+            self.scroll = i;
+        } else if i >= self.scroll + rows {
+            self.scroll = i + 1 - rows;
+        }
+    }
+
+    pub(crate) fn columns(&self) -> &[Col] {
+        &self.columns
+    }
+
+    pub(crate) fn derived(&self) -> &Derived {
+        &self.derived
+    }
+
+    fn resort(&mut self) {
+        let rows = std::mem::take(&mut self.derived.rows);
+        let table = cpu::ProcTable {
+            rows,
+            pid_digits: self.derived.pid_digits,
+        };
+        self.derived
+            .rebuild(&table, &self.options, self.sort, self.desc);
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        let rows = &self.derived.rows;
+        if rows.is_empty() {
+            self.selected = None;
+            return;
+        }
+        let cur = self
+            .selected
+            .and_then(|pid| rows.iter().position(|r| r.pid == pid));
+        // Nothing selected yet (htop always has a row; the grid waits for the
+        // first key): a single step lands on the edge it came from, a page or
+        // an end key does what it says from row 0.
+        let next = match cur {
+            None => match delta {
+                1 => 0,
+                -1 => rows.len() - 1,
+                d if d > 0 => (d as usize).min(rows.len() - 1),
+                _ => 0,
+            },
+            Some(i) => (i as isize + delta).clamp(0, rows.len() as isize - 1) as usize,
+        };
+        self.selected = Some(rows[next].pid);
+    }
+
+    fn cycle_sort(&mut self, step: isize) {
+        let cols = &self.columns;
+        if cols.is_empty() {
+            return;
+        }
+        // A `sort` outside the enabled set (the default set has no `user`)
+        // starts the cycle from before the first column.
+        let cur = cols
+            .iter()
+            .position(|c| *c == self.sort)
+            .map(|i| i as isize)
+            .unwrap_or(if step > 0 { -1 } else { 0 });
+        let n = cols.len() as isize;
+        let next = cols[((cur + step).rem_euclid(n)) as usize];
+        self.sort = next;
+        self.desc = table::default_dir(next);
+        self.resort();
     }
 }
 
@@ -227,16 +381,67 @@ impl Component for Htop {
         TIERS
     }
 
-    /// Every 1b tier is meters-only: the pid-level scan is `Detail::Table` and
-    /// belongs to the `table` tier in arc 2 (§4.3, §8.1).
-    fn demand(&self, _tier: usize) -> Detail {
-        Detail::Meters
+    /// Only the table tier turns on the pid-level scan (§4.3, §8.1); every
+    /// tier below it is meters-only.
+    fn demand(&self, tier: usize) -> Detail {
+        if tier >= TIER_TABLE {
+            Detail::Table
+        } else {
+            Detail::Meters
+        }
     }
 
-    fn tick(&mut self, _cx: &TickCx<'_>) -> Redraw {
-        // Nothing is derived per generation: the view is pure over the store,
-        // and the shell already redraws when the cpu source's generation moves.
-        Redraw::No
+    /// The sorted, filtered rows are derived once per cpu generation (§8.1:
+    /// "the htop component sorts and filters in `tick`; `view` never sorts").
+    fn tick(&mut self, cx: &TickCx<'_>) -> Redraw {
+        let Some((at, table)) = cx.store.record(&cpu::PROC_TABLE) else {
+            return Redraw::No;
+        };
+        if self.table_seen == Some(at) {
+            return Redraw::No;
+        }
+        self.table_seen = Some(at);
+        let old_index = self
+            .selected
+            .and_then(|pid| self.derived.rows.iter().position(|r| r.pid == pid));
+        self.derived
+            .rebuild(table, &self.options, self.sort, self.desc);
+        if let Some(pid) = self.selected
+            && !self.derived.rows.iter().any(|r| r.pid == pid)
+        {
+            // The selected process vanished: stay on the same row, as htop
+            // does, rather than losing the cursor.
+            self.selected = old_index
+                .and_then(|i| {
+                    self.derived
+                        .rows
+                        .get(i.min(self.derived.rows.len().saturating_sub(1)))
+                })
+                .map(|r| r.pid);
+        }
+        Redraw::Yes
+    }
+
+    fn on_key(&mut self, key: KeyEvent, cx: &InputCx<'_>) -> Outcome {
+        let rows = self.page_rows(cx.inner.height);
+        let page = rows as isize;
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
+            KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
+            KeyCode::PageUp => self.move_selection(-page),
+            KeyCode::PageDown => self.move_selection(page),
+            KeyCode::Home => self.move_selection(isize::MIN / 2),
+            KeyCode::End => self.move_selection(isize::MAX / 2),
+            KeyCode::Char('<') => self.cycle_sort(-1),
+            KeyCode::Char('>') | KeyCode::F(6) => self.cycle_sort(1),
+            KeyCode::Char('I') => {
+                self.desc = !self.desc;
+                self.resort();
+            }
+            _ => return Outcome::Ignored,
+        }
+        self.follow_selection(rows);
+        Outcome::Consumed
     }
 
     fn view(&self, cx: &RenderCx<'_>) -> View {
@@ -250,8 +455,12 @@ impl Component for Htop {
             // Big digits are block glyphs and the '%' is dropped below 16 wide:
             // non-blank is the only honest textual claim.
             TIER_BIG_NUMBER => &[],
-            TIER_METERS => &["CPU", "MEM", "SWP", "pids"],
-            _ => &["CPU", "MEM", "SWP", "CCD", "PSI"],
+            // The task line's wording depends on whether the scan has run
+            // (`pids`/`tasks` before, htop's `thr`/`kthr` after), so the
+            // meters claim is the three bars, which every store shows.
+            TIER_METERS => &["CPU", "MEM", "SWP"],
+            TIER_CORES => &["CPU", "MEM", "SWP", "CCD", "PSI"],
+            _ => &["CCD", "kthr", "PID", "CPU%", "Command"],
         }
     }
 }

@@ -15,9 +15,10 @@ use gridwatch_store::{Agg, Key, Store};
 use gridwatch_ui::component::RenderCx;
 use gridwatch_ui::theme::{GradientId, Role};
 use gridwatch_ui::view::{Constraint, Dir, Span, View};
+use ratatui_core::layout::Rect;
 
 use super::format as fmt;
-use super::{Htop, TIER_BIG_NUMBER, TIER_METERS, TIER_TINY};
+use super::{Htop, ROWS_ABOVE_TABLE, TIER_BIG_NUMBER, TIER_CORES, TIER_METERS, TIER_TINY};
 
 /// How much history the sparkline shows at most; one bucket per cell. A run
 /// younger than this spans only what it has lived, so the line starts drawing
@@ -182,12 +183,16 @@ fn spark(cx: &RenderCx<'_>, buckets: u16) -> View {
     }
 }
 
-fn tasks_text(cx: &RenderCx<'_>) -> String {
+/// htop's wording once the scan has counted kernel threads; the honest
+/// pids/tasks form before it (PARITY.md); shortened clause by clause to fit.
+fn tasks_text(cx: &RenderCx<'_>, width: u16) -> String {
     let store = cx.store;
-    fmt::tasks(
+    fmt::tasks_fit(
         scalar(store, &sys::TASKS_TOTAL),
         scalar(store, &sys::TASKS_THREADS),
+        scalar(store, &sys::TASKS_KERNEL),
         scalar(store, &sys::TASKS_RUNNING),
+        usize::from(width),
     )
 }
 
@@ -214,11 +219,7 @@ fn load_line(cx: &RenderCx<'_>) -> View {
 /// trimmed from the right as the tile narrows.
 fn info_line(cx: &RenderCx<'_>, width: u16) -> View {
     let store = cx.store;
-    let tasks = fmt::tasks(
-        scalar(store, &sys::TASKS_TOTAL),
-        scalar(store, &sys::TASKS_THREADS),
-        scalar(store, &sys::TASKS_RUNNING),
-    );
+    let tasks = tasks_text(cx, width);
     let load = fmt::load(
         scalar(store, &sys::LOAD1),
         scalar(store, &sys::LOAD5),
@@ -491,7 +492,7 @@ fn two_column_panel(cx: &RenderCx<'_>, width: u16, rows: u16) -> (View, Panel) {
     if info_inside {
         right.push((
             Constraint::Len(1),
-            View::Text(vec![vec![value(tasks_text(cx))]]),
+            View::Text(vec![vec![value(tasks_text(cx, half))]]),
         ));
         right.push((Constraint::Len(1), load_line(cx)));
     }
@@ -670,11 +671,77 @@ fn cores(cx: &RenderCx<'_>) -> View {
     }
 }
 
-pub fn render(_h: &Htop, cx: &RenderCx<'_>) -> View {
+/// `table` [12 + 1 + N]: `cores` in its 12 rows (more when the table is
+/// capped), then the top-N process table of §8.1 — `rows = min(table_rows,
+/// available)` on the grid, everything when zoomed.
+fn table(h: &Htop, cx: &RenderCx<'_>) -> View {
+    let height = cx.inner.height;
+    let available = usize::from(height.saturating_sub(ROWS_ABOVE_TABLE + 1));
+    let body_rows = if cx.zoomed {
+        available
+    } else {
+        available.min(usize::from(h.options().table_rows))
+    };
+    let table_h = (body_rows + 1) as u16;
+    let cores_cx = RenderCx {
+        inner: Rect {
+            height: height.saturating_sub(table_h),
+            ..cx.inner
+        },
+        tier: TIER_CORES,
+        ..*cx
+    };
+    let (sort, desc) = h.sort();
+    let table = if h.derived().rows.is_empty() {
+        let text = if cx.store.record(&cpu::PROC_TABLE).is_some() {
+            "no processes to show (every row is filtered out)"
+        } else {
+            "waiting for the process scan…"
+        };
+        View::Stack {
+            dir: Dir::V,
+            children: vec![
+                (
+                    Constraint::Len(1),
+                    View::Text(vec![vec![
+                        Span::bold(Role::TextMuted, "PID"),
+                        ghost("  "),
+                        Span::bold(Role::TextMuted, "CPU%"),
+                        ghost("  "),
+                        Span::bold(Role::TextMuted, "Command"),
+                    ]]),
+                ),
+                (Constraint::Fill(1), View::Text(vec![vec![ghost(text)]])),
+            ],
+        }
+    } else {
+        super::table::view(
+            h.derived(),
+            h.options(),
+            cx.inner.width,
+            body_rows,
+            sort,
+            desc,
+            h.selected(),
+            h.scroll(),
+            h.columns(),
+        )
+    };
+    View::Stack {
+        dir: Dir::V,
+        children: vec![
+            (Constraint::Fill(1), cores(&cores_cx)),
+            (Constraint::Len(table_h), table),
+        ],
+    }
+}
+
+pub fn render(h: &Htop, cx: &RenderCx<'_>) -> View {
     match cx.tier {
         TIER_TINY => tiny(cx),
         TIER_BIG_NUMBER => big_number(cx),
         TIER_METERS => meters(cx),
-        _ => cores(cx),
+        TIER_CORES => cores(cx),
+        _ => table(h, cx),
     }
 }

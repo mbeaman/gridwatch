@@ -1,7 +1,6 @@
 ---
 source: crates/components/tests/components.rs
-assertion_line: 59
-expression: "view_snapshot(h.as_ref(), &history, &th, size)"
+expression: "view_snapshot(h.as_mut(), &history, &th, size)"
 ---
 size: 38x8
 tier: meters
@@ -51,7 +50,7 @@ view:
         - text:
             - - bold: false
                 role: Text
-                s: "638 pids, 2430 tasks; 4 running"
+                s: "207, 1792 thr, 431 kthr; 4 running"
       - - Fill(1)
         - sparkline:
             gradient: Load

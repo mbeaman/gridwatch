@@ -57,6 +57,25 @@ pub const DEF: fn() -> ComponentDef = || ComponentDef {
     build,
 };
 
+/// The NOTE column: the status reason, plus the cpu source's last pid-level
+/// scan time when it is running (P15's evidence, §8 "the `/proc` scan ms the
+/// performance gates read").
+fn note(cx: &RenderCx<'_>, s: &gridwatch_store::SourceOverview<'_>) -> String {
+    let mut out = s.status.reason.as_deref().unwrap_or("").to_string();
+    // The last scan's cost, whichever tick it ran on: the meters publish more
+    // often than the scan, so a "this tick only" guard blinked two ticks in
+    // three (review finding).
+    if s.id == gridwatch_store::keys::sys::SOURCE
+        && let Some((_, ms)) = cx.store.last(&gridwatch_store::keys::sys::SCAN_MS)
+    {
+        if !out.is_empty() {
+            out.push_str(" · ");
+        }
+        out.push_str(&format!("scan {ms:.1} ms"));
+    }
+    out
+}
+
 fn state_role(s: SourceState) -> Role {
     match s {
         SourceState::Ok => Role::Ok,
@@ -170,10 +189,7 @@ impl Component for SourcesTile {
                     vec![Span::new(Role::TextMuted, age)],
                     vec![Span::new(Role::TextMuted, s.status.dropped.to_string())],
                     vec![Span::new(Role::TextMuted, s.status.restarts.to_string())],
-                    vec![Span::new(
-                        Role::TextGhost,
-                        s.status.reason.as_deref().unwrap_or("").to_string(),
-                    )],
+                    vec![Span::new(Role::TextGhost, note(cx, s))],
                 ]
             })
             .collect();

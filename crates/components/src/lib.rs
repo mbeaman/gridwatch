@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod clock;
+#[cfg(feature = "htop")]
 pub mod htop;
 pub mod registry;
 pub mod sources_tile;

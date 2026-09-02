@@ -10,8 +10,16 @@ repository.workspace = true
 [dependencies]
 gridwatch-store.workspace = true
 gridwatch-ui.workspace = true
+ratatui-core.workspace = true
 serde.workspace = true
 toml.workspace = true
+
+[features]
+# One feature per component (WORKSPACE.md §15, D47 seam 5); `clock` and
+# `sources` are always built. `gpu` is declared now, its module lands in 2b.
+default = ["htop", "gpu"]
+htop = []
+gpu = []
 
 [dev-dependencies]
 gridwatch-ui = { workspace = true, features = ["testkit"] }
