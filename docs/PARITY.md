@@ -136,6 +136,21 @@ Evidence for every claim is in `docs/research/htop-parity.md`,
 | LUFS (EBU R128 momentary / short-term) | **feature `audio-lufs`** (`ebur128`), keys declared; **not wired in 5a** — the `full` tier prints `—` | `keys::audio::{LUFS_M, LUFS_S}` |
 | Reacts to Firefox / game audio within ~30 ms | **Matt's row** — an agent does not start players; `torch-audio.jsonl` is the silence path | `docs/PERFORMANCE.md` P16 |
 
+## sensors — `sensors(1)` / `lm-sensors` and nvtop's thermals (arc 5b)
+
+| upstream behaviour | gridwatch | Where |
+|---|---|---|
+| `sensors` walks `/sys/class/hwmon`, reads `<stem>_input` with `<stem>_label`, and prints per chip | **in — arc 5b**: the same walk for `temp*`, `fan*`, `in*`, `power*`, labels from `_label` else the stem | `sources::sensors::hwmon::walk` |
+| `sensors` names chips `k10temp-pci-00c3` (driver + bus) | **deviation**: chips are keyed by hwmon `name` with a `#2` suffix for a duplicate (`nvme`, `nvme#2`, `nvme#3`) — hwmon numbering is not stable across boots and the bus id is not in the store's label vocabulary | `hwmon::walk`; D55 5b amendment |
+| `sensors` prints `(high = +81.8°C, crit = +84.8°C)` from `_max`/`_crit` | **in — arc 5b**, once per generation as `sensor.max_c` / `sensor.crit_c`; the nvme `65261850` m°C sentinel is dropped | `hwmon::threshold`; the fixture test |
+| `sensors` shows every reading always | **deviation**: the tile sorts by the **margin to `max`** (hottest = closest to its own limit), so a 59 °C `Tctl` with no max never hides an 80 °C NVMe at 82 °C max; `o` switches to a by-chip order | `components::sensors::Model::refresh` |
+| `sensors` unit scaling (m°C, mV, µW, RPM as-is) | **in — arc 5b** | `hwmon::Kind::divisor` |
+| `sensors -j` / watch loops re-reading every 1 s | **in**: `[sources.sensors] refresh_ms` clamped 500–10000 (NVMe `temp*_input` is a SMART log page, spd5118 an SMBus read, k10temp an SMN read) | `sources::sensors` |
+| RAPL package power (`turbostat`, `powerstat`) | **in — arc 5b** when `energy_uj` is readable: `Δenergy mod max_energy_range_uj / Δt`; on torch it is 0400 root-only, so the tile and `doctor` print the udev rule instead | `sources::sensors::rapl`; `RaplState` |
+| nvtop's GPU temp / fan / power | **not duplicated**: the `full` tier reads the gpu source's keys (`gpu.temp_c`, `gpu.fan_pct`, `gpu.power_w`) and says `no gpu source` without them | `components::sensors::view::gpu_line` |
+| PSI (`/proc/pressure/*`) | **in — arc 5b** in the `full` tier from the cpu source's `psi.*` keys (the cpu source owns them) | `view::psi_line` |
+| `sensor.temp_c{k10temp:*}` published by the cpu source (arcs 1b–5a) | **handover — arc 5b**: with the `sensors` feature the cpu source starts with `k10temp = false` and stops publishing them; the sensors source publishes the same key with the same labels, so htop's `Tccd` column is unchanged | `sources::cpu::k10temp_default`, §16 |
+
 ## Verified by hand on torch, 2026-09-01 (arc 2b)
 
 - `nvtop --snapshot` beside a 12 s `gridwatch run --record` on the idle box
