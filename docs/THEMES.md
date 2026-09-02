@@ -46,9 +46,18 @@ is the one row of this arc a machine cannot tick for itself.
 | `retrowave` | quiet | the default; Synthwave '84 palette with the computed contrast fixes | `double` borders (`thick` when focused), gradient upper-case titles, eight gradients, `gauge = "line"` |
 | `modern` | quiet | Catppuccin Mocha; the reference theme every cell snapshot is taken in (§12.2) | `rounded` borders, plain titles |
 | `mono` | quiet | no colour at all — the real theme `NO_COLOR` loads, because crossterm 0.29 emits no colour SGR in that mode | severity survives as glyph + `BOLD`/`REVERSED` |
+| `terminal` | quiet | the terminal's own sixteen colours by name (`red`, `bright-cyan`, …) with `default` backgrounds — whatever palette Ptyxis is set to, gridwatch wears it (arc 3b, D52) | gradients *step* through named stops (nothing to interpolate); the WCAG gate cannot judge it and says nothing |
+| `phosphor-green` | quiet | one P1-phosphor hue on near black, roles as luminance steps; `inherits = "mono"` for its glyph/border/title/widget tables and paints everything itself (arc 3b, D52) | text 16.7:1, muted 4.3:1 on the panel; `plain` borders, `double` when focused |
 
-`terminal` and `phosphor-green` arrive with the theme loader v2 in arc 3;
-`phosphor-amber` and the showcase-class `matrix` in arc 4.
+`phosphor-amber` and the showcase-class `matrix` arrive in arc 4.
+
+## Loader v2 (arc 3b, D52)
+
+- **`inherits = "<built-in or sibling file>"`**, one level: the child overrides its parent key by key — a palette entry, one role, one gradient, one widget — and the merged result must be complete. A parent that itself inherits is refused ("inherits chains are not supported"). A `.toml` theme may inherit a built-in or a `<name>.toml` next to it; a built-in may inherit only a built-in.
+- **`[components.<kind>] gradients.<id> = [...]`** re-paints one gradient for one component kind (`Theme::for_kind`); the component never knows.
+- **Colour values:** `#rrggbb`, `default`, the sixteen names (`black red green yellow blue magenta cyan white`, each also `bright-…`), `ansi:N`, and `$palette` references.
+- **The WCAG gate** warns at load — toasted at start, in the log, and in full with `gridwatch config check --theme NAME` — when `text` on `panel` or `surface` is below 4.5:1 or `text_muted` below 3:1. `text_ghost` is the decorative role (the empty-bar fill and the gauge track are drawn in it) and has no floor; never put a label in it (arc 1b review).
+- **Hot reload:** a `.toml` theme and the sibling it inherits are watched once per second; `T` reloads on demand; a broken file keeps the old theme and toasts why.
 
 ## What a theme may decide (and what it may not)
 
@@ -60,6 +69,6 @@ why the htop tile looks like htop in every theme without naming a single colour
 — its CPU meter asks for `Ok`, `Crit`, `AccentTertiary` and `Info`, and each
 theme answers in its own palette.
 
-Role swatches for all three built-ins are pinned by
+Role swatches for all five built-ins are pinned by
 `crates/ui/tests/ui.rs::role_swatches_pin_the_palettes`, so a palette edit shows
 up as a reviewable diff rather than a surprise on screen.

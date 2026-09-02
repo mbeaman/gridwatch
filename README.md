@@ -2,7 +2,7 @@
 
 A modular, themeable ops dashboard for the terminal — a grid of components that each render from a 1x1 tile to full screen, in themes like `retrowave` and `modern`, reproducing the behaviour of htop, nvtop and [astral-watch](https://github.com/mbeaman/astral-watch) alongside network, audio-visualizer and Winamp-style now-playing tiles. Rust + ratatui 0.30, built for a single Linux workstation first.
 
-**Status:** arc 1 (`v0.1.0`) — the grid lights up — and arc 2 (`v0.2.0`, untagged): the core seam, the 12×6 layout engine, three themes, the cpu source with htop's meters, CCD core bars and the top-N process table, **the gpu source over NVML with nvtop's header, ten-minute charts and GPU process table**, journal record/replay, CI-regenerated screenshots — and arc 3's first half: **the astral-watch pins tile with the cross-page alert banner**. Network, audio and Winamp follow (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+**Status:** arc 1 (`v0.1.0`) — the grid lights up — and arc 2 (`v0.2.0`, untagged): the core seam, the 12×6 layout engine, three themes, the cpu source with htop's meters, CCD core bars and the top-N process table, **the gpu source over NVML with nvtop's header, ten-minute charts and GPU process table**, journal record/replay, CI-regenerated screenshots — and arc 3: **the astral-watch pins tile with the cross-page alert banner**, hot reload of the config files and themes, the theme loader v2 with `terminal` and `phosphor-green`, `STALE` badges and `gridwatch doctor`. Network, audio and Winamp follow (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 
 [![the Overview at 250×70 in retrowave](docs/img/overview-retrowave.svg)](docs/img/overview-retrowave.svg)
 
@@ -62,14 +62,15 @@ cargo run --release -- shot --replay session.jsonl --at 30 --format svg > frame.
 cargo run --release -- keys                                  # the metric catalogue (docs/KEYS.md)
 cargo run --release -- component list                        # every component's tiers (docs/COMPONENTS.md)
 cargo run --release -- config default > ~/.config/gridwatch/config.toml
-cargo run --release -- doctor       # what this machine can feed
+cargo run --release -- doctor       # every capability with a reason and a fix (+ the live probes; --offline skips them)
+cargo run --release -- config check --theme phosphor-green   # the two files, then the theme's warnings and WCAG contrast report
 ```
 
 Keys: `1`–`9` pages, `Tab`/`hjkl` focus, `Enter` capture (then, in the cpu and gpu tiles,
 `↑/↓ PgUp/PgDn Home/End` select, `<`/`>`/`F6` sort, `I` invert; in the gpu tile `1`–`6`
 toggle chart series and `r` reverses them; in the pins tile `p` freezes, `r` resets
 peaks, `+`/`-` change the interval), `a` ack the alert banner, `A` alerts, `z` zoom, `d` dense,
-`t` theme, `space` pause, `r` pause/resume a `--record`, `F12` stats HUD, `?` help,
+`t` cycle theme, `T` reload theme, `space` pause, `r` pause/resume a `--record`, `F12` stats HUD, `?` help,
 `q` (or `Ctrl-q`) quit.
 
 ## What is here today
