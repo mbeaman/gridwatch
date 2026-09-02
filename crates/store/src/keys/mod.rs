@@ -3,4 +3,5 @@
 
 pub mod cpu;
 pub mod gpu;
+pub mod pins;
 pub mod sys;
