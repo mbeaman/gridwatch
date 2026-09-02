@@ -70,13 +70,13 @@ gridwatch/
     ├── sources/      gridwatch-sources        # store + system crates; every module behind a feature
     │   └── src/
     │       ├── lib.rs · registry.rs        # SourceDef table by feature
-    │       ├── supervisor.rs · backoff.rs  # spawn_source (catch_unwind, restart counter), spawn_async_runtime (current_thread tokio)
+    │       ├── supervisor.rs · backoff.rs  # spawn_source (catch_unwind, restart counter); the mpris source owns its own current_thread tokio runtime (arc 6)
     │       ├── cpu/{mod,stat,mem,psi,procs,topology,freq,k10temp}.rs   # k10temp Tccd by label until sensors exists
     │       ├── gpu/{mod,probe,poller,nvml,smi,specs,procs}.rs   # probe = the backend seam; poller = tiers/pruning over it (arc 2b)
     │       ├── pins/{mod,i2c,exporter,csv,lifecycle_bridge}.rs
     │       ├── net/{mod,dev,link,addrs,route,dns,conns,probe,wifi}.rs
     │       ├── audio/{mod,pwrecord,supervisor,dsp,bands,scope,vu,pwdump}.rs   # dsp: dual FFT 8192/2048
-    │       ├── mpris/{mod,proxy,discovery,player,art}.rs
+    │       ├── mpris/{mod,meta,model,art}.rs   # the loop, the a{sv} decoder, the player state machine, the cover
     │       └── sensors/{mod,hwmon,rapl,cpufreq}.rs
     ├── components/   gridwatch-components     # store + ui; every module behind a feature
     │   └── src/
@@ -151,6 +151,7 @@ realfft          = "3.5.0"                                                      
 rtrb             = "0.4.0"                                                        # feature audio (SPSC ring)
 ebur128          = "0.1.10"                                                       # feature audio-lufs
 zbus             = { version = "5.19.0", default-features = false, features = ["tokio"] }   # features mpris, net-dns
+futures-lite     = { version = "2.6", default-features = false, features = ["std"] }        # sources only, feature mpris: the stream adapter zbus's own API returns (arc 6)
 tokio            = { version = "1.53", features = ["rt", "sync", "time", "macros"] }        # only inside gridwatch-sources behind mpris / net-probe / net-rdns / net-dns
 surge-ping       = "0.9.0"                                                        # feature net-probe
 hickory-resolver = "0.26.1"                                                       # feature net-rdns

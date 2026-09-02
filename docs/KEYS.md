@@ -89,3 +89,19 @@
 | `media.art` | Record | None | `mpris` | the current track's cover decoded to RGB8, at most 256 px on the long side; absent when the track has none |
 | `media.history` | Record | None | `mpris` | the last distinct tracks seen, newest last (the playlist pane) |
 | `media.pos_pct` | Scalar | Percent | `mpris` | position as a percentage of the track's length; absent in stream mode |
+| `net.rx_bps` | Scalar | BytesPerSec | `net` | receive rate per {iface}, from /proc/net/dev deltas over the measured interval |
+| `net.tx_bps` | Scalar | BytesPerSec | `net` | transmit rate per {iface} |
+| `net.rx_pps` | Scalar | Count | `net` | receive packets per second per {iface} |
+| `net.tx_pps` | Scalar | Count | `net` | transmit packets per second per {iface} |
+| `net.rx_drop` | Scalar | Count | `net` | receive drops per second per {iface} |
+| `net.tx_drop` | Scalar | Count | `net` | transmit drops per second per {iface} |
+| `net.rx_err` | Scalar | Count | `net` | receive errors per second per {iface} |
+| `net.tx_err` | Scalar | Count | `net` | transmit errors per second per {iface} |
+| `net.speed_mbps` | Scalar | Count | `net` | negotiated link speed per {iface} in Mb/s; -1 when the driver cannot say (never guessed) |
+| `net.rtt_ms` | Scalar | Milliseconds | `net` | round-trip time per probe {target} (unprivileged ICMP, or a TCP connect) |
+| `net.loss_pct` | Scalar | Percent | `net` | loss per probe {target} over its ring |
+| `net.scan_ms` | Scalar | Milliseconds | `net` | wall ms of the last /proc/*/fd socket scan (the sources tile's note) |
+| `net.link` | Record | None | `net` | link state per {iface}: up/carrier/operstate, mtu, mac, kind, speed, carrier flaps, addresses and the Wi-Fi details when it is a radio |
+| `net.route` | Record | None | `net` | the default route (interface, gateway, source address), the DNS servers, and the public IP when the user opted in |
+| `net.conns` | Record | None | `net` | the connection table at Detail::Table: protocol, endpoints, state, and the owning process where /proc/<pid>/fd was readable (the uid otherwise) |
+| `net.probe` | Record | None | `net` | latency statistics per target over a 60-sample ring: min/avg/max/mdev, RFC 3550 jitter and loss |
