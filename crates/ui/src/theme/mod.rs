@@ -5,8 +5,13 @@ mod color;
 mod file;
 mod gradient;
 
-pub use color::{ColorMode, nearest_16, nearest_256, parse_color};
-pub use file::{BUILTIN_THEMES, ThemeFile, build_theme, builtin, load_builtin, load_theme_file};
+pub use color::{
+    ColorMode, contrast_ratio, nearest_16, nearest_256, parse_color, relative_luminance,
+};
+pub use file::{
+    BUILTIN_THEMES, ThemeFile, WCAG_MUTED_MIN, WCAG_TEXT_MIN, build_theme, builtin,
+    contrast_report, load_builtin, load_theme_file, merge, wcag_warnings,
+};
 pub use gradient::Gradient;
 
 use ratatui_core::style::{Color, Modifier, Style};
@@ -291,6 +296,7 @@ impl std::fmt::Display for ThemeError {
 
 impl std::error::Error for ThemeError {}
 
+#[derive(Clone)]
 pub struct Theme {
     pub name: String,
     pub class: PerfClass,
@@ -301,8 +307,13 @@ pub struct Theme {
     pub widgets: WidgetSet,
     colors: [Color; 19],
     gradients: [Gradient; 8],
-    /// Warnings produced at load (ignored tables, etc.).
+    /// Warnings produced at load (ignored tables, the WCAG gate, etc.).
     pub warnings: Vec<String>,
+    /// Per-kind derived themes from `[components.<kind>]` (D52), built once
+    /// at load and shared; empty for a derived theme itself.
+    kinds: std::collections::BTreeMap<String, std::sync::Arc<Theme>>,
+    /// The declared (pre-mode) colours the contrast report judges.
+    raw: [Color; 19],
 }
 
 impl Theme {
@@ -330,7 +341,38 @@ impl Theme {
             colors,
             gradients,
             warnings,
+            kinds: std::collections::BTreeMap::new(),
+            raw: colors,
         }
+    }
+
+    pub fn with_kinds(
+        mut self,
+        kinds: std::collections::BTreeMap<String, std::sync::Arc<Theme>>,
+    ) -> Theme {
+        self.kinds = kinds;
+        self
+    }
+
+    pub fn with_raw_colors(mut self, raw: [Color; 19]) -> Theme {
+        self.raw = raw;
+        self
+    }
+
+    /// The theme a component kind renders with (§7, D52): the base unless
+    /// `[components.<kind>]` overrode a gradient for it.
+    pub fn for_kind(&self, kind: &str) -> &Theme {
+        self.kinds.get(kind).map(|t| &**t).unwrap_or(self)
+    }
+
+    /// The kinds that have a derived theme.
+    pub fn overridden_kinds(&self) -> impl Iterator<Item = &str> {
+        self.kinds.keys().map(String::as_str)
+    }
+
+    /// Every WCAG pair with its ratio (`config check --theme`).
+    pub fn contrast_report(&self) -> Vec<String> {
+        contrast_report(&self.raw)
     }
 
     pub fn color(&self, r: Role) -> Color {

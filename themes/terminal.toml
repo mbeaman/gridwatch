@@ -1,0 +1,62 @@
+# gridwatch built-in theme: terminal — the user's own sixteen colours by name
+# (D52). `default` for the backgrounds keeps the terminal's own; gradients
+# step through the palette instead of interpolating (nothing to interpolate).
+[meta]
+name = "terminal"
+schema = 1
+variant = "dark"
+
+[colors]
+bg = "default"
+surface = "default"
+panel = "default"
+border = "bright-black"
+border_focused = "bright-cyan"
+title = "bright-white"
+text = "white"
+text_muted = "bright-black"
+text_ghost = "bright-black"
+cursor = "bright-cyan"
+
+[colors.accent]
+primary = "bright-cyan"
+secondary = "bright-magenta"
+tertiary = "bright-blue"
+
+[colors.severity]
+ok = "green"
+warn = "yellow"
+crit = "red"
+info = "cyan"
+
+[colors.selection]
+fg = "black"
+bg = "cyan"
+
+[gradients]
+load = ["green", "yellow", "bright-yellow", "red"]
+temp = ["cyan", "green", "yellow", "red"]
+power = ["cyan", "yellow", "red"]
+mem = ["blue", "bright-blue", "magenta"]
+netrx = ["cyan", "bright-cyan"]
+nettx = ["magenta", "bright-magenta"]
+audio = ["blue", "cyan", "bright-cyan", "white"]
+title = ["bright-white", "bright-white"]
+
+[glyphs]
+set = "unicode"
+
+[borders]
+set = "plain"
+focused_set = "thick"
+
+[title]
+style = "plain"
+bold = true
+
+[widgets]
+gauge = "bar"
+bars = "eighths"
+sparkline = "eighths"
+table_header = "reverse"
+big_number = "quadrant"

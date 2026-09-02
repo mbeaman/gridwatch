@@ -30,8 +30,19 @@ impl Gradient {
             })
             .collect();
         let mut lut = [Color::Reset; LUT];
-        if rgb.is_empty() || !stops.iter().all(|c| matches!(c, Color::Rgb(..))) {
-            return Gradient { lut }; // mono / "default" stops: no colour at all
+        if rgb.is_empty() {
+            return Gradient { lut };
+        }
+        if !stops.iter().all(|c| matches!(c, Color::Rgb(..))) {
+            // Non-RGB stops (`default`, a terminal colour name, an index)
+            // cannot be interpolated: the LUT steps through them (loader v2,
+            // the `terminal` theme). All-`default` stays colourless (mono).
+            for (i, slot) in lut.iter_mut().enumerate() {
+                let t = i as f32 / (LUT - 1) as f32;
+                let k = ((t * stops.len() as f32) as usize).min(stops.len() - 1);
+                *slot = to_mode(stops[k], mode);
+            }
+            return Gradient { lut };
         }
         for (i, slot) in lut.iter_mut().enumerate() {
             let t = i as f32 / (LUT - 1) as f32;

@@ -279,9 +279,9 @@ fn tier_selection_richest_fitting_skipping_zoom_only() {
 
 #[test]
 fn builtin_themes_load_and_mono_is_colorless() {
-    for name in ["modern", "retrowave", "mono"] {
+    for name in gridwatch_ui::theme::BUILTIN_THEMES {
         let t = load_builtin(name, ColorMode::TrueColor).unwrap();
-        assert_eq!(t.name, name);
+        assert_eq!(t.name, *name);
         // Self-contained per D37: loader enforced all roles + 8 gradients.
         assert!(t.warnings.iter().all(|w| !w.contains("missing")));
     }
@@ -304,7 +304,7 @@ fn nearest_colour_known_values() {
 
 #[test]
 fn role_swatches_pin_the_palettes() {
-    for name in ["modern", "retrowave", "mono"] {
+    for name in gridwatch_ui::theme::BUILTIN_THEMES {
         let t = load_builtin(name, ColorMode::TrueColor).unwrap();
         insta::assert_yaml_snapshot!(
             format!("swatch_{name}"),
@@ -357,5 +357,157 @@ mod review_regressions {
             priority: 0,
         };
         assert!(!p.in_bounds(12, 6));
+    }
+}
+
+// ───────────────────────── theme loader v2 (D52) ─────────────────────────
+
+mod loader_v2 {
+    use gridwatch_ui::ColorMode;
+    use gridwatch_ui::theme::{
+        BorderKind, GaugeStyle, GradientId, Role, build_theme, contrast_ratio, load_builtin,
+        load_theme_file,
+    };
+    use ratatui_core::style::Color;
+
+    const MODERN: &str = include_str!("../../../themes/modern.toml");
+
+    /// `inherits` merges key by key: phosphor-green takes mono's widget and
+    /// title tables, keeps its own borders and paints everything itself.
+    #[test]
+    fn inherits_merges_key_by_key() {
+        let t = load_builtin("phosphor-green", ColorMode::TrueColor).unwrap();
+        assert_eq!(t.name, "phosphor-green");
+        assert_eq!(t.widgets.gauge, GaugeStyle::Bar, "from mono");
+        assert!(t.title.bold, "from mono");
+        assert_eq!(t.borders.set, BorderKind::Plain, "its own");
+        assert_eq!(t.borders.focused, BorderKind::Double, "its own");
+        assert_eq!(t.color(Role::Text), Color::Rgb(0xb6, 0xff, 0xc9));
+        assert_ne!(
+            t.gradient(GradientId::Load).sample(1.0),
+            Color::Reset,
+            "its own gradients"
+        );
+        assert!(
+            t.warnings.iter().all(|w| !w.contains("WCAG")),
+            "phosphor-green passes the gate on its own numbers: {:?}",
+            t.warnings
+        );
+    }
+
+    /// A child that inherits may override one key; a parent that itself
+    /// inherits is a chain and an error; a missing parent is an error.
+    #[test]
+    fn a_child_overrides_one_key_and_chains_are_refused() {
+        let parent = load_theme_file(MODERN).unwrap();
+        let child = load_theme_file(
+            "[meta]\nname = \"kid\"\nschema = 1\ninherits = \"modern\"\n[colors]\ntext = \"#ffffff\"\n",
+        )
+        .unwrap();
+        let t = build_theme(&child, Some(&parent), ColorMode::TrueColor).unwrap();
+        assert_eq!(t.name, "kid");
+        assert_eq!(t.color(Role::Text), Color::Rgb(255, 255, 255));
+        assert_eq!(
+            t.color(Role::Bg),
+            Color::Rgb(0x1e, 0x1e, 0x2e),
+            "the rest is modern's"
+        );
+        let Err(err) = build_theme(&child, None, ColorMode::TrueColor) else {
+            panic!("an orphan child built")
+        };
+        assert!(err.to_string().contains("no parent"), "{err}");
+        let grand =
+            load_theme_file("[meta]\nname = \"mid\"\nschema = 1\ninherits = \"modern\"\n").unwrap();
+        let Err(err) = build_theme(&child, Some(&grand), ColorMode::TrueColor) else {
+            panic!("a chain built")
+        };
+        assert!(err.to_string().contains("chains"), "{err}");
+        // Self-contained files still have to be complete (D37).
+        let partial = load_theme_file("[meta]\nname = \"p\"\nschema = 1\n").unwrap();
+        let Err(err) = build_theme(&partial, None, ColorMode::TrueColor) else {
+            panic!("a partial self-contained theme built")
+        };
+        assert!(err.to_string().contains("colors.surface missing"), "{err}");
+    }
+
+    /// `[components.<kind>]` derives a theme for that kind only.
+    #[test]
+    fn component_overrides_derive_a_theme_per_kind() {
+        let text =
+            format!("{MODERN}\n[components.htop]\ngradients.load = [\"#000000\", \"#ffffff\"]\n");
+        let t = build_theme(&load_theme_file(&text).unwrap(), None, ColorMode::TrueColor).unwrap();
+        let base = t.gradient(GradientId::Load).sample(1.0);
+        let htop = t.for_kind("htop").gradient(GradientId::Load).sample(1.0);
+        // Oklab round-trips within one step of the stop.
+        assert!(
+            matches!(htop, Color::Rgb(r, g, b) if r >= 254 && g >= 254 && b >= 254),
+            "{htop:?}"
+        );
+        assert_ne!(base, htop);
+        assert_eq!(
+            t.for_kind("gpu").gradient(GradientId::Load).sample(1.0),
+            base,
+            "an unmentioned kind gets the base theme"
+        );
+        assert_eq!(t.for_kind("htop").color(Role::Text), t.color(Role::Text));
+        assert_eq!(t.overridden_kinds().collect::<Vec<_>>(), vec!["htop"]);
+        assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+    }
+
+    /// The WCAG gate on known pairs (brief 3b): black on white 21:1, #767676
+    /// on white 4.54:1; a theme below the floor warns and still loads; mono's
+    /// `default` colours cannot be judged and say nothing.
+    #[test]
+    fn wcag_gate_on_known_pairs() {
+        let r = contrast_ratio(Color::Rgb(0, 0, 0), Color::Rgb(255, 255, 255)).unwrap();
+        assert!((r - 21.0).abs() < 0.01, "{r}");
+        let r = contrast_ratio(Color::Rgb(0x76, 0x76, 0x76), Color::Rgb(255, 255, 255)).unwrap();
+        assert!((r - 4.54).abs() < 0.01, "{r}");
+        assert!(contrast_ratio(Color::Reset, Color::Rgb(0, 0, 0)).is_none());
+        let low = MODERN
+            .replace("text = \"#cdd6f4\"", "text = \"#767676\"")
+            .replace("text_muted = \"#a6adc8\"", "text_muted = \"#3a3a4a\"");
+        let t = build_theme(&load_theme_file(&low).unwrap(), None, ColorMode::TrueColor).unwrap();
+        let wcag: Vec<&String> = t.warnings.iter().filter(|w| w.contains("WCAG")).collect();
+        assert_eq!(wcag.len(), 4, "{wcag:?}");
+        assert!(wcag[0].contains("text on panel"), "{}", wcag[0]);
+        assert!(wcag[0].contains("below 4.5:1"), "{}", wcag[0]);
+        assert!(wcag[2].contains("text_muted on panel"), "{}", wcag[2]);
+        let report = t.contrast_report();
+        assert!(
+            report
+                .iter()
+                .any(|l| l.contains("text_ghost on panel") && l.contains("info"))
+        );
+        for name in ["modern", "retrowave", "mono", "terminal"] {
+            let t = load_builtin(name, ColorMode::TrueColor).unwrap();
+            assert!(
+                t.warnings.iter().all(|w| !w.contains("WCAG")),
+                "{name}: {:?}",
+                t.warnings
+            );
+        }
+    }
+
+    /// `terminal` names the sixteen colours; its gradients step through them.
+    #[test]
+    fn terminal_theme_uses_the_palette_by_name() {
+        let t = load_builtin("terminal", ColorMode::TrueColor).unwrap();
+        assert_eq!(t.color(Role::Bg), Color::Reset);
+        assert_eq!(t.color(Role::Text), Color::Gray);
+        assert_eq!(t.color(Role::Crit), Color::Red);
+        let g = t.gradient(GradientId::Load);
+        assert_eq!(g.sample(0.0), Color::Green);
+        assert_eq!(g.sample(1.0), Color::Red);
+        // Downsampling never touches a named colour; mono blanks it.
+        let t16 = load_builtin("terminal", ColorMode::Ansi16).unwrap();
+        assert_eq!(t16.color(Role::Text), Color::Gray);
+        let mono = load_builtin("terminal", ColorMode::Mono).unwrap();
+        assert_eq!(mono.color(Role::Text), Color::Reset);
+        assert_eq!(
+            gridwatch_ui::theme::parse_color("ansi:208").unwrap(),
+            Color::Indexed(208)
+        );
+        assert!(gridwatch_ui::theme::parse_color("ansi:300").is_err());
     }
 }

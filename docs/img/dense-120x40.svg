@@ -472,19 +472,19 @@
 <text x="952" y="396" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="412" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="320" y="412" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
+<text x="336" y="412" fill="#8a7fb0" font-weight="bold" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▪ net</text>
 <text x="640" y="412" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
+<text x="656" y="412" fill="#8a7fb0" font-weight="bold" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▪ audio</text>
 <text x="952" y="412" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="428" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="320" y="428" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="336" y="428" fill="#8a7fb0" font-weight="bold" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▪ net</text>
+<text x="336" y="428" fill="#8a7fb0" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">arrives in a later arc</text>
 <text x="640" y="428" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="656" y="428" fill="#8a7fb0" font-weight="bold" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▪ audio</text>
+<text x="656" y="428" fill="#8a7fb0" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">arrives in a later arc</text>
 <text x="952" y="428" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="444" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="320" y="444" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="336" y="444" fill="#3d2a63" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">arrives in a later arc</text>
 <text x="640" y="444" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="656" y="444" fill="#3d2a63" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">arrives in a later arc</text>
 <text x="952" y="444" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="460" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="320" y="460" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
@@ -541,20 +541,20 @@
 <text x="8" y="556" fill="#efe9ff" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">gpu</text>
 <text x="40" y="556" fill="#05ffa1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
 <text x="320" y="556" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
+<text x="336" y="556" fill="#8a7fb0" font-weight="bold" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▪ sensors</text>
 <text x="800" y="556" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="572" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="572" fill="#efe9ff" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pins</text>
 <text x="48" y="572" fill="#05ffa1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
 <text x="320" y="572" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="336" y="572" fill="#8a7fb0" font-weight="bold" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▪ sensors</text>
+<text x="336" y="572" fill="#8a7fb0" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">arrives in a later arc</text>
 <text x="800" y="572" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="588" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="320" y="588" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="336" y="588" fill="#3d2a63" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">arrives in a later arc</text>
 <text x="800" y="588" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="604" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="320" y="604" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="800" y="604" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="620" fill="#7a3fb5" textLength="808" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╚═══════════════════════════════════════╚═══════════════════════════════════════════════════════════╝</text>
-<text x="0" y="636" fill="#8a7fb0" textLength="960" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · space pause · a ack · A alerts </text>
+<text x="0" y="636" fill="#8a7fb0" textLength="960" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack </text>
 </svg>

@@ -76,28 +76,71 @@ pub fn hud(stats: &HudStats, area: Rect, theme: &Theme, buf: &mut Buffer) {
     }
 }
 
-/// A placeholder tile: the kind plus why it is not live (§6, §11).
-pub fn chip(kind: &str, reason: &str, area: Rect, theme: &Theme, buf: &mut Buffer) {
+/// A placeholder tile: the kind, why it is not live, and — when there is one
+/// — the fix (§11: "placeholder tiles with fix text").
+pub fn chip(kind: &str, reason: &str, hint: &str, area: Rect, theme: &Theme, buf: &mut Buffer) {
     if area.height == 0 || area.width < 4 {
         return;
     }
-    let y = area.y + area.height / 2;
+    // Centre the block of one to three lines.
+    let lines = 1 + u16::from(!reason.is_empty()) + u16::from(!hint.is_empty());
+    let y = area.y + area.height.saturating_sub(lines) / 2;
     let label = format!("▪ {kind}");
+    let w = area.width.saturating_sub(2) as usize;
     buf.set_stringn(
         area.x + 1,
         y,
         &label,
-        area.width.saturating_sub(2) as usize,
+        w,
         theme.style(Role::TextMuted).add_modifier(Modifier::BOLD),
     );
-    if area.height >= 2 && !reason.is_empty() {
-        buf.set_stringn(
-            area.x + 1,
-            y + 1,
-            reason,
-            area.width.saturating_sub(2) as usize,
-            theme.style(Role::TextGhost),
-        );
+    let mut row = y + 1;
+    if row < area.y + area.height && !reason.is_empty() {
+        buf.set_stringn(area.x + 1, row, reason, w, theme.style(Role::TextMuted));
+        row += 1;
+    }
+    if row < area.y + area.height && !hint.is_empty() {
+        buf.set_stringn(area.x + 1, row, hint, w, theme.style(Role::Info));
+    }
+}
+
+/// The staleness badge (§11, seam 10): drawn by the shell at the top right of
+/// a tile whose source aged past three cadences, after the tile's cells were
+/// dimmed through `Role::TextMuted`.
+pub fn stale_badge(age_s: u64, area: Rect, theme: &Theme, buf: &mut Buffer) {
+    if area.height == 0 {
+        return;
+    }
+    let text = format!("STALE {age_s}s");
+    let w = text.chars().count() as u16;
+    if area.width < w {
+        return;
+    }
+    buf.set_string(
+        area.x + area.width - w,
+        area.y,
+        &text,
+        theme.style(Role::Warn).add_modifier(Modifier::BOLD),
+    );
+}
+
+/// Dim every cell of `area` to `Role::TextMuted` (a stale tile), keeping
+/// backgrounds and glyphs so the shape of the data stays readable.
+pub fn dim(area: Rect, theme: &Theme, buf: &mut Buffer) {
+    let fg = theme.color(Role::TextMuted);
+    for y in area.y..area.y + area.height {
+        for x in area.x..area.x + area.width {
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.set_fg(fg);
+                let m = cell.modifier;
+                cell.set_style(
+                    ratatui_core::style::Style::new()
+                        .fg(fg)
+                        .bg(cell.bg)
+                        .add_modifier(m & !(Modifier::BOLD | Modifier::REVERSED)),
+                );
+            }
+        }
     }
 }
 

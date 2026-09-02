@@ -1,0 +1,31 @@
+---
+source: crates/ui/tests/ui.rs
+expression: "gridwatch_ui::testkit::role_swatch(&t)"
+---
+- Bg Reset
+- Surface Reset
+- Panel Reset
+- Border DarkGray
+- BorderFocused LightCyan
+- Title White
+- Text Gray
+- TextMuted DarkGray
+- TextGhost DarkGray
+- AccentPrimary LightCyan
+- AccentSecondary LightMagenta
+- AccentTertiary LightBlue
+- Ok Green
+- Warn Yellow
+- Crit Red
+- Info Cyan
+- SelectionFg Black
+- SelectionBg Cyan
+- Cursor LightCyan
+- "Load [Green, Green, Yellow, Yellow, LightYellow, LightYellow, Red, Red]"
+- "Temp [Cyan, Cyan, Green, Green, Yellow, Yellow, Red, Red]"
+- "Power [Cyan, Cyan, Cyan, Yellow, Yellow, Red, Red, Red]"
+- "Mem [Blue, Blue, Blue, LightBlue, LightBlue, Magenta, Magenta, Magenta]"
+- "NetRx [Cyan, Cyan, Cyan, Cyan, LightCyan, LightCyan, LightCyan, LightCyan]"
+- "NetTx [Magenta, Magenta, Magenta, Magenta, LightMagenta, LightMagenta, LightMagenta, LightMagenta]"
+- "Audio [Blue, Blue, Cyan, Cyan, LightCyan, LightCyan, Gray, Gray]"
+- "Title [White, White, White, White, White, White, White, White]"

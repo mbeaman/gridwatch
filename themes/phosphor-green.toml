@@ -1,0 +1,62 @@
+# gridwatch built-in theme: phosphor-green — one P1-phosphor hue on a near
+# black, roles as luminance steps (D52). Inherits `mono`'s glyph, border,
+# title and widget tables and overrides only the paint.
+[meta]
+name = "phosphor-green"
+schema = 1
+variant = "dark"
+inherits = "mono"
+
+[palette]
+void = "#0a0f0a"
+deep = "#0d160e"
+ember = "#143d1c"
+moss = "#1f7a33"
+leaf = "#2e8b3a"
+bright = "#00c933"
+neon = "#00ff41"
+mint = "#7dffa6"
+paper = "#b6ffc9"
+amber = "#e0c341"
+pill = "#ff5a3c"
+
+[colors]
+bg = "$void"
+surface = "$void"
+panel = "$deep"
+border = "$moss"
+border_focused = "$neon"
+title = "$mint"
+text = "$paper"
+text_muted = "$leaf"
+text_ghost = "$ember"
+cursor = "$neon"
+
+[colors.accent]
+primary = "$neon"
+secondary = "$mint"
+tertiary = "$bright"
+
+[colors.severity]
+ok = "$neon"
+warn = "$amber"
+crit = "$pill"
+info = "$mint"
+
+[colors.selection]
+fg = "$void"
+bg = "$neon"
+
+[gradients]
+load = ["$ember", "$moss", "$bright", "$neon", "$mint"]
+temp = ["$moss", "$bright", "$neon", "$amber", "$pill"]
+power = ["$moss", "$bright", "$neon", "$mint"]
+mem = ["$ember", "$leaf", "$neon"]
+netrx = ["$moss", "$neon"]
+nettx = ["$leaf", "$mint"]
+audio = ["$ember", "$moss", "$bright", "$neon", "$mint", "$paper"]
+title = ["$paper", "$mint", "$neon"]
+
+[borders]
+set = "plain"
+focused_set = "double"

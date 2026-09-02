@@ -11,15 +11,47 @@ pub enum ColorMode {
     Mono,
 }
 
-/// Parse `#rrggbb` or `default`; `$name` resolution happens in the loader.
+/// The sixteen terminal colours by name (loader v2, the `terminal` theme):
+/// the user's own palette, whatever the terminal maps them to.
+const NAMED: [(&str, Color); 16] = [
+    ("black", Color::Black),
+    ("red", Color::Red),
+    ("green", Color::Green),
+    ("yellow", Color::Yellow),
+    ("blue", Color::Blue),
+    ("magenta", Color::Magenta),
+    ("cyan", Color::Cyan),
+    ("white", Color::Gray),
+    ("bright-black", Color::DarkGray),
+    ("bright-red", Color::LightRed),
+    ("bright-green", Color::LightGreen),
+    ("bright-yellow", Color::LightYellow),
+    ("bright-blue", Color::LightBlue),
+    ("bright-magenta", Color::LightMagenta),
+    ("bright-cyan", Color::LightCyan),
+    ("bright-white", Color::White),
+];
+
+/// Parse `#rrggbb`, `default`, one of the sixteen terminal colour names
+/// (`red`, `bright-red`, …) or `ansi:N` (an xterm-256 index); `$name`
+/// resolution happens in the loader.
 pub fn parse_color(s: &str) -> Result<Color, String> {
     let s = s.trim();
     if s.eq_ignore_ascii_case("default") {
         return Ok(Color::Reset);
     }
-    let hex = s
-        .strip_prefix('#')
-        .ok_or_else(|| format!("expected #rrggbb or 'default', got '{s}'"))?;
+    if let Some((_, c)) = NAMED.iter().find(|(n, _)| n.eq_ignore_ascii_case(s)) {
+        return Ok(*c);
+    }
+    if let Some(idx) = s.strip_prefix("ansi:") {
+        return idx
+            .parse::<u8>()
+            .map(Color::Indexed)
+            .map_err(|_| format!("expected ansi:0..=255, got '{s}'"));
+    }
+    let hex = s.strip_prefix('#').ok_or_else(|| {
+        format!("expected #rrggbb, 'default', a terminal colour name or ansi:N, got '{s}'")
+    })?;
     if hex.len() != 6 {
         return Err(format!("expected 6 hex digits, got '{s}'"));
     }
@@ -98,4 +130,27 @@ pub fn nearest_16(r: u8, g: u8, b: u8) -> Color {
         .min_by_key(|(_, (r2, g2, b2))| dist(r, g, b, *r2, *g2, *b2))
         .map(|(c, _)| *c)
         .unwrap_or(Color::Reset)
+}
+
+/// WCAG 2.1 relative luminance of an `Rgb` colour; `None` for anything the
+/// gate cannot judge (`Reset`, a terminal index — the user's palette).
+pub fn relative_luminance(c: Color) -> Option<f64> {
+    let Color::Rgb(r, g, b) = c else { return None };
+    let lin = |v: u8| {
+        let c = f64::from(v) / 255.0;
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    Some(0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b))
+}
+
+/// WCAG 2.1 contrast ratio (1.0–21.0) between two `Rgb` colours; `None` when
+/// either is not judgeable.
+pub fn contrast_ratio(a: Color, b: Color) -> Option<f64> {
+    let (la, lb) = (relative_luminance(a)?, relative_luminance(b)?);
+    let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+    Some((hi + 0.05) / (lo + 0.05))
 }
