@@ -35,4 +35,10 @@ pub fn builtin_sources(reg: &mut Registry) {
         start: crate::sensors::start,
         demo: gridwatch_store::demo::sensors_demo,
     });
+    #[cfg(feature = "mpris")]
+    reg.register_source(gridwatch_store::SourceDef {
+        info: gridwatch_store::demo::media_info(),
+        start: crate::mpris::start,
+        demo: gridwatch_store::demo::media_demo,
+    });
 }
