@@ -39,9 +39,15 @@ fn sensors() -> Box<dyn Component> {
     Box::new(gridwatch_components::sensors::Sensors::default())
 }
 
+fn winamp() -> Box<dyn Component> {
+    Box::new(gridwatch_components::winamp::Winamp::default())
+}
+
 #[test]
 fn tiers_are_well_formed() {
-    for mk in [clock, sources, htop, gpu, pins, alerts, audio, sensors] {
+    for mk in [
+        clock, sources, htop, gpu, pins, alerts, audio, sensors, winamp,
+    ] {
         let c = mk();
         assert_tiers_well_formed(c.tiers());
         assert_min_tier_fits(c.tiers(), Size::new(8, 3));
@@ -63,6 +69,7 @@ fn renders_everywhere() {
         assert_renders_everywhere(&|| alerts(), &store, &empty, &th);
         assert_renders_everywhere(&|| audio(), &store, &empty, &th);
         assert_renders_everywhere(&|| sensors(), &store, &empty, &th);
+        assert_renders_everywhere(&|| winamp(), &store, &empty, &th);
     }
 }
 
@@ -117,6 +124,11 @@ fn view_snapshots_at_real_grid_sizes() {
         insta::assert_yaml_snapshot!(
             format!("sensors_{name}"),
             view_snapshot(se.as_mut(), &history, &th, size)
+        );
+        let mut wa = winamp();
+        insta::assert_yaml_snapshot!(
+            format!("winamp_{name}"),
+            view_snapshot(wa.as_mut(), &history, &th, size)
         );
     }
 }

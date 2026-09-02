@@ -1,0 +1,157 @@
+---
+source: crates/components/tests/components.rs
+assertion_line: 129
+expression: "view_snapshot(wa.as_mut(), &history, &th, size)"
+---
+size: 59x18
+tier: main
+view:
+  stack:
+    children:
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Ok
+                s: "▶ "
+              - bold: true
+                role: Title
+                s: Demo Set — Short Interlude
+              - bold: false
+                role: TextMuted
+                s: "  [Demo Set]"
+      - - Len(2)
+        - big:
+            role: Ok
+            text: "0:20"
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: 48 kHz
+              - bold: false
+                role: TextMuted
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: stereo
+      - - Fill(1)
+        - bars:
+            gradient: Audio
+            labels: ~
+            n: 57
+            peaks: false
+            values:
+              - 0.03489377722144127
+              - 0.03489377722144127
+              - 0
+              - 0.02237720973789692
+              - 0.02237720973789692
+              - 0
+              - 0.11757094413042068
+              - 0.11757094413042068
+              - 0
+              - 0.6904408931732178
+              - 0.6904408931732178
+              - 0
+              - 0.13550826907157898
+              - 0.13550826907157898
+              - 0
+              - 0.2458018660545349
+              - 0.2458018660545349
+              - 0
+              - 0.15150853991508484
+              - 0.15150853991508484
+              - 0
+              - 0.12299232929944992
+              - 0.12299232929944992
+              - 0
+              - 0.03983214870095253
+              - 0.03983214870095253
+              - 0
+              - 0.03226524218916893
+              - 0.03226524218916893
+              - 0
+              - 0.03885972872376442
+              - 0.03885972872376442
+              - 0
+              - 0.019813627004623413
+              - 0.019813627004623413
+              - 0
+              - 0.026191094890236855
+              - 0.026191094890236855
+              - 0
+              - 0.019709747284650803
+              - 0.019709747284650803
+              - 0
+              - 0.033196479082107544
+              - 0.033196479082107544
+              - 0
+              - 0.033275917172431946
+              - 0.033275917172431946
+              - 0
+              - 0.10570821166038513
+              - 0.10570821166038513
+              - 0
+              - 0.5896500945091248
+              - 0.5896500945091248
+              - 0
+              - 0.22805675864219666
+              - 0.22805675864219666
+              - 0
+      - - Len(1)
+        - gauge:
+            gradient: Title
+            label: ""
+            text: "0:20 -0:25"
+            value: 0.4444444477558136
+      - - Len(1)
+        - gauge:
+            gradient: Load
+            label: vol
+            text: 80%
+            value: 0.800000011920929
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Text
+                s: "z "
+              - bold: false
+                role: TextMuted
+                s: prev
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "x "
+              - bold: false
+                role: TextMuted
+                s: play
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "c "
+              - bold: false
+                role: TextMuted
+                s: pause
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "v "
+              - bold: false
+                role: TextMuted
+                s: stop
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "b "
+              - bold: false
+                role: TextMuted
+                s: next
+    dir: V

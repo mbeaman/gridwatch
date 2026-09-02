@@ -13,6 +13,8 @@ pub fn builtin_components(reg: &mut Registry) {
     reg.register_component((crate::audio::DEF)());
     #[cfg(feature = "sensors")]
     reg.register_component((crate::sensors::DEF)());
+    #[cfg(feature = "mpris")]
+    reg.register_component((crate::winamp::DEF)());
     reg.register_component((crate::alerts::DEF)());
     reg.register_component((crate::clock::DEF)());
     reg.register_component((crate::sources_tile::DEF)());

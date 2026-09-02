@@ -1,6 +1,6 @@
 ---
 source: crates/components/tests/components.rs
-assertion_line: 81
+assertion_line: 88
 expression: "view_snapshot(s.as_mut(), &store, &th, size)"
 ---
 size: 17x8
@@ -28,6 +28,15 @@ view:
     - - bold: false
         role: Text
         s: gpu
+      - bold: false
+        role: TextGhost
+        s: " "
+      - bold: false
+        role: Info
+        s: starting
+    - - bold: false
+        role: Text
+        s: mpris
       - bold: false
         role: TextGhost
         s: " "

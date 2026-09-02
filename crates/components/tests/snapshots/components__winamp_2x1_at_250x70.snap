@@ -1,0 +1,43 @@
+---
+source: crates/components/tests/components.rs
+assertion_line: 129
+expression: "view_snapshot(wa.as_mut(), &history, &th, size)"
+---
+size: 38x8
+tier: shade
+view:
+  stack:
+    children:
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Ok
+                s: "▶ "
+              - bold: false
+                role: Text
+                s: Demo Set — Short Inter
+              - bold: false
+                role: TextMuted
+                s: " 0:20"
+      - - Len(1)
+        - bars:
+            gradient: Audio
+            labels: ~
+            n: 8
+            peaks: false
+            values:
+              - 0.03489377722144127
+              - 0.6904408931732178
+              - 0.2458018660545349
+              - 0.12299232929944992
+              - 0.03885972872376442
+              - 0.033196479082107544
+              - 0.03704587370157242
+              - 0.5896500945091248
+      - - Len(1)
+        - gauge:
+            gradient: Title
+            label: ""
+            text: ~
+            value: 0.4444444477558136
+    dir: V

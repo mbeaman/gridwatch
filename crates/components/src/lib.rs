@@ -17,5 +17,7 @@ pub mod registry;
 #[cfg(feature = "sensors")]
 pub mod sensors;
 pub mod sources_tile;
+#[cfg(feature = "mpris")]
+pub mod winamp;
 
 pub use registry::builtin_components;
