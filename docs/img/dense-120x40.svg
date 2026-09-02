@@ -133,12 +133,8 @@
 <text x="304" y="76" fill="#8a7fb0" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">load </text>
 <text x="344" y="76" fill="#efe9ff" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">4.51 4.20 3.52</text>
 <text x="480" y="76" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="488" y="76" fill="#8a7fb0" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ENC</text>
-<text x="520" y="76" fill="#3d2a63" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────</text>
-<text x="696" y="76" fill="#efe9ff" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0%</text>
-<text x="728" y="76" fill="#8a7fb0" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">DEC</text>
-<text x="760" y="76" fill="#3d2a63" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────</text>
-<text x="936" y="76" fill="#efe9ff" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0%</text>
+<text x="488" y="76" fill="#8a7fb0" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">P0</text>
+<text x="504" y="76" fill="#3d2a63" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> no throttling</text>
 <text x="952" y="76" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="92" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="8" y="92" fill="#00f0ff" font-weight="bold" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">CCD0</text>

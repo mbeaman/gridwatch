@@ -44,14 +44,14 @@ the default sink's spectrum, scope and VU — Winamp or cava ballistics, a sink 
 | `mini` | 16×4 | Meters | thin mono bars | `L` |
 | `scope` | 30×6 | Meters | oscilloscope | `scope` |
 | `spectrum` | 40×8 | Meters | mirrored stereo bars, peak caps, Hz axis, sink and levels header | `Hz` |
-| `full` (zoom) | 100×24 | Meters | spectrum + scope + VU, LUFS, preset and sink chips | `LUFS` |
+| `full` (zoom) | 100×24 | Meters | spectrum + scope + VU, preset and sink chips, LUFS with audio-lufs | `preset` |
 
 Keys once captured with `Enter`:
 
-- `m` — cycle bars → scope → both
-- `g` — cycle the preset (winamp, cava)
-- `[ ]` — narrow / widen the frequency window
-- `s` — pick the sink (↑/↓ Enter, Esc)
+- `m` — mode
+- `g` — preset
+- `[ ]` — window
+- `s` — sink
 
 ## `clock` — Clock
 
