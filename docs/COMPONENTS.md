@@ -5,6 +5,7 @@
 | kind | name | sources | default footprint | tiers | summary |
 |---|---|---|---|---|---|
 | `alerts` | Alerts | — | 4x1 | list → log | active alerts worst-first and the event log |
+| `audio` | audio visualizer | `audio` | 4x2 | vu → mini → scope → spectrum → full | the default sink's spectrum, scope and VU — Winamp or cava ballistics, a sink picker |
 | `clock` | Clock | — | 2x1 | mini → big | wall-clock time |
 | `gpu` | GPU | `gpu`, `cpu`? | 6x3 | badge → gauges → header → charts → procs → full | nvtop's header, gauges, ten-minute charts and the GPU process table over NVML |
 | `htop` | CPU | `cpu` | 6x3 | tiny → big-number → meters → cores → table | htop's meters, per-core CCD blocks, memory, load and pressure |
@@ -27,6 +28,30 @@ active alerts worst-first and the event log
 Keys once captured with `Enter`:
 
 - `↑/↓ PgUp/PgDn Home` — scroll the log
+
+## `audio` — audio visualizer
+
+the default sink's spectrum, scope and VU — Winamp or cava ballistics, a sink picker
+
+- contract 1 · chrome Themed · footprints 1x1 2x1 4x2 6x3 · default 4x2
+- requires none · optional PwRecord, PipeWireSocket
+- sources `audio` · optional sources none
+- example `options = { preset = "cava", mode = "both" }`
+
+| tier | min | demand | adds | signature |
+|---|---|---|---|---|
+| `vu` | 8×3 | Meters | stereo VU pair, peak | `L` `R` |
+| `mini` | 16×4 | Meters | thin mono bars | `L` |
+| `scope` | 30×6 | Meters | oscilloscope | `scope` |
+| `spectrum` | 40×8 | Meters | mirrored stereo bars, peak caps, Hz axis, sink and levels header | `Hz` |
+| `full` (zoom) | 100×24 | Meters | spectrum + scope + VU, LUFS, preset and sink chips | `LUFS` |
+
+Keys once captured with `Enter`:
+
+- `m` — cycle bars → scope → both
+- `g` — cycle the preset (winamp, cava)
+- `[ ]` — narrow / widen the frequency window
+- `s` — pick the sink (↑/↓ Enter, Esc)
 
 ## `clock` — Clock
 

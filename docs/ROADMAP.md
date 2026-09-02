@@ -72,10 +72,10 @@ Each arc: implement → adversarial review → fix → report → user approves 
 ## Arc 5 — v0.5.0 "it moves"
 **Goal:** the audio visualizer and the sensors tile.
 **Deliverables**
-- [ ] `audio` source: pw-record supervisor (latency 1024 default, `low_latency` opt-in, EOF-only respawn, passive-silence rule, kill after 10 s hidden), rtrb ring, DSP thread (dual FFT 8192/2048, 64 log bands, floor/tilt, scope, RMS/peak, 2 Hz idle publishing), `pw-dump` sink enumeration, Synth stereo mix
-- [ ] `audio` component: ballistics presets (winamp/cava), tiers vu/mini/scope/spectrum/full, octant-or-braille scope, global sink picker, `Animated{fps}` while visible with `fps = 30` default
+- [x] `audio` source: pw-record supervisor (latency 1024 default, `low_latency` opt-in, EOF-only respawn, passive-silence rule, kill after 10 s hidden), rtrb ring, DSP thread (dual FFT 8192/2048, 64 log bands, floor/tilt, scope, RMS/peak, 2 Hz idle publishing), `pw-dump` sink enumeration, Synth stereo mix — 5a, 2026-09-02
+- [x] `audio` component: ballistics presets (winamp/cava), tiers vu/mini/scope/spectrum/full, octant-or-braille scope, global sink picker, `Animated{fps}` while visible with `fps = 30` default — 5a, 2026-09-02 (the picker is per tile and sends the first `Control::Domain`)
 - [ ] `sensors` source (hwmon walker, PSI, cpufreq, RAPL gate; takes over `sensor.temp_c{k10temp:*}` from cpu) and component tiers hottest/strip/table/chart/full
-- [ ] DSP tests (0 dBFS sine, 50 Hz single-band); record `fixtures/journals/torch-audio.jsonl`; hardware-gated `#[ignore]` capture test; HUD measurement of the animated cell at 30 and 60 fps
+- [x] DSP tests (0 dBFS sine, 50 Hz single-band); record `fixtures/journals/torch-audio.jsonl`; hardware-gated `#[ignore]` capture test; HUD measurement of the animated cell at 30 and 60 fps — 5a, 2026-09-02 (the fixture is the silence path: nothing was playing; the "reacts to Firefox/game audio" row stays Matt's)
 **Acceptance:** live spectrum reacts to Firefox/game audio within ~30 ms; CPU <5 % of one core with the visualizer at 30 fps and <8 % at 60; `pw-top -b -n 1` shows the graph quantum unchanged at the default latency with no game running and ≤512 only with `low_latency` while the widget is visible.
 **Performance gate:** P2, P3, P7, P9, P10, P16 — including the Ptyxis CPU/SM delta with the visualizer visible beside the game.
 **Risks:** pw-record flag drift across PipeWire versions (version check + `--help` parse); eighth-block coverage in the user's actual font (ascii tier fallback).

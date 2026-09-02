@@ -117,6 +117,25 @@ Evidence for every claim is in `docs/research/htop-parity.md`,
 | CSV tail | **arc 8** (D50 §5) | |
 | `notify` transports (ntfy, webhook) | **out** — gridwatch is a viewer; the astral-watch service alerts (D51) | |
 
+## audio — cava and the Winamp spectrum analyser (arc 5a, `docs/research/audio-capture-and-fft.md` §2–3)
+
+| upstream feature | gridwatch | Where |
+|---|---|---|
+| cava: dual FFT — a long window for the bass bins, a short one above (8192 / 2048 at 48 kHz), Hann, `\|X\|·2/Σw` | **in — arc 5a** (`fft_bass` / `fft` under `[sources.audio]`; the split at 250 Hz) | `sources::audio::dsp::{Stage, Dsp}`; the §12.1 tests (1 kHz full-scale → its band ≥ 0.97 and RMS −3.01 dBFS; a bin-centred 52.7 Hz sine → one dominant band below 100 Hz; silence → zeros; the Hann identity) |
+| cava: log-spaced bands between `lower_cutoff_freq` / `higher_cutoff_freq`, a band narrower than a bin interpolated | **in — arc 5a**: 64 bands `f_k = lo·(hi/lo)^(k/64)` between `lo_hz = 30` and `hi_hz = 16000`, max per band, linear interpolation between the two bins around a narrow band's centre | `dsp::Dsp::bands` |
+| cava: `noise_reduction` (the integral smoother), `monstercat` neighbour filter, gravity fall `fall += 0.028`, `out = peak·(1 − fall²·g)` | **in — arc 5a** as the `cava` preset (`noise_reduction 0.77`, `monstercat 1.5`, `gravity 1.0`), frame-rate normalised to 30 fps | `components::audio::ballistics` (tests at 30 and 60 fps) |
+| cava: bars as full-height columns with a gap (`bar_width`/`bar_spacing`), stereo mirrored (`reverse` the left channel) | **in — arc 5a**: ⌊(w+1)/3⌋ two-cell bars with a one-cell gap, the left channel reversed so the bass meets in the middle; `bars = N` gives thin bars | `components::audio::view::mirrored` |
+| cava: `sensitivity` / autosens | **deviation**: a fixed dBFS floor (`floor_db = −65`) and `tilt_db_oct = 4` above 1 kHz instead of the auto-gain — a level meter must not lie about level | `dsp::DspConfig` |
+| cava: the `source` option, PulseAudio/PipeWire backends | **in — arc 5a** over `pw-record` (+ `pw-dump` for the list): `s` opens a table of `Audio/Sink` nodes with state and default flag, `Enter` sends `Control::Domain(SetSink)`; `[sources.audio] sink = "auto" \| "<node.name>" \| <object.serial>` | `sources::audio::{sink, capture}`; never cpal/pipewire crates (D17) |
+| cava: `framerate` | **in**: `[sources.audio] fps` (5–60) for the DSP cadence and the tile's `fps` option for the animation; `Redraw::No` once silent and settled | `RedrawPolicy::Animated { fps }`, D55 seam 5 |
+| Winamp: 75 (or 19) bars, `falloff` 3/6/12/16/32 sixteenths per frame, instant rise | **in — arc 5a** as the `winamp` preset (`falloff 12`); the bar count from the width | `ballistics::Bars` (`Preset::Winamp`) |
+| Winamp: peak caps that hold, then fall with an accelerating velocity (`v *= 1.1`) | **in — arc 5a**: caps hold 12 frames, then fall from 0.003/frame ×1.1 per frame; drawn as `▔` in the text role | `ballistics` (the peak-schedule test); the renderer's `Bars.peaks` |
+| Winamp: the oscilloscope and the mode toggle | **in — arc 5a**: `m` cycles bars → scope → both; the scope is the latest 512 mono samples as a braille `View::Chart` (octants when the VTE marker is on), min/max downsampled per column | `components::audio::scope` |
+| Winamp: the spectrum's colour ramp per row (fire), the peak colour | **deviation**: the theme's `Audio` gradient sampled per **bar height** (the renderer colours a column by its value), not per row; the cap in `Text` | `theme.gradients.audio`; D55 amendment 2 |
+| VU / peak meters (stereo), dBFS text | **in — arc 5a**: the `vu` tier — `L`/`R` gauges over the RMS (−60..0 dBFS, 20 dB/s fall) with the source's 1.5 s peak hold | `ballistics::Vu`, `dsp::PeakHold` |
+| LUFS (EBU R128 momentary / short-term) | **feature `audio-lufs`** (`ebur128`), keys declared; **not wired in 5a** — the `full` tier prints `—` | `keys::audio::{LUFS_M, LUFS_S}` |
+| Reacts to Firefox / game audio within ~30 ms | **Matt's row** — an agent does not start players; `torch-audio.jsonl` is the silence path | `docs/PERFORMANCE.md` P16 |
+
 ## Verified by hand on torch, 2026-09-01 (arc 2b)
 
 - `nvtop --snapshot` beside a 12 s `gridwatch run --record` on the idle box
