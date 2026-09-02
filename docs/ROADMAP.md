@@ -100,6 +100,7 @@ Each arc: implement → adversarial review → fix → report → user approves 
 **Risks:** Wi-Fi path untestable until wlp7s0 is connected (fixtures); mDNS stalls (async resolver only).
 
 ## Arc 8 — v0.8.0 "full parity"
+**Brief:** `docs/briefs/arc-8.md` (D58, written 2026-09-02).
 **Goal:** htop and nvtop interactive parity and the remaining pins modes, checked against PARITY.md.
 **Deliverables**
 - [ ] htop full tier: screens/tabs, tree view, search/filter, sort keys, tags, follow, kernel/user thread toggles, F-key bar; actions kill/renice/affinity/ioprio via `Action`s with confirm + `readonly`
