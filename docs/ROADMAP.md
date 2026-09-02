@@ -40,6 +40,7 @@ Each arc: implement → adversarial review → fix → report → user approves 
 **Risks:** NVML field quirks on driver 610 (per-field probing); journal size with tables (tables off by default).
 
 ## Arc 3 — v0.3.0 "the signature tile"
+*Brief: `docs/briefs/arc-3.md` (D50, 2026-09-02) — two Opus sessions, **3a** pins source + component + alert overlay + `synth-overload` fixture + PARITY, then **3b** hot reload, theme loader v2 (`terminal`, `phosphor-green`), staleness, `doctor`. astral-watch stays pinned at `dce7eee`; v0.8.0 is not a prerequisite (D50 §1).*
 **Goal:** astral-watch parity as a first-class component with the cross-page alarm overlay, plus the degraded-mode story.
 **Deliverables**
 - [ ] `pins` source (git-pinned astral-watch, auto exporter → i2c; Lifecycle bridge with self-tracked active set, TelemetryLost feed, redetect); `pins` keys; Synth pin data with scripted overload; CSV tail deferred to arc 8
@@ -48,7 +49,7 @@ Each arc: implement → adversarial review → fix → report → user approves 
 - [ ] **Record the alerting stance (DECISIONS entry):** gridwatch is a viewer — the astral-watch service owns out-of-band alerting; the optional unfocused `notify-send` on Crit stays in BACKLOG unless promoted here (D39)
 - [ ] Capability probe (`CapSet`, ≤200 ms), `Manifest.requires/optional`, placeholder tiles with fix text, `gridwatch doctor`, staleness dimming + `STALE` badge
 - [ ] 1 Hz mtime hot reload for config/layout/theme with instance diffing and error toasts; theme loader v2 (`inherits`, `[components.<kind>]` overrides, WCAG warn gate); `terminal` and `phosphor-green` themes
-- [ ] **Pre-req, confirmed 2026-08-31 (D35):** in a separate astral-watch session, open the three PRs (`cli`/`notify` feature gating, `log` facade, `Lifecycle::active()`) and cut the v0.8.0 tag; gridwatch then pins the tag instead of the rev. **Decide crates.io in that same session** — a git dependency can never be published, so if gridwatch is ever to reach crates.io, `cargo publish` astral-watch 0.8.0 then (D39)
+- [ ] **Was a pre-req (D35), demoted by D50 §1 — arc 3 pins `dce7eee` and needs none of the PRs; do this whenever convenient:** in a separate astral-watch session, open the three PRs (`cli`/`notify` feature gating, `log` facade, `Lifecycle::active()`) and cut the v0.8.0 tag; gridwatch then pins the tag instead of the rev. **Decide crates.io in that same session** — a git dependency can never be published, so if gridwatch is ever to reach crates.io, `cargo publish` astral-watch 0.8.0 then (D39)
 - [ ] Fixtures: `synth-overload.jsonl`; replay test asserts `pins/overload` raised at the scripted Ts and the banner renders on page 2; `docs/PARITY.md` astral-watch section
 **Performance gate:** P14 green (≤ 2 i2c transactions/s, ≤ 1 % CPU); the banner adds no steady-state redraws.
 **Acceptance:** pins tile matches astral-watch's TUI feature list per PARITY.md; a synthetic overload raises the red banner on every page and resolves with a green toast; running beside the root logger shows no corrupted readings; `gridwatch doctor` lists every capability with reasons.
