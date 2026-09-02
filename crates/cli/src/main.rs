@@ -37,6 +37,9 @@ enum Cmd {
         color: Option<String>,
         #[arg(long)]
         no_mouse: bool,
+        /// No theme effects and no ambient layer (matrix's rain).
+        #[arg(long)]
+        no_effects: bool,
         /// Show the stats HUD from the start (F12 toggles).
         #[arg(long)]
         stats: bool,
@@ -145,6 +148,7 @@ fn main() -> std::process::ExitCode {
         fps: None,
         color: None,
         no_mouse: false,
+        no_effects: false,
         stats: false,
         stats_log: None,
         record: None,
@@ -160,6 +164,7 @@ fn main() -> std::process::ExitCode {
             fps,
             color,
             no_mouse,
+            no_effects,
             stats,
             stats_log,
             record,
@@ -176,6 +181,7 @@ fn main() -> std::process::ExitCode {
                 fps,
                 color,
                 no_mouse,
+                no_effects,
                 stats,
                 stats_log,
                 record,

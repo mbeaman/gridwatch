@@ -14,6 +14,10 @@ pub struct FrameStats {
     /// to every source having published at least one sample.
     pub first_frame_ms: u64,
     pub sources_live_ms: u64,
+    /// The effects painter's cost on the last frame (P20's evidence).
+    pub fx_us: u64,
+    /// The ambient layer's governor step (0 = full rain), for S4's evidence.
+    pub rain_step: u8,
 }
 
 impl FrameStats {
@@ -50,7 +54,7 @@ impl FrameStats {
     /// with Δwchar within 5 %" can be checked from a single run.
     pub fn json_line(&self, bytes: u64) -> String {
         format!(
-            r#"{{"frames":{},"p50_us":{},"p95_us":{},"changed_cells":{},"bytes":{},"redraw_data":{},"redraw_anim":{},"redraw_heartbeat":{},"first_frame_ms":{},"sources_live_ms":{}}}"#,
+            r#"{{"frames":{},"p50_us":{},"p95_us":{},"changed_cells":{},"bytes":{},"redraw_data":{},"redraw_anim":{},"redraw_heartbeat":{},"first_frame_ms":{},"sources_live_ms":{},"fx_us":{},"rain_step":{}}}"#,
             self.frames,
             self.p50_us(),
             self.p95_us(),
@@ -60,7 +64,9 @@ impl FrameStats {
             self.redraw_anim,
             self.redraw_heartbeat,
             self.first_frame_ms,
-            self.sources_live_ms
+            self.sources_live_ms,
+            self.fx_us,
+            self.rain_step
         )
     }
 }

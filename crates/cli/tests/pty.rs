@@ -679,3 +679,48 @@ fn edit_mode_saves_the_moved_tile() {
     let bad: Vec<&str> = log.lines().filter(|l| l.contains("ERROR")).collect();
     assert!(bad.is_empty(), "errors in the log: {bad:?}");
 }
+
+/// C.16 (arc 4b) — `--demo --theme matrix` at 250×70 draws rain glyphs within
+/// two seconds; the pins banner text reaches the terminal near 22 s; `L`
+/// then `q` exits 0 with no ERROR in the log.
+#[test]
+fn matrix_rain_draws_and_the_banner_comes_through() {
+    if skip("matrix_rain_draws_and_the_banner_comes_through") {
+        return;
+    }
+    let mut s = Session::start("matrix", 70, 250, "run --demo --theme matrix");
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
+        t.chars().any(|c| ('\u{FF66}'..='\u{FF9D}').contains(&c))
+    });
+    assert!(
+        seen.is_some(),
+        "no rain in 2 s; screen: {:?}",
+        s.screen().chars().take(400).collect::<String>()
+    );
+    let seen = s.wait_for(Duration::from_secs(30), |t| t.contains("ALERT: OVERLOAD"));
+    assert!(seen.is_some(), "no banner by 30 s");
+    s.keys("L");
+    std::thread::sleep(Duration::from_millis(500));
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    let bad: Vec<&str> = log.lines().filter(|l| l.contains("ERROR")).collect();
+    assert!(bad.is_empty(), "errors in the log: {bad:?}");
+}
+
+/// C.17 (arc 4b) — `--no-effects --demo` starts, draws the page, logs no
+/// effects notice and exits 0.
+#[test]
+fn no_effects_runs_plain() {
+    if skip("no_effects_runs_plain") {
+        return;
+    }
+    let mut s = Session::start("noeffects", 70, 250, "run --demo --no-effects");
+    let seen = s.wait_for(Duration::from_secs(3), |t| t.contains("CCD0"));
+    assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("effects off"), "{log}");
+    assert!(!log.contains("ERROR"), "{log}");
+}

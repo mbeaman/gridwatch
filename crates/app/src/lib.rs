@@ -3,9 +3,12 @@
 
 #![deny(unsafe_code)] // one documented libc seam lives in sys.rs (dup2, localtime_r)
 
+pub mod ambient;
 pub mod app;
 pub mod config;
 pub mod edit;
+pub mod effects;
+pub mod flourish;
 pub mod input;
 pub mod probe;
 pub mod save;
@@ -32,6 +35,8 @@ pub struct RunOpts {
     pub fps: Option<u16>,
     pub color: Option<String>,
     pub no_mouse: bool,
+    /// `--no-effects`: no tachyonfx hooks and no ambient layer (P20).
+    pub no_effects: bool,
     pub stats: bool,
     pub stats_log: Option<std::path::PathBuf>,
     /// `--record FILE`: journal every message the frame loop drains (§4.5).
@@ -200,6 +205,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     let _input = input::spawn(ch.clone());
 
     let mouse = loaded.config.mouse && !opts.no_mouse;
+    let effects_on = loaded.config.effects.enabled && !opts.no_effects;
     terminal::install_panic_hook(mouse);
     let (mut term, guard, bytes) = terminal::enter(mouse).map_err(|e| e.to_string())?;
     // Only now: everything above can still report a failure to the real stderr,
@@ -242,6 +248,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
         shell.warn_toast(w);
     }
     shell.set_theme_ref(theme_name.clone());
+    shell.set_effects(effects_on, loaded.config.effects.budget_ms);
     shell.theme_locked = force_mono || opts.theme.is_some();
     // Hot reload (§9, seam 8): the watcher stats the two config files and the
     // theme file (when the theme is a file) once per second; the shell

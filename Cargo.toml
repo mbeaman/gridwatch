@@ -23,6 +23,7 @@ ratatui-core     = { version = "0.1.2", features = ["std", "serde", "underline-c
 ratatui-widgets  = { version = "0.3.2", default-features = false, features = ["std", "serde"] }            # ui, components (drops the calendar/time dep)
 crossterm        = { version = "0.29.0", features = ["serde"] }                   # app + cli only
 tui-big-text     = "0.8.9"
+tachyonfx        = { version = "0.25.1", default-features = false, features = ["std", "sendable"] }   # app only: the effects painter (arc 4b, D54 seam 6); no DSL
 unicode-width    = "0.2.2"
 # data / config
 serde            = { version = "1", features = ["derive", "rc"] }

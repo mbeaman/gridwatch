@@ -16,7 +16,9 @@ use gridwatch_ui::layout::{
     unit_at, unit_rect,
 };
 
+use crate::ambient::Ambient;
 use crate::edit::{EditKey, EditState};
+use crate::effects::{Effects, Hook};
 use gridwatch_ui::theme::{BUILTIN_THEMES, Role, Theme, TitleStyle, load_builtin};
 use gridwatch_ui::view::Span as RSpanText;
 use gridwatch_ui::{Registry, overlay};
@@ -109,6 +111,21 @@ pub struct Shell {
     pub watch_ignore: Option<std::sync::mpsc::Sender<(ReloadKind, u64)>>,
     /// Edit mode (§10, arc 4a): `Some` while `e` is active.
     edit: Option<EditState>,
+    /// The effects painter (§7, arc 4b): off in headless shots and tests.
+    effects: Effects,
+    /// The showcase theme's ambient layer (D28/D31/D34), when the theme has
+    /// one and effects are on.
+    ambient: Option<Ambient>,
+    ambient_on: bool,
+    /// The tile under the mouse pointer (a pinned rect under `matrix`).
+    hover: Option<usize>,
+    /// Bytes written a second ago, for the governor's bytes/s reading.
+    bytes_mark: (Instant, u64),
+    /// The focus the last frame fired the focus hook for.
+    fx_focus: Option<usize>,
+    /// Whether the banner was up last frame (the alert pulse's trigger).
+    fx_banner: bool,
+    fx_started: bool,
     /// The last body rect solved: the mouse's units are read against it.
     last_body: Rect,
     grid: gridwatch_ui::layout::GridSpec,
@@ -194,6 +211,14 @@ impl Shell {
             watch_theme_files: None,
             watch_ignore: None,
             edit: None,
+            effects: Effects::new(false, 4),
+            ambient: None,
+            ambient_on: false,
+            hover: None,
+            bytes_mark: (Instant::now(), 0),
+            fx_focus: None,
+            fx_banner: false,
+            fx_started: false,
             last_body: Rect::default(),
             grid: loaded.grid,
             pages: loaded.pages.clone(),
@@ -258,6 +283,57 @@ impl Shell {
         &self.theme
     }
 
+    /// Switch the effects painter on (`[effects] enabled` and not
+    /// `--no-effects`) with its budget (§7, P20).
+    pub fn set_effects(&mut self, on: bool, budget_ms: u32) {
+        self.effects = Effects::new(on, budget_ms);
+        self.ambient_on = on;
+        self.rebuild_ambient();
+    }
+
+    /// The ambient layer follows the theme: built for a showcase theme with
+    /// a layer, dropped otherwise (§7).
+    fn rebuild_ambient(&mut self) {
+        self.ambient = match (&self.theme.ambient, &self.theme.rain) {
+            (Some(spec), Some(rain)) if self.ambient_on => Some(Ambient::new(
+                spec.clone(),
+                rain.clone(),
+                self.theme.rain_glyphs,
+                &self.theme.name,
+            )),
+            _ => None,
+        };
+    }
+
+    /// The layer runs while the terminal is focused and not paused (D28:
+    /// it is frozen otherwise, and P4 holds).
+    fn ambient_active(&self) -> bool {
+        self.ambient.is_some() && self.terminal_focused && !self.paused
+    }
+
+    /// The ambient layer's state for the HUD.
+    pub fn ambient_hud(&self) -> Option<String> {
+        self.ambient.as_ref().map(|a| {
+            format!(
+                "rain {} fps · governor step {}{}{}",
+                a.fps(),
+                a.governor.step,
+                if a.locked() { " · locked" } else { "" },
+                if !self.ambient_active() {
+                    " · frozen"
+                } else {
+                    ""
+                }
+            )
+        })
+    }
+
+    /// An effect is mid-flight, or the rain is falling: the frame loop draws
+    /// at the animation's fps (§5).
+    pub fn effects_running(&self) -> bool {
+        self.effects.running() || self.ambient_active()
+    }
+
     /// Swap the theme (§9 hot reload, `t`, `T`): the render cache is keyed by
     /// theme name, and cleared anyway so a same-named edited file redraws.
     pub fn swap_theme(&mut self, theme: Theme) {
@@ -265,8 +341,18 @@ impl Shell {
             tracing::warn!("theme {}: {w}", theme.name);
             self.toast(Severity::Warn, w);
         }
+        let from = (self.theme.color(Role::Text), self.theme.color(Role::Bg));
         self.theme = theme;
         self.cache.clear();
+        self.rebuild_ambient();
+        let body = self.last_body;
+        self.effects.trigger(
+            Hook::ThemeSwap,
+            &self.theme.effects,
+            &self.theme,
+            body,
+            Some(from),
+        );
     }
 
     /// Apply a re-parsed config + layout (§9 hot reload): instances whose
@@ -697,14 +783,19 @@ impl Shell {
     }
 
     pub fn animated_visible(&self) -> bool {
-        false // arc 5: the audio tile reports Animated; nothing animates in 1a
+        // arc 5: the audio tile reports Animated; until then the effects
+        // layer and the ambient layer animate (arc 4b).
+        self.effects_running()
     }
 
     pub fn effective_fps(&self) -> u16 {
-        if self.terminal_focused {
-            self.fps
-        } else {
-            self.unfocused_fps.max(1)
+        if !self.terminal_focused {
+            return self.unfocused_fps.max(1);
+        }
+        match &self.ambient {
+            // The rain runs at its own (governed) fps, not the config's.
+            Some(a) if self.ambient_active() => u16::from(a.fps()),
+            _ => self.fps,
         }
     }
 
@@ -880,6 +971,8 @@ impl Shell {
         for cell in &solved.cells {
             self.draw_cell(&page, cell, buf);
         }
+        // Flourishes in the empty units (seam 7): after the tiles, never over one.
+        crate::flourish::draw(&self.theme, &self.grid, &page, body, self.mode, buf);
         self.last_solved = Some(solved);
         self.last_body = body;
         self.update_demand();
@@ -1060,6 +1153,144 @@ impl Shell {
                 buf,
             );
         }
+        // The effects layer (§7, arc 4b): hooks fire on transitions the
+        // shell sees — first frame, a focus move, the banner appearing — and
+        // the painter runs over the finished frame, before the HUD.
+        if self.effects.enabled() {
+            if !self.fx_started {
+                self.fx_started = true;
+                self.effects
+                    .trigger(Hook::Startup, &self.theme.effects, &self.theme, body, None);
+            }
+            if self.focus != self.fx_focus {
+                self.fx_focus = self.focus;
+                let outer = self.last_solved.as_ref().and_then(|s| {
+                    self.focus
+                        .and_then(|f| s.cells.iter().find(|c| c.index == f).map(|c| c.outer))
+                });
+                if let Some(outer) = outer {
+                    self.effects.trigger(
+                        Hook::Focus,
+                        &self.theme.effects,
+                        &self.theme,
+                        outer,
+                        None,
+                    );
+                }
+            }
+            let banner_now = self.banner_text().is_some() && area.height > min_h;
+            if banner_now && !self.fx_banner {
+                let row = Rect {
+                    x: area.x,
+                    y: area.y + u16::from(show_tabs),
+                    width: area.width,
+                    height: 1,
+                };
+                self.effects
+                    .trigger(Hook::Alert, &self.theme.effects, &self.theme, row, None);
+            } else if !banner_now && self.fx_banner {
+                self.effects.cancel(Hook::Alert);
+            }
+            self.fx_banner = banner_now;
+        }
+        self.effects.paint(buf, Instant::now());
+        self.stats.fx_us = self.effects.last_cost_us();
+        self.stats.rain_step = self.ambient.as_ref().map(|a| a.governor.step).unwrap_or(0);
+        if let Some(n) = self.effects.notice.take() {
+            tracing::warn!("{n}");
+            self.toast(Severity::Warn, n);
+        }
+        // The ambient layer (D34): the frame so far is the mold; the rain
+        // writes the screen. Pinned: the focused tile, tiles whose sources
+        // have an active Warn/Crit alert, the banner, the toasts, the key
+        // bar, the hovered tile. Frozen (unfocused, paused): the last screen.
+        if self.ambient.is_some() {
+            let active = self.ambient_active();
+            let mut pinned: Vec<Rect> = vec![status];
+            if self.banner_text().is_some() && area.height > min_h {
+                pinned.push(Rect {
+                    x: area.x,
+                    y: area.y + u16::from(show_tabs),
+                    width: area.width,
+                    height: 1,
+                });
+            }
+            if toast_rows > 0 {
+                pinned.push(Rect {
+                    x: body.x,
+                    y: body.y + body.height.saturating_sub(1 + toast_rows as u16),
+                    width: body.width,
+                    height: toast_rows as u16,
+                });
+            }
+            // An alert id is `<source>/<condition>` (D50 §2): the prefix
+            // names the source whose tiles are pinned.
+            let alerting: std::collections::BTreeSet<String> = self
+                .store
+                .alerts()
+                .active()
+                .filter(|(_, a)| a.severity != Severity::Info)
+                .map(|(id, _)| id.0.split('/').next().unwrap_or("").to_string())
+                .collect();
+            if let Some(solved) = &self.last_solved {
+                for cell in &solved.cells {
+                    let Some(pl) = page.place.get(cell.index) else {
+                        continue;
+                    };
+                    let key = self.instance_key(&pl.target);
+                    let alert_tile = self
+                        .instances
+                        .get(&key)
+                        .and_then(|i| i.component.as_ref())
+                        .is_some_and(|c| {
+                            let m = c.manifest();
+                            m.sources
+                                .iter()
+                                .chain(m.optional_sources)
+                                .any(|s| alerting.contains(s.0))
+                        });
+                    let focused_tile = self.focus == Some(cell.index);
+                    let hovered = self.hover == Some(cell.index);
+                    if alert_tile || focused_tile || hovered {
+                        pinned.push(cell.outer);
+                    }
+                }
+            }
+            if self.help || self.alerts_overlay || self.edit.is_some() {
+                // Overlays and edit mode are read, not rained on.
+                pinned.push(body);
+            }
+            let bytes_now = self
+                .bytes_counter
+                .as_ref()
+                .map(|c| c.load(Ordering::Relaxed))
+                .unwrap_or(0);
+            let (mark_t, mark_b) = self.bytes_mark;
+            let bytes_per_s = if mark_t.elapsed() >= Duration::from_secs(1) {
+                let bps = bytes_now.saturating_sub(mark_b);
+                self.bytes_mark = (Instant::now(), bytes_now);
+                Some(bps)
+            } else {
+                None
+            };
+            let p95 = self.stats.p95_us();
+            if let Some(amb) = self.ambient.as_mut() {
+                if active {
+                    if amb.spec.governor
+                        && let Some(bps) = bytes_per_s
+                    {
+                        let fps = amb.fps();
+                        amb.governor.observe(p95, bps, fps);
+                    }
+                    let mold = buf.clone();
+                    amb.frame(&mold, &pinned, buf);
+                } else if let Some(last) = amb.last_output()
+                    && last.area() == buf.area()
+                {
+                    *buf = last.clone();
+                }
+            }
+        }
         if self.hud {
             let bytes = self
                 .bytes_counter
@@ -1085,6 +1316,12 @@ impl Shell {
                 recording: self.recorder.as_ref().map(|r| (r.written(), r.dropped())),
             };
             overlay::hud(&stats, body, &self.theme, buf);
+            if let Some(line) = self.ambient_hud() {
+                let text = format!(" {line} · fx {} µs ", self.effects.last_cost_us());
+                let w = text.chars().count() as u16;
+                let x = body.x + body.width.saturating_sub(w + 1);
+                buf.set_string(x, body.y + 9, &text, self.theme.style(Role::Text));
+            }
         }
         // Changed-cell accounting (own diff): only when the HUD or a stats
         // log consumes it — a full clone + compare per frame is not free (P19).
@@ -1459,6 +1696,14 @@ impl Shell {
 
     fn handle_mouse(&mut self, m: gridwatch_store::MouseEvent) -> bool {
         use gridwatch_store::MouseKind::*;
+        // `reveal = ["hover"]` (D31): the tile under the pointer stays lit.
+        if self.ambient.is_some() {
+            let over = self.last_solved.as_ref().and_then(|s| hit(s, m.x, m.y));
+            if over != self.hover {
+                self.hover = over;
+                return true;
+            }
+        }
         if self.edit.is_some() {
             return self.edit_mouse(m);
         }
@@ -1497,6 +1742,12 @@ impl Shell {
     }
 
     fn handle_key(&mut self, k: gridwatch_store::KeyEvent) -> bool {
+        // `reveal = ["key"]` (D31): a key re-lights the focused tile.
+        if let (Some(a), Some(s), Some(f)) = (self.ambient.as_mut(), &self.last_solved, self.focus)
+            && let Some(cell) = s.cells.iter().find(|c| c.index == f)
+        {
+            a.relight(cell.outer);
+        }
         if k.mods.ctrl && k.code == KeyCode::Char('q') {
             self.quit = true;
             return true;
@@ -1657,8 +1908,34 @@ impl Shell {
                 self.alerts_overlay = !self.alerts_overlay;
                 true
             }
-            KeyCode::Char('V') | KeyCode::Char('L') => {
-                self.toast(Severity::Info, "showcase themes arrive in arc 4");
+            KeyCode::Char('V') => {
+                match self.ambient.as_mut() {
+                    Some(a) => a.relight_all(),
+                    None => self.toast(
+                        Severity::Info,
+                        "V re-lights the page under a showcase theme (matrix)",
+                    ),
+                }
+                true
+            }
+            KeyCode::Char('L') => {
+                match self.ambient.as_mut() {
+                    Some(a) => {
+                        let locked = a.toggle_lock();
+                        self.toast(
+                            Severity::Info,
+                            if locked {
+                                "rain: everything lit (L unlocks)"
+                            } else {
+                                "rain: unlocked"
+                            },
+                        );
+                    }
+                    None => self.toast(
+                        Severity::Info,
+                        "L locks the page lit under a showcase theme (matrix)",
+                    ),
+                }
                 true
             }
             KeyCode::Char('e') => {
@@ -2779,6 +3056,7 @@ where
         }
         let mut cause_data = false;
         let mut cause_beat = false;
+        let mut cause_anim = false;
         if shell.data_dirty() {
             dirty = true;
             cause_data = true;
@@ -2786,6 +3064,16 @@ where
         if last_draw.elapsed() >= HEARTBEAT {
             dirty = true;
             cause_beat = true;
+        }
+        // An animation is due (§5): a running effect or the rain, at its fps,
+        // while focused — never while frozen (D28: P4 holds when unfocused).
+        if shell.animated_visible()
+            && shell.terminal_focused
+            && last_draw.elapsed()
+                >= Duration::from_millis(1000 / u64::from(shell.effective_fps().max(1)))
+        {
+            dirty = true;
+            cause_anim = true;
         }
         if last_stats.elapsed() >= HEARTBEAT
             && let Some(path) = shell.stats_log.clone()
@@ -2836,6 +3124,9 @@ where
             }
             if cause_beat {
                 shell.stats.redraw_heartbeat += 1;
+            }
+            if cause_anim {
+                shell.stats.redraw_anim += 1;
             }
             last_draw = Instant::now();
             dirty = false;

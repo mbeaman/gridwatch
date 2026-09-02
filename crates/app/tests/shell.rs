@@ -1491,3 +1491,134 @@ fn picker_scrolls_with_the_cursor() {
     let text = page_text(&mut sh, 100, 24);
     assert!(text.contains("filter: j"), "{text}");
 }
+
+// ───────────────────────────── arc 4b: the rain ─────────────────────────────
+
+/// 20 synth ticks = 30 s: the overload is active (raised 21.5 s, resolved
+/// 50 s), so the banner is up for the readability check.
+fn matrix_shell() -> Shell {
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    let loaded = config::load_texts(config::DEFAULT_CONFIG, config::DEFAULT_LAYOUT).unwrap();
+    let theme = load_builtin("matrix", ColorMode::TrueColor).unwrap();
+    let mut sh = Shell::new(
+        reg,
+        &loaded,
+        theme,
+        probe::probe(),
+        0,
+        Clock::new_virtual(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        false,
+    );
+    gridwatch_app::feed_synth(&mut sh, 42, 20);
+    sh.set_effects(true, 4);
+    sh
+}
+
+fn katakana_cells(frame: &ratatui::buffer::Buffer) -> usize {
+    frame
+        .content()
+        .iter()
+        .filter(|c| {
+            c.symbol()
+                .chars()
+                .any(|ch| ('\u{FF66}'..='\u{FF9D}').contains(&ch))
+        })
+        .count()
+}
+
+/// The rain draws under `matrix` (seam 10): after a few frames katakana are
+/// on screen, the key bar row is pinned (its text intact), and the banner
+/// text survives every frame of a sweep cycle while the overload is active.
+#[test]
+fn matrix_rain_falls_and_the_pins_stay_readable() {
+    let mut sh = matrix_shell();
+    let mut seen_rain = false;
+    let mut bar_ok = true;
+    // 20 ticks of synth = 30 s: the overload is active from 21.5 s.
+    for _ in 0..24 {
+        let frame = shot_frame(&mut sh, 250, 70);
+        if katakana_cells(&frame) > 0 {
+            seen_rain = true;
+        }
+        let bar: String = (0..250u16)
+            .map(|x| frame.cell((x, 69)).unwrap().symbol().to_string())
+            .collect();
+        if !bar.contains("q quit") {
+            bar_ok = false;
+        }
+    }
+    assert!(seen_rain, "no rain glyph in 24 frames");
+    assert!(bar_ok, "the key bar was rained on");
+    // The banner: every frame of a whole sweep cycle (20 s at 24 fps = 480
+    // frames) carries the alert text, unrained.
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("⚠ alert: overload ⚠"), "{text}");
+    for _ in 0..500 {
+        let frame = shot_frame(&mut sh, 250, 70);
+        let banner: String = (0..250u16)
+            .map(|x| frame.cell((x, 1)).unwrap().symbol().to_string())
+            .collect();
+        assert!(
+            banner.contains("ALERT: OVERLOAD"),
+            "banner rained on: {banner}"
+        );
+    }
+    // The pins tile (the alerting source's tile) is pinned: its title stays.
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        text.contains("balance"),
+        "the alerting tile is not lit: {text}"
+    );
+}
+
+/// Pause freezes the layer (two frames byte-identical) and unpausing resumes;
+/// `V` lights every content cell (the whole page reads); `L` keeps it lit.
+#[test]
+fn pause_freezes_and_v_and_l_light_the_page() {
+    let mut sh = matrix_shell();
+    for _ in 0..30 {
+        let _ = shot_frame(&mut sh, 250, 70);
+    }
+    // Let the startup fade finish before comparing frames.
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char(' '))));
+    let a = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    let b = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    assert_eq!(a, b, "the rain moved while paused");
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char(' '))));
+    let c = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    assert_ne!(b, c, "the rain did not resume");
+    // V: the whole page is lit — the gpu tile's title is readable at once.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('V'))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("gpu"), "{text}");
+    assert!(text.contains("sources"), "{text}");
+    // L: locked — after many frames the page still reads.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('L'))));
+    for _ in 0..200 {
+        let _ = shot_frame(&mut sh, 250, 70);
+    }
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("gpu") && text.contains("sources"), "{text}");
+    assert!(text.contains("everything lit"), "{text}");
+}
+
+/// A quiet theme has no layer: `V`/`L` explain themselves; `--no-effects`
+/// (effects off) under matrix draws the plain page.
+#[test]
+fn quiet_themes_and_no_effects_have_no_rain() {
+    let mut sh = shell_with_theme(config::DEFAULT_LAYOUT, 1, "retrowave");
+    sh.set_effects(true, 4);
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('V'))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("showcase theme"), "{text}");
+    let mut off = shell_with_theme(config::DEFAULT_LAYOUT, 1, "matrix");
+    off.set_effects(false, 4);
+    let frame = shot_frame(&mut off, 250, 70);
+    assert_eq!(katakana_cells(&frame), 0);
+    let text = page_text(&mut off, 250, 70);
+    assert!(text.contains("gpu") && text.contains("balance"), "{text}");
+}
