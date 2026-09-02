@@ -109,26 +109,88 @@ pub struct MediaSynth {
     last_track: Option<u64>,
     history: Vec<HistoryItem>,
     players_sent: bool,
+    /// What the keys did to this player: a pause point, a seek offset, a
+    /// track skip and a volume. Under `--demo` the transport keys have to
+    /// *do* something, or a first-time user cannot tell them from dead
+    /// keys (review).
+    paused_at: Option<Ts>,
+    stopped: bool,
+    seek_us: i64,
+    skip: usize,
+    volume: f64,
 }
 
 impl MediaSynth {
     pub fn new(_seed: u64) -> MediaSynth {
-        MediaSynth::default()
+        MediaSynth {
+            volume: 0.8,
+            ..MediaSynth::default()
+        }
     }
 
-    fn track_at(at: Ts) -> (&'static Track, f64) {
-        let t = at.as_secs_f64();
-        let idx = ((t / TRACK_SECS).floor() as usize) % TRACKS.len();
-        (&TRACKS[idx], t % TRACK_SECS)
+    /// Apply a transport command from the tile.
+    pub fn command(&mut self, cmd: &media::MediaCmd, at: Ts) {
+        use media::MediaCmd as C;
+        match cmd {
+            C::Play => {
+                self.paused_at = None;
+                self.stopped = false;
+            }
+            C::Pause => self.paused_at = Some(at),
+            C::PlayPause => {
+                if self.paused_at.is_some() {
+                    self.paused_at = None;
+                } else {
+                    self.paused_at = Some(at);
+                }
+            }
+            C::Stop => {
+                self.stopped = true;
+                self.paused_at = Some(at);
+            }
+            C::Next => {
+                self.skip += 1;
+                self.seek_us = 0;
+            }
+            C::Prev => {
+                self.skip += TRACKS.len() - 1;
+                self.seek_us = 0;
+            }
+            C::SeekBy(us) => self.seek_us += us,
+            C::SetVolume(v) => self.volume = v.clamp(0.0, 1.0),
+            C::Raise | C::Pick(_) => {}
+        }
     }
 
-    /// What `media.now` says at `at`.
+    /// The clock this player runs on: frozen where it was paused, moved by
+    /// whatever the seek key did.
+    fn clock(&self, at: Ts) -> f64 {
+        let base = self.paused_at.unwrap_or(at).as_secs_f64();
+        (base + self.seek_us as f64 / 1e6).max(0.0)
+    }
+
+    fn track_at_with(t: f64, skip: usize) -> (&'static Track, f64) {
+        let idx = (((t / TRACK_SECS).floor() as usize) + skip) % TRACKS.len();
+        (&TRACKS[idx], t.rem_euclid(TRACK_SECS))
+    }
+
+    /// What `media.now` says at `at` for a player nobody has touched.
     pub fn now_at(at: Ts) -> NowPlaying {
-        let (track, into) = MediaSynth::track_at(at);
+        MediaSynth::default().state_at(at)
+    }
+
+    /// What `media.now` says at `at` for *this* player.
+    pub fn state_at(&self, at: Ts) -> NowPlaying {
+        let t = self.clock(at);
+        let (track, into) = MediaSynth::track_at_with(t, self.skip);
         let hash = NowPlaying::track_hash(track.title, track.artist, track.album, track.url);
         // The second track pauses for its last ten seconds, so a tile's
-        // "paused" path and its frozen clock are exercised under `--demo`.
-        let status = if track.len_us == Some(45 * 1_000_000) && into > 30.0 {
+        // "paused" path and its frozen clock are exercised under `--demo`
+        // without anyone pressing a key.
+        let scripted_pause = track.len_us == Some(45 * 1_000_000) && into > 30.0;
+        let status = if self.stopped {
+            PlayStatus::Stopped
+        } else if self.paused_at.is_some() || scripted_pause {
             PlayStatus::Paused
         } else {
             PlayStatus::Playing
@@ -144,8 +206,12 @@ impl MediaSynth {
             pos_us: (into * 1_000_000.0) as i64,
             read_at: at,
             len_us: track.len_us,
-            rate: 1.0,
-            volume: 0.8,
+            rate: if status == PlayStatus::Playing {
+                1.0
+            } else {
+                0.0
+            },
+            volume: self.volume,
             caps: Caps {
                 play_pause: true,
                 next: true,
@@ -159,8 +225,8 @@ impl MediaSynth {
     }
 
     pub fn tick_at(&mut self, at: Ts) -> Batch {
-        let now = MediaSynth::now_at(at);
-        let (track, _) = MediaSynth::track_at(at);
+        let now = self.state_at(at);
+        let (track, _) = MediaSynth::track_at_with(self.clock(at), self.skip);
         let mut samples = Vec::with_capacity(6);
         let changed = self.last_track != Some(now.track);
         samples.push(Sample {
@@ -254,7 +320,16 @@ impl Source for MediaDemoSource {
             restarts: 0,
         });
         loop {
-            while cx.try_control().is_some() {}
+            // The transport keys really move this player: `--demo` is how
+            // most people meet the tile (review).
+            while let Some(c) = cx.try_control() {
+                if let crate::source::Control::Domain(b) = c {
+                    let any: Box<dyn std::any::Any + Send> = b;
+                    if let Ok(cmd) = any.downcast::<media::MediaCmd>() {
+                        synth.command(&cmd, cx.clock.now());
+                    }
+                }
+            }
             if cx.stopped() {
                 return;
             }
