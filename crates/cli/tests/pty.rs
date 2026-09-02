@@ -631,3 +631,51 @@ fn config_check_fails_on_a_theme_that_does_not_load() {
     assert!(text.contains("contrast (WCAG 2.1):"), "{text}");
     assert!(text.contains("text on panel: 15.93:1  ok"), "{text}");
 }
+
+/// C.15 (arc 4a) — edit mode under a pty: `e`, `L` twice on the cpu tile
+/// after narrowing it, `w`, and the sandbox's `layout.toml` carries the
+/// move; `q` exits 0 with no ERROR in the log.
+#[test]
+fn edit_mode_saves_the_moved_tile() {
+    if skip("edit_mode_saves_the_moved_tile") {
+        return;
+    }
+    let mut s = Session::start("edit", 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(4), |t| {
+        t.contains("retrowave · configured")
+    });
+    assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+    // The typescript carries only the cells ratatui rewrote (a diff, not a
+    // screen), so assertions key on words that are new as a whole.
+    s.keys("e");
+    let seen = s.wait_for(Duration::from_secs(2), |t| t.contains("EDIT"));
+    assert!(seen.is_some(), "no edit key bar; screen: {:?}", s.screen());
+    // Narrow twice (Ctrl-h = 0x08), then move right twice; each key redraws.
+    s.keys("\x08\x08LL");
+    std::thread::sleep(Duration::from_millis(600));
+    s.keys("w");
+    let seen = s.wait_for(Duration::from_secs(2), |t| t.contains("saved"));
+    assert!(seen.is_some(), "no save toast; screen: {:?}", s.screen());
+    let layout = s.sandbox.root.join("config/gridwatch/layout.toml");
+    let text = std::fs::read_to_string(&layout).expect("layout.toml written");
+    assert!(
+        text.contains("id = \"cpu\", at = [2, 0], size = [4, 3]"),
+        "{text}"
+    );
+    assert!(
+        !s.sandbox.root.join("config/gridwatch/config.toml").exists(),
+        "config.toml must never be written"
+    );
+    // The watcher must not reload the app's own write.
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(
+        !s.screen().contains("layout.toml reloaded"),
+        "{}",
+        s.screen()
+    );
+    s.keys("\x1bq");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    let bad: Vec<&str> = log.lines().filter(|l| l.contains("ERROR")).collect();
+    assert!(bad.is_empty(), "errors in the log: {bad:?}");
+}

@@ -289,6 +289,12 @@ fn read_all() -> Result<Read, ConfigError> {
     Ok((config_text, layout_text, config_path, layout_path))
 }
 
+/// Where `w` writes (§9): `layout.toml` in the config dir, whether or not
+/// it exists yet — the only file edit mode ever writes.
+pub fn layout_path() -> Option<PathBuf> {
+    config_dir().map(|d| d.join("layout.toml"))
+}
+
 /// The files the watcher stats (§9): `config.toml` and `layout.toml` in the
 /// config dir, whether or not they exist yet — a file that appears is a
 /// change too.

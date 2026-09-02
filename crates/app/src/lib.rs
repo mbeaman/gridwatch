@@ -5,8 +5,10 @@
 
 pub mod app;
 pub mod config;
+pub mod edit;
 pub mod input;
 pub mod probe;
+pub mod save;
 pub mod stats;
 pub mod sys;
 pub mod terminal;
@@ -263,6 +265,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     });
     if let Some(w) = &watch {
         shell.watch_theme_files = Some(w.theme_files_sender());
+        shell.watch_ignore = Some(w.ignore_sender());
     }
     shell.bytes_counter = Some(bytes);
     if let Some(path) = &opts.record {

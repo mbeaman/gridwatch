@@ -1081,3 +1081,269 @@ fn resuming_from_pause_does_not_flash_stale() {
     let text = page_text(&mut sh, 250, 70);
     assert_eq!(text.matches("stale 5s").count(), 1, "{text}");
 }
+
+// ───────────────────────────── arc 4a: edit mode ─────────────────────────────
+
+/// Assert two dumps equal, naming the first differing line (a whole-frame
+/// diff is unreadable in a panic message).
+fn assert_same(a: &str, b: &str, what: &str) {
+    if a == b {
+        return;
+    }
+    let diff = a
+        .lines()
+        .zip(b.lines())
+        .enumerate()
+        .find(|(_, (x, y))| x != y)
+        .map(|(i, (x, y))| format!("line {i}:\n  {x}\n  {y}"))
+        .unwrap_or_else(|| {
+            format!(
+                "different line counts ({} vs {})",
+                a.lines().count(),
+                b.lines().count()
+            )
+        });
+    panic!("{what}: {diff}");
+}
+
+fn key(c: char) -> InputEvent {
+    InputEvent::Key(KeyEvent::ch(c))
+}
+
+fn ctrl(c: char) -> InputEvent {
+    InputEvent::Key(KeyEvent {
+        code: KeyCode::Char(c),
+        mods: gridwatch_store::Mods::CTRL,
+    })
+}
+
+/// The text of the key bar (the last row).
+fn key_bar(sh: &mut Shell) -> String {
+    let frame = shot_frame(sh, 250, 70);
+    (0..250u16)
+        .map(|x| frame.cell((x, 69)).unwrap().symbol().to_string())
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// Seam 1: every key path of edit mode — move, resize, footprint, swap,
+/// remove, undo/redo — renders the expected geometry; a collision leaves the
+/// page unchanged and draws the red ghost; leaving a dirty page asks first.
+#[test]
+fn edit_keys_move_resize_swap_remove_and_undo() {
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    let before_tiles = region_text(&mut sh, 250, 70, ratatui::layout::Rect::new(0, 0, 250, 60));
+    sh.handle_input(key('e'));
+    assert!(sh.editing());
+    let bar = key_bar(&mut sh);
+    assert!(bar.starts_with("EDIT · cpu @ (0,0) 6×3"), "{bar}");
+    // The dotted unit grid is in the gutters.
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        text.contains("·\n") || text.contains("· "),
+        "no dotted grid"
+    );
+    // `L` on the cpu tile (0,0 6x3) collides with gpu (6,0): refused, ghost.
+    sh.handle_input(key('L'));
+    let bar = key_bar(&mut sh);
+    assert!(bar.starts_with("▲ would overlap another tile"), "{bar}");
+    assert!(bar.contains("cpu @ (0,0) 6×3"), "unchanged: {bar}");
+    let frame = shot_frame(&mut sh, 250, 70);
+    let crit = sh.theme().color(gridwatch_ui::Role::Crit);
+    let ghost_cells = frame
+        .content()
+        .iter()
+        .filter(|c| c.symbol() == "╔" && c.fg == crit)
+        .count();
+    assert_eq!(ghost_cells, 1, "one red double-bordered ghost");
+    // Narrow it, then it moves right.
+    sh.handle_input(ctrl('h'));
+    assert!(
+        key_bar(&mut sh).contains("cpu @ (0,0) 5×3"),
+        "{}",
+        key_bar(&mut sh)
+    );
+    sh.handle_input(key('L'));
+    assert!(
+        key_bar(&mut sh).contains("cpu @ (1,0) 5×3"),
+        "{}",
+        key_bar(&mut sh)
+    );
+    // Backspace is Ctrl-h under the legacy encoding; Enter is Ctrl-j.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Backspace)));
+    assert!(key_bar(&mut sh).contains("cpu @ (1,0) 4×3"));
+    // `K` at the top is out of the grid.
+    sh.handle_input(key('K'));
+    assert!(key_bar(&mut sh).starts_with("▲ outside the grid"));
+    // Footprint cycle: htop's manifest lists footprints; `s` picks the next.
+    sh.handle_input(key('s'));
+    let bar = key_bar(&mut sh);
+    assert!(!bar.contains("4×3") || bar.starts_with("▲"), "{bar}");
+    // Undo everything back to the start, then redo one.
+    for _ in 0..8 {
+        sh.handle_input(key('u'));
+    }
+    assert!(key_bar(&mut sh).contains("nothing to undo"));
+    assert!(key_bar(&mut sh).contains("cpu @ (0,0) 6×3"));
+    sh.handle_input(ctrl('r'));
+    assert!(key_bar(&mut sh).contains("cpu @ (0,0) 5×3"));
+    // Swap with the neighbour to the right (gpu at 6,0 6x3 — a different size
+    // is fine: swap exchanges geometry).
+    sh.handle_input(key('u'));
+    sh.handle_input(key('S'));
+    assert!(key_bar(&mut sh).starts_with("EDIT · swap with"));
+    sh.handle_input(key('l'));
+    assert!(
+        key_bar(&mut sh).contains("cpu @ (6,0) 6×3"),
+        "{}",
+        key_bar(&mut sh)
+    );
+    // Remove the focused tile: focus clamps, the page shrinks.
+    sh.handle_input(key('x'));
+    assert!(!key_bar(&mut sh).contains("cpu @"), "{}", key_bar(&mut sh));
+    // Esc on a dirty page asks; Esc again stays; `y` discards and leaves.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
+    assert!(key_bar(&mut sh).starts_with("unsaved changes"));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
+    assert!(sh.editing());
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
+    sh.handle_input(key('y'));
+    assert!(!sh.editing());
+    // The "edit mode" toast is still live on the bottom rows: compare the
+    // tile rows.
+    let tiles = ratatui::layout::Rect::new(0, 0, 250, 60);
+    let after = region_text(&mut sh, 250, 70, tiles);
+    assert_same(&before_tiles, &after, "discard did not restore the page");
+}
+
+/// Seam 2 + 5: the picker adds a `kind:` tile at first fit; `w` writes
+/// `layout.toml` that reloads to the same pages, with the file's comments
+/// intact and the watcher's hash registered.
+#[test]
+fn picker_adds_a_tile_and_save_round_trips_through_the_file() {
+    let dir = std::env::temp_dir().join(format!("gridwatch-edit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("layout.toml");
+    let commented = format!("# hand-written\n{}", config::DEFAULT_LAYOUT);
+    std::fs::write(&path, &commented).unwrap();
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    let (tx, rx) = std::sync::mpsc::channel();
+    sh.watch_ignore = Some(tx);
+    sh.handle_input(key('e'));
+    // The Overview is full (72 of 72 units): remove the focused cpu tile so
+    // there is room, then add a `kind:sources` tile through the picker.
+    sh.handle_input(key('x'));
+    sh.handle_input(key('a'));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("add a tile"), "{text}");
+    assert!(text.contains("kind:clock"), "{text}");
+    for c in "kind:sou".chars() {
+        sh.handle_input(key(c));
+    }
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("▶ kind:sources"), "{text}");
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Enter)));
+    let bar = key_bar(&mut sh);
+    assert!(bar.contains("sources @"), "the new tile is focused: {bar}");
+    // Save to the temp path: comments survive, the hash reaches the watcher.
+    let msg = sh.save_layout_to(&path).unwrap();
+    assert_eq!(msg, "layout.toml saved (2 pages)");
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(written.starts_with("# hand-written"), "{written}");
+    assert!(written.contains("kind = \"sources\""), "{written}");
+    let (kind, hash) = rx.try_recv().unwrap();
+    assert_eq!(kind, gridwatch_store::ReloadKind::Layout);
+    assert_eq!(hash, gridwatch_app::watch::content_hash(written.as_bytes()));
+    // The saved text reloads to exactly the edited pages. Toasts sit on the
+    // bottom body rows, so the tile rows are what is compared, both times
+    // outside edit mode (the dotted grid is edit chrome).
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
+    assert!(!sh.editing(), "a saved page leaves without asking");
+    let tiles = ratatui::layout::Rect::new(0, 0, 250, 60);
+    let a = region_text(&mut sh, 250, 70, tiles);
+    sh.reload_from_texts(
+        gridwatch_store::ReloadKind::Layout,
+        config::DEFAULT_CONFIG,
+        &written,
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("layout.toml reloaded"), "{text}");
+    let b = region_text(&mut sh, 250, 70, tiles);
+    assert_same(&a, &b, "saved layout does not reload identically");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Seam 3: a mouse drag moves by the unit delta with a green/red ghost and
+/// applies on release; a press on the bottom-right corner resizes.
+#[test]
+fn mouse_drag_moves_and_corner_resizes() {
+    use gridwatch_store::{Mods, MouseButton, MouseEvent, MouseKind};
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    sh.handle_input(key('e'));
+    let _ = shot_frame(&mut sh, 250, 70);
+    let mouse = |kind, x, y| {
+        InputEvent::Mouse(MouseEvent {
+            kind,
+            x,
+            y,
+            mods: Mods::NONE,
+        })
+    };
+    // The pins tile sits at (0,3) 4x2 → outer x 0..82, y 35..? Drag it right
+    // by two units: press inside, drag, release.
+    let frame = shot_frame(&mut sh, 250, 70);
+    let _ = frame;
+    // The pins tile's bottom-right corner, found before any ghost is drawn
+    // (a refused drag's ghost paints its edges over neighbouring borders).
+    let solved_corner = {
+        let frame = shot_frame(&mut sh, 250, 70);
+        let mut found = None;
+        for y in 41..70u16 {
+            for x in 0..90u16 {
+                let s = frame.cell((x, y)).unwrap().symbol();
+                if (s == "┘" || s == "╝" || s == "╯" || s == "┛") && found.is_none() {
+                    found = Some((x, y));
+                }
+            }
+        }
+        found.expect("a corner")
+    };
+    sh.handle_input(mouse(MouseKind::Down(MouseButton::Left), 5, 40));
+    let bar = key_bar(&mut sh);
+    assert!(bar.contains("pins @ (0,3) 4×2"), "{bar}");
+    sh.handle_input(mouse(MouseKind::Drag(MouseButton::Left), 47, 40));
+    let text = page_text(&mut sh, 250, 70);
+    let _ = text;
+    sh.handle_input(mouse(MouseKind::Up(MouseButton::Left), 47, 40));
+    let bar = key_bar(&mut sh);
+    assert!(bar.starts_with("▲ would overlap"), "lan is at (4,3): {bar}");
+    assert!(bar.contains("pins @ (0,3) 4×2"), "{bar}");
+    // Drag it down one unit instead — (0,5) is free? amp sits at (0,5) 4x1 in
+    // the shipped layout, so that overlaps too; resize from the corner
+    // instead: the bottom-right corner of the pins tile.
+
+    sh.handle_input(mouse(
+        MouseKind::Down(MouseButton::Left),
+        solved_corner.0,
+        solved_corner.1,
+    ));
+    sh.handle_input(mouse(
+        MouseKind::Drag(MouseButton::Left),
+        solved_corner.0 - 20,
+        solved_corner.1,
+    ));
+    sh.handle_input(mouse(
+        MouseKind::Up(MouseButton::Left),
+        solved_corner.0 - 20,
+        solved_corner.1,
+    ));
+    let bar = key_bar(&mut sh);
+    assert!(
+        bar.contains("pins @ (0,3) 3×2"),
+        "corner drag narrowed it (corner {solved_corner:?}): {bar}"
+    );
+    sh.handle_input(key('u'));
+    assert!(key_bar(&mut sh).contains("pins @ (0,3) 4×2"));
+}

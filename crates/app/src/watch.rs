@@ -49,6 +49,8 @@ pub const PERIOD: Duration = Duration::from_secs(1);
 /// taken on the render thread, which is where edit mode will register a
 /// save). `0` is "empty"; a hash that happens to be 0 is nudged to 1.
 type IgnoreSlots = Arc<[AtomicU64; 3]>;
+/// What a save registers: the kind of file and the hash of its new bytes.
+pub type IgnoreMsg = (ReloadKind, u64);
 
 pub struct WatchHandle {
     stop: Arc<AtomicBool>,
@@ -56,6 +58,9 @@ pub struct WatchHandle {
     /// Replaces the watched theme files (`kind == Theme`) — the theme the
     /// shell reloads moves with `t` and with a `config.toml` edit.
     theme_files: Sender<Vec<Watched>>,
+    /// The ignore slots, fed from the render thread without a lock: a save
+    /// sends `(kind, hash)` before its write lands (§9).
+    ignore_tx: Sender<(ReloadKind, u64)>,
     join: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -78,6 +83,13 @@ impl WatchHandle {
     /// reload target changes (`watch::theme_files(theme_ref)`).
     pub fn theme_files_sender(&self) -> Sender<Vec<Watched>> {
         self.theme_files.clone()
+    }
+
+    /// A sender the shell keeps for its own writes (`w` in edit mode): the
+    /// next change to a file of that kind whose bytes hash to the value is
+    /// not reported.
+    pub fn ignore_sender(&self) -> Sender<(ReloadKind, u64)> {
+        self.ignore_tx.clone()
     }
 
     pub fn stop(mut self) {
@@ -123,6 +135,7 @@ pub fn spawn(files: Vec<Watched>, control: Sender<ControlMsg>) -> WatchHandle {
     let stop = Arc::new(AtomicBool::new(false));
     let ignore: IgnoreSlots = Arc::new([AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)]);
     let (theme_tx, theme_rx): (Sender<Vec<Watched>>, Receiver<Vec<Watched>>) = channel();
+    let (ignore_tx, ignore_rx): (Sender<IgnoreMsg>, Receiver<IgnoreMsg>) = channel();
     let stop_t = stop.clone();
     let ignore_t = ignore.clone();
     let join = std::thread::Builder::new()
@@ -141,6 +154,10 @@ pub fn spawn(files: Vec<Watched>, control: Sender<ControlMsg>) -> WatchHandle {
                         return;
                     }
                     std::thread::sleep(PERIOD / 4);
+                }
+                // The shell's own writes register their hash first (§9).
+                while let Ok((kind, hash)) = ignore_rx.try_recv() {
+                    ignore_t[usize::from(kind_key(kind))].store(hash.max(1), Ordering::Release);
                 }
                 // The theme moved (`t`, a config edit): swap the Theme-kind
                 // entries, stamped now so the new file's state is the baseline.
@@ -180,6 +197,7 @@ pub fn spawn(files: Vec<Watched>, control: Sender<ControlMsg>) -> WatchHandle {
         stop,
         ignore,
         theme_files: theme_tx,
+        ignore_tx,
         join: Some(join),
     }
 }

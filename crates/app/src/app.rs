@@ -13,7 +13,10 @@ use gridwatch_store::{
 use gridwatch_ui::component::{BuildCx, Chrome, Command, Component, Outcome, Size, pick_tier};
 use gridwatch_ui::layout::{
     Cell, Direction, Page, PlaceTarget, SolveMode, Solved, derive_mode, focus_dir, hit, solve,
+    unit_at, unit_rect,
 };
+
+use crate::edit::{EditKey, EditState};
 use gridwatch_ui::theme::{BUILTIN_THEMES, Role, Theme, TitleStyle, load_builtin};
 use gridwatch_ui::view::Span as RSpanText;
 use gridwatch_ui::{Registry, overlay};
@@ -101,6 +104,13 @@ pub struct Shell {
     /// The watcher's theme-file sender (§9): the reload target moves with
     /// `t` and with a config edit, and the watched files follow it.
     pub watch_theme_files: Option<std::sync::mpsc::Sender<Vec<crate::watch::Watched>>>,
+    /// The watcher's ignore-slot sender: `w` registers its own write's hash
+    /// before the file lands (§9, seam 5).
+    pub watch_ignore: Option<std::sync::mpsc::Sender<(ReloadKind, u64)>>,
+    /// Edit mode (§10, arc 4a): `Some` while `e` is active.
+    edit: Option<EditState>,
+    /// The last body rect solved: the mouse's units are read against it.
+    last_body: Rect,
     grid: gridwatch_ui::layout::GridSpec,
     pages: Vec<Page>,
     page: usize,
@@ -182,6 +192,9 @@ impl Shell {
             resumed_at: None,
             journal_ended: None,
             watch_theme_files: None,
+            watch_ignore: None,
+            edit: None,
+            last_body: Rect::default(),
             grid: loaded.grid,
             pages: loaded.pages.clone(),
             page: 0,
@@ -858,10 +871,16 @@ impl Shell {
             self.draw_cell(&page, cell, buf);
         }
         self.last_solved = Some(solved);
+        self.last_body = body;
         self.update_demand();
+        if self.edit.is_some() {
+            self.draw_edit_chrome(body, buf);
+        }
 
         // Status bar.
-        let mut hints = if self.captured {
+        let mut hints = if let Some(ed) = &self.edit {
+            self.edit_hints(ed)
+        } else if self.captured {
             // §10: the captured component's keys replace the status bar.
             let keys = self
                 .focus
@@ -944,6 +963,10 @@ impl Shell {
                     ("space", "pause sources"),
                     ("a", "acknowledge the alert banner"),
                     ("A", "alerts: active list and log"),
+                    (
+                        "e",
+                        "edit mode: HJKL move · ^hjkl size · s footprint · S swap · a add · x remove · u/^r undo · w save",
+                    ),
                     ("S", "screenshot to state dir"),
                     ("F12", "stats HUD"),
                 ],
@@ -964,6 +987,31 @@ impl Shell {
                 rows,
             ));
             overlay::panel("alerts  ·  Esc to close", &lines, body, &self.theme, buf);
+        }
+        if let Some(pk) = self.edit.as_ref().and_then(|e| e.picker.as_ref()) {
+            let mut lines: Vec<Vec<RSpanText>> = vec![vec![RSpanText::new(
+                Role::TextMuted,
+                format!("filter: {}▏", pk.filter),
+            )]];
+            for (i, item) in pk.visible().iter().enumerate() {
+                let role = if i == pk.cursor {
+                    Role::AccentPrimary
+                } else {
+                    Role::Text
+                };
+                let mark = if i == pk.cursor { "▶ " } else { "  " };
+                lines.push(vec![RSpanText::new(role, format!("{mark}{}", item.label))]);
+            }
+            if pk.visible().is_empty() {
+                lines.push(vec![RSpanText::new(Role::TextGhost, "  (nothing matches)")]);
+            }
+            overlay::panel(
+                "add a tile  ·  j/k move · type to filter · Enter add · Esc close",
+                &lines,
+                body,
+                &self.theme,
+                buf,
+            );
         }
         if self.hud {
             let bytes = self
@@ -1364,6 +1412,9 @@ impl Shell {
 
     fn handle_mouse(&mut self, m: gridwatch_store::MouseEvent) -> bool {
         use gridwatch_store::MouseKind::*;
+        if self.edit.is_some() {
+            return self.edit_mouse(m);
+        }
         match m.kind {
             Down(gridwatch_store::MouseButton::Left) => {
                 if let Some(solved) = &self.last_solved
@@ -1402,6 +1453,9 @@ impl Shell {
         if k.mods.ctrl && k.code == KeyCode::Char('q') {
             self.quit = true;
             return true;
+        }
+        if self.edit.is_some() {
+            return self.edit_key(k);
         }
         if self.captured {
             if k.code == KeyCode::Esc {
@@ -1561,7 +1615,7 @@ impl Shell {
                 true
             }
             KeyCode::Char('e') => {
-                self.toast(Severity::Info, "edit mode arrives in arc 4");
+                self.enter_edit();
                 true
             }
             _ => false,
@@ -1673,6 +1727,20 @@ impl Shell {
             Command::Ack(id) => {
                 self.acked.insert(id);
             }
+            Command::SaveLayout => {
+                let path = crate::config::layout_path();
+                let msg = match path {
+                    Some(p) => self.save_layout_to(&p),
+                    None => Err("no config directory (HOME unset)".into()),
+                };
+                match msg {
+                    Ok(m) => self.toast(Severity::Info, m),
+                    Err(e) => {
+                        tracing::warn!("save layout: {e}");
+                        self.toast(Severity::Warn, format!("not saved — {e}"));
+                    }
+                }
+            }
             Command::Source(id, ctl) => match self.controls.get(id.0) {
                 Some(send) => send(ctl),
                 None => self.toast(
@@ -1711,6 +1779,603 @@ impl Shell {
     }
 }
 
+impl Shell {
+    // ───────────────────────── edit mode (§10, arc 4a) ─────────────────────────
+
+    pub fn editing(&self) -> bool {
+        self.edit.is_some()
+    }
+
+    fn enter_edit(&mut self) {
+        if self.zoom.is_some() {
+            self.zoom = None;
+        }
+        self.captured = false;
+        self.help = false;
+        self.edit = Some(EditState::new(&self.pages[self.page]));
+        self.cache.clear();
+        self.toast(
+            Severity::Info,
+            "edit mode — Esc leaves, w saves layout.toml",
+        );
+    }
+
+    fn leave_edit(&mut self) {
+        self.edit = None;
+        self.cache.clear();
+    }
+
+    /// The edit key bar: where the focused tile is, the keys, and the last
+    /// refusal or the leave confirmation.
+    fn edit_hints(&self, ed: &EditState) -> String {
+        if ed.confirm_leave {
+            return "unsaved changes — w save · y discard · Esc stay".to_string();
+        }
+        let page = &self.pages[self.page];
+        let focus = self
+            .focus
+            .and_then(|f| page.place.get(f))
+            .map(|p| {
+                format!(
+                    "{} @ ({},{}) {}×{}",
+                    p.target.label(),
+                    p.at.0,
+                    p.at.1,
+                    p.size.0,
+                    p.size.1
+                )
+            })
+            .unwrap_or_else(|| "no tile".into());
+        let mut s = format!(
+            "EDIT · {focus} · HJKL move · ^hjkl size · s footprint · S swap · a add · x remove · u/^r undo · w save · Esc leave"
+        );
+        if ed.pending_swap {
+            s = format!("EDIT · swap with… h/j/k/l · {focus}");
+        }
+        if let Some(n) = &ed.note {
+            s = format!("▲ {n} · {s}");
+        }
+        s
+    }
+
+    /// The dotted unit grid in the gutters and the ghost of a refused or
+    /// dragged op (seam 1, 3).
+    fn draw_edit_chrome(&self, body: Rect, buf: &mut Buffer) {
+        let (cols, rows) = gridwatch_ui::layout::unit_tracks(&self.grid, body, self.mode);
+        let ghost_style = self.theme.style(Role::TextGhost);
+        if self.mode == SolveMode::Configured {
+            // Gutter columns and rows: the cells before each track's start.
+            for (start, _) in cols.iter().skip(1) {
+                let x = body.x + start - 1;
+                for y in body.y..body.y + body.height {
+                    if let Some(c) = buf.cell_mut((x, y))
+                        && c.symbol() == " "
+                    {
+                        c.set_char('·');
+                        c.set_style(ghost_style);
+                    }
+                }
+            }
+            for (start, _) in rows.iter().skip(1) {
+                let y = body.y + start - 1;
+                for x in body.x..body.x + body.width {
+                    if let Some(c) = buf.cell_mut((x, y))
+                        && c.symbol() == " "
+                    {
+                        c.set_char('·');
+                        c.set_style(ghost_style);
+                    }
+                }
+            }
+        }
+        if let Some(g) = self.edit.as_ref().and_then(|e| e.ghost)
+            && let Some(r) = unit_rect(&self.grid, body, self.mode, g.at, g.size)
+        {
+            let role = if g.ok { Role::Ok } else { Role::Crit };
+            let style = self.theme.style(role).add_modifier(Modifier::BOLD);
+            ratatui::widgets::Block::new()
+                .borders(ratatui::widgets::Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Double)
+                .border_style(style)
+                .render(r, buf);
+        }
+    }
+
+    fn edit_key(&mut self, k: gridwatch_store::KeyEvent) -> bool {
+        let Some(ed) = self.edit.as_mut() else {
+            return false;
+        };
+        // The picker eats every key while open (seam 2).
+        if let Some(pk) = ed.picker.as_mut() {
+            match k.code {
+                KeyCode::Esc => ed.picker = None,
+                KeyCode::Down | KeyCode::Char('j') if k.mods.ctrl || k.code == KeyCode::Down => {
+                    pk.down()
+                }
+                KeyCode::Up | KeyCode::Char('k') if k.mods.ctrl || k.code == KeyCode::Up => pk.up(),
+                KeyCode::Enter => {
+                    let item = pk.selected();
+                    ed.picker = None;
+                    if let Some(item) = item {
+                        self.edit_insert(item);
+                    }
+                }
+                KeyCode::Backspace => pk.backspace(),
+                KeyCode::Char(c) if !k.mods.ctrl => {
+                    // `j`/`k` navigate unless a filter is being typed.
+                    if pk.filter.is_empty() && c == 'j' {
+                        pk.down();
+                    } else if pk.filter.is_empty() && c == 'k' {
+                        pk.up();
+                    } else {
+                        pk.type_char(c);
+                    }
+                }
+                _ => {}
+            }
+            return true;
+        }
+        if ed.confirm_leave {
+            match crate::edit::decode(k) {
+                EditKey::Save => {
+                    ed.confirm_leave = false;
+                    self.execute(Command::SaveLayout);
+                    if self
+                        .edit
+                        .as_ref()
+                        .is_some_and(|e| !e.dirty(&self.pages[self.page]))
+                    {
+                        self.leave_edit();
+                    }
+                }
+                EditKey::Discard => {
+                    let saved = ed.saved.clone();
+                    self.pages[self.page] = saved;
+                    self.clamp_focus();
+                    self.leave_edit();
+                }
+                _ => {
+                    ed.confirm_leave = false;
+                    ed.note = None;
+                }
+            }
+            return true;
+        }
+        let pending = std::mem::take(&mut ed.pending_swap);
+        ed.note = None;
+        ed.ghost = None;
+        match crate::edit::decode(k) {
+            EditKey::Move(dx, dy) => {
+                self.edit_op(|spec, page, f| gridwatch_ui::layout::move_by(spec, page, f, dx, dy))
+            }
+            EditKey::Resize(dw, dh) => {
+                self.edit_op(|spec, page, f| gridwatch_ui::layout::resize_by(spec, page, f, dw, dh))
+            }
+            EditKey::Footprint => {
+                let next = self.focus.and_then(|f| {
+                    let p = self.pages[self.page].place.get(f)?;
+                    let key = self.instance_key(&p.target);
+                    let kind = self.instances.get(&key).map(|i| i.kind.clone())?;
+                    let fps: Vec<(u8, u8)> = self
+                        .registry
+                        .component(&kind)?
+                        .manifest
+                        .footprints
+                        .iter()
+                        .map(|f| (f.w, f.h))
+                        .collect();
+                    gridwatch_ui::layout::footprint_cycle(&fps, p.size)
+                });
+                match next {
+                    Some((w, h)) => self.edit_op(|spec, page, f| {
+                        let cur = page.place[f].size;
+                        gridwatch_ui::layout::resize_by(
+                            spec,
+                            page,
+                            f,
+                            i16::from(w) as i8 - i16::from(cur.0) as i8,
+                            i16::from(h) as i8 - i16::from(cur.1) as i8,
+                        )
+                    }),
+                    None => {
+                        if let Some(ed) = self.edit.as_mut() {
+                            ed.note = Some("no footprints to cycle".into());
+                        }
+                    }
+                }
+            }
+            EditKey::SwapPrefix => {
+                if let Some(ed) = self.edit.as_mut() {
+                    ed.pending_swap = true;
+                }
+            }
+            EditKey::Dir(dir) => {
+                if pending {
+                    let other = match (&self.last_solved, self.focus) {
+                        (Some(s), Some(f)) => focus_dir(s, f, dir),
+                        _ => None,
+                    };
+                    match other {
+                        Some(o) => self
+                            .edit_op(|spec, page, f| gridwatch_ui::layout::swap(spec, page, f, o)),
+                        None => {
+                            if let Some(ed) = self.edit.as_mut() {
+                                ed.note = Some("no tile in that direction".into());
+                            }
+                        }
+                    }
+                } else {
+                    self.move_focus(dir);
+                }
+            }
+            EditKey::Picker => {
+                let page = &self.pages[self.page];
+                let configured: Vec<(String, String)> = self
+                    .instances
+                    .iter()
+                    .filter(|(k, _)| !k.starts_with("kind:"))
+                    .map(|(k, i)| (k.clone(), i.kind.clone()))
+                    .collect();
+                let kinds: Vec<String> = self
+                    .registry
+                    .components()
+                    .map(|d| d.manifest.kind.to_string())
+                    .collect();
+                let items = crate::edit::picker_items(
+                    configured.iter().map(|(a, b)| (a.as_str(), b.as_str())),
+                    kinds.iter().map(String::as_str),
+                    page,
+                );
+                if let Some(ed) = self.edit.as_mut() {
+                    ed.picker = Some(crate::edit::Picker {
+                        items,
+                        ..Default::default()
+                    });
+                }
+            }
+            EditKey::Remove => {
+                let n_before = self.pages[self.page].place.len();
+                self.edit_op(|_, page, f| gridwatch_ui::layout::remove(page, f));
+                if self.pages[self.page].place.len() < n_before {
+                    self.clamp_focus();
+                }
+            }
+            EditKey::Undo => {
+                let page = &mut self.pages[self.page];
+                if let Some(ed) = self.edit.as_mut()
+                    && ed.undo(page)
+                {
+                    self.after_edit();
+                }
+            }
+            EditKey::Redo => {
+                let page = &mut self.pages[self.page];
+                if let Some(ed) = self.edit.as_mut()
+                    && ed.redo(page)
+                {
+                    self.after_edit();
+                }
+            }
+            EditKey::Save => self.execute(Command::SaveLayout),
+            EditKey::Leave => {
+                let dirty = self
+                    .edit
+                    .as_ref()
+                    .is_some_and(|e| e.dirty(&self.pages[self.page]));
+                if dirty {
+                    if let Some(ed) = self.edit.as_mut() {
+                        ed.confirm_leave = true;
+                    }
+                } else {
+                    self.leave_edit();
+                }
+            }
+            EditKey::Discard | EditKey::Other => {
+                // Pages, quit, theme, pause, HUD keep working in edit mode.
+                return self.edit_passthrough(k);
+            }
+        }
+        true
+    }
+
+    /// The keys edit mode leaves to the normal handler.
+    fn edit_passthrough(&mut self, k: gridwatch_store::KeyEvent) -> bool {
+        match k.code {
+            KeyCode::Char('q') => {
+                self.quit = true;
+                true
+            }
+            KeyCode::Char('?') | KeyCode::F(12) | KeyCode::Char(' ') | KeyCode::Char('t') => {
+                // Run the normal handler with edit mode set aside, then restore.
+                let ed = self.edit.take();
+                let r = self.handle_key(k);
+                self.edit = ed;
+                r
+            }
+            KeyCode::Char(c @ '1'..='9') => {
+                if let Some(i) = self.pages.iter().position(|p| p.hotkey == Some(c))
+                    && i != self.page
+                {
+                    self.edit_change_page(i);
+                }
+                true
+            }
+            KeyCode::Char('[') | KeyCode::Char(']') => {
+                let n = self.pages.len();
+                let next = if k.code == KeyCode::Char('[') {
+                    (self.page + n - 1) % n
+                } else {
+                    (self.page + 1) % n
+                };
+                self.edit_change_page(next);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// A page change in edit mode: leaving a dirty page asks first (seam 4:
+    /// the stacks are per page and clear on a change).
+    fn edit_change_page(&mut self, next: usize) {
+        let dirty = self
+            .edit
+            .as_ref()
+            .is_some_and(|e| e.dirty(&self.pages[self.page]));
+        if dirty {
+            if let Some(ed) = self.edit.as_mut() {
+                ed.confirm_leave = true;
+                ed.note = Some("save or discard before changing page".into());
+            }
+            return;
+        }
+        self.set_page(next);
+        self.edit = Some(EditState::new(&self.pages[self.page]));
+    }
+
+    /// Run a page op on the focused placement; commit or refuse (seam 1).
+    fn edit_op(
+        &mut self,
+        op: impl FnOnce(
+            &gridwatch_ui::layout::GridSpec,
+            &Page,
+            usize,
+        ) -> Result<Page, gridwatch_ui::layout::EditError>,
+    ) {
+        let Some(f) = self.focus else {
+            if let Some(ed) = self.edit.as_mut() {
+                ed.note = Some("no tile focused".into());
+            }
+            return;
+        };
+        let page = self.pages[self.page].clone();
+        let Some(p) = page.place.get(f) else { return };
+        let (at, size) = (p.at, p.size);
+        let result = op(&self.grid, &page, f);
+        let Some(ed) = self.edit.as_mut() else { return };
+        match result {
+            Ok(next) => {
+                ed.commit(&mut self.pages[self.page], next);
+                self.after_edit();
+            }
+            Err(e) => ed.refuse(e, at, size),
+        }
+    }
+
+    fn after_edit(&mut self) {
+        self.cache.clear();
+        self.last_solved = None;
+        self.clamp_focus();
+    }
+
+    fn clamp_focus(&mut self) {
+        let n = self.pages[self.page].place.len();
+        self.focus = match (self.focus, n) {
+            (_, 0) => None,
+            (Some(f), n) if f >= n => Some(n - 1),
+            (None, _) => Some(0),
+            (f, _) => f,
+        };
+    }
+
+    /// The picker chose an item: first fit at the kind's default footprint;
+    /// an anonymous `kind:` target gets its instance built now (seam 2).
+    fn edit_insert(&mut self, item: crate::edit::PickItem) {
+        let footprint = self
+            .registry
+            .component(&item.kind)
+            .map(|d| {
+                (
+                    d.manifest.default_footprint.w,
+                    d.manifest.default_footprint.h,
+                )
+            })
+            .unwrap_or((1, 1));
+        let placement = crate::edit::placement_for(&item, footprint);
+        let page = self.pages[self.page].clone();
+        let result = gridwatch_ui::layout::insert_first_fit(&self.grid, &page, placement);
+        match result {
+            Ok(next) => {
+                let key = self.instance_key(&item.target);
+                if !self.instances.contains_key(&key) {
+                    let inst =
+                        build_instance(&self.registry, &item.kind, &toml::Table::new(), &self.caps);
+                    self.instances.insert(key, inst);
+                }
+                let new_focus = next.place.len() - 1;
+                if let Some(ed) = self.edit.as_mut() {
+                    ed.commit(&mut self.pages[self.page], next);
+                }
+                self.after_edit();
+                self.focus = Some(new_focus);
+            }
+            Err(e) => {
+                self.toast(Severity::Warn, format!("cannot add {}: {e}", item.label));
+            }
+        }
+    }
+
+    /// The mouse in edit mode (seam 3): press focuses and starts a drag —
+    /// a move, or a resize from the bottom-right corner — the drag previews
+    /// a ghost, release applies it as one undo step.
+    fn edit_mouse(&mut self, m: gridwatch_store::MouseEvent) -> bool {
+        use gridwatch_store::MouseKind::*;
+        let body = self.last_body;
+        match m.kind {
+            Down(gridwatch_store::MouseButton::Left) => {
+                let Some(solved) = &self.last_solved else {
+                    return false;
+                };
+                let Some(idx) = hit(solved, m.x, m.y) else {
+                    return false;
+                };
+                let outer = solved
+                    .cells
+                    .iter()
+                    .find(|c| c.index == idx)
+                    .map(|c| c.outer)
+                    .unwrap_or_default();
+                let Some(press) = unit_at(&self.grid, body, self.mode, m.x, m.y) else {
+                    return false;
+                };
+                let p = &self.pages[self.page].place[idx];
+                let resize = m.x + 1 == outer.x + outer.width && m.y + 1 == outer.y + outer.height;
+                self.focus = Some(idx);
+                if let Some(ed) = self.edit.as_mut() {
+                    ed.drag = Some(crate::edit::Drag {
+                        index: idx,
+                        press,
+                        origin_at: p.at,
+                        origin_size: p.size,
+                        resize,
+                        last: press,
+                    });
+                    ed.ghost = None;
+                    ed.note = None;
+                }
+                true
+            }
+            Drag(gridwatch_store::MouseButton::Left) => {
+                let Some(cur) = unit_at(&self.grid, body, self.mode, m.x, m.y) else {
+                    return false;
+                };
+                let Some(drag) = self.edit.as_ref().and_then(|e| e.drag) else {
+                    return false;
+                };
+                let (at, size) = drag.proposed(cur);
+                let ok = self.drag_result(drag, cur).is_ok();
+                if let Some(ed) = self.edit.as_mut() {
+                    ed.ghost = Some(crate::edit::Ghost { at, size, ok });
+                    if let Some(d) = ed.drag.as_mut() {
+                        d.last = cur;
+                    }
+                }
+                true
+            }
+            Up(gridwatch_store::MouseButton::Left) => {
+                let Some(drag) = self.edit.as_mut().and_then(|e| e.drag.take()) else {
+                    return false;
+                };
+                let cur = unit_at(&self.grid, body, self.mode, m.x, m.y).unwrap_or(drag.last);
+                if cur == drag.press {
+                    if let Some(ed) = self.edit.as_mut() {
+                        ed.ghost = None;
+                    }
+                    return true;
+                }
+                let (at, size) = drag.proposed(cur);
+                match self.drag_result(drag, cur) {
+                    Ok(next) => {
+                        if let Some(ed) = self.edit.as_mut() {
+                            ed.commit(&mut self.pages[self.page], next);
+                        }
+                        self.after_edit();
+                    }
+                    Err(e) => {
+                        if let Some(ed) = self.edit.as_mut() {
+                            ed.refuse(e, at, size);
+                        }
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn drag_result(
+        &self,
+        drag: crate::edit::Drag,
+        cur: (u8, u8),
+    ) -> Result<Page, gridwatch_ui::layout::EditError> {
+        let page = &self.pages[self.page];
+        let (at, size) = drag.proposed(cur);
+        if drag.resize {
+            let dw = i16::from(size.0) - i16::from(drag.origin_size.0);
+            let dh = i16::from(size.1) - i16::from(drag.origin_size.1);
+            gridwatch_ui::layout::resize_by(&self.grid, page, drag.index, dw as i8, dh as i8)
+        } else {
+            let dx = i16::from(at.0) - i16::from(drag.origin_at.0);
+            let dy = i16::from(at.1) - i16::from(drag.origin_at.1);
+            gridwatch_ui::layout::move_by(&self.grid, page, drag.index, dx as i8, dy as i8)
+        }
+    }
+
+    /// `w` (seam 5): render the file's text with the in-memory pages, verify
+    /// it re-parses to them beside the current `config.toml`, register the
+    /// hash with the watcher, write atomically. Returns the toast.
+    pub fn save_layout_to(&mut self, path: &std::path::Path) -> Result<String, String> {
+        let existing = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                crate::config::DEFAULT_LAYOUT.to_string()
+            }
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        };
+        let text = crate::save::render_layout(&existing, &self.pages)?;
+        let (config_text, _) = crate::config::read_texts().map_err(|e| e.to_string())?;
+        crate::save::verify(&text, &config_text, &self.pages)?;
+        if let Some(tx) = &self.watch_ignore {
+            let _ = tx.send((ReloadKind::Layout, crate::save::hash_of(&text)));
+        }
+        crate::save::write_atomic(path, &text)?;
+        if let Some(ed) = self.edit.as_mut() {
+            ed.mark_saved(&self.pages[self.page]);
+        }
+        Ok(format!("layout.toml saved ({} pages)", self.pages.len()))
+    }
+}
+
+/// One instance: built, or a chip with the reason (and the fix when a
+/// required capability is missing — §11).
+fn build_instance(
+    registry: &Registry,
+    kind: &str,
+    options: &toml::Table,
+    caps: &CapSet,
+) -> Instance {
+    let mk = |component, reason: String, hint: String| Instance {
+        kind: kind.to_string(),
+        options: options.clone(),
+        component,
+        chip_reason: reason,
+        chip_hint: hint,
+    };
+    match registry.component(kind) {
+        None => mk(None, "arrives in a later arc".into(), String::new()),
+        Some(def) => {
+            if let Some(missing) = caps.missing(def.manifest.requires).first() {
+                let (reason, hint) = crate::probe::missing_lines(*missing);
+                return mk(None, reason, hint);
+            }
+            let mut cx = BuildCx { options, caps };
+            match (def.build)(&mut cx) {
+                Ok(c) => mk(Some(c), String::new(), String::new()),
+                Err(e) => mk(None, e.0, String::new()),
+            }
+        }
+    }
+}
+
 /// Build every configured instance plus the anonymous `kind:` placements
 /// (§6, §9). A kind the registry lacks chips "arrives in a later arc"; a
 /// missing *required* capability skips `build` and chips the reason and the
@@ -1722,29 +2387,7 @@ fn build_instances(
     caps: &CapSet,
     previous: Option<&BTreeMap<String, Instance>>,
 ) -> BTreeMap<String, Instance> {
-    let build = |kind: &str, options: &toml::Table| -> Instance {
-        let mk = |component, reason: String, hint: String| Instance {
-            kind: kind.to_string(),
-            options: options.clone(),
-            component,
-            chip_reason: reason,
-            chip_hint: hint,
-        };
-        match registry.component(kind) {
-            None => mk(None, "arrives in a later arc".into(), String::new()),
-            Some(def) => {
-                if let Some(missing) = caps.missing(def.manifest.requires).first() {
-                    let (reason, hint) = crate::probe::missing_lines(*missing);
-                    return mk(None, reason, hint);
-                }
-                let mut cx = BuildCx { options, caps };
-                match (def.build)(&mut cx) {
-                    Ok(c) => mk(Some(c), String::new(), String::new()),
-                    Err(e) => mk(None, e.0, String::new()),
-                }
-            }
-        }
-    };
+    let build = |kind: &str, options: &toml::Table| build_instance(registry, kind, options, caps);
     // A stand-in for an instance the caller is about to replace with the one
     // it kept: same kind and options, never drawn.
     let stand_in = |kind: &str, options: &toml::Table| Instance {
