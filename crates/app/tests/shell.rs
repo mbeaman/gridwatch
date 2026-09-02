@@ -2029,6 +2029,19 @@ message = "the gpu is at {value}°C""#,
     let text = page_text(&mut sh, 250, 70);
     assert!(text.contains("gpu hot"), "no banner: {text}");
     assert!(text.contains("91.0"), "the message is not rendered: {text}");
+    // The alert's source is the `rules` pseudo-source, which the registry
+    // knows nothing about: the panel and the tile must still render it.
+    // The id carries the label, so one rule over many devices stays many
+    // alerts: `gpu hot/0` is device zero's.
+    assert_eq!(
+        sh.store.alerts().active().next().unwrap().0.0.as_ref(),
+        "gpu hot/0"
+    );
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('A'))));
+    let panel = page_text(&mut sh, 250, 70);
+    assert!(panel.contains("gpu hot"), "the A panel: {panel}");
+    assert!(panel.contains("91.0"), "{panel}");
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
     // `a` acknowledges it like any other alert.
     sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('a'))));
     let text = page_text(&mut sh, 250, 70);

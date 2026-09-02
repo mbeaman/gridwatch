@@ -413,3 +413,97 @@ fn ten_rules_cost_microseconds_per_batch() {
     // And they raised: forty labels over ten thresholds, each once.
     assert_eq!(store.alerts().active().count(), 400);
 }
+
+/// Arc 7b, review finding: `Store::tick_rules` had no coverage — the
+/// `absent` tests called the engine directly with a hand-written closure.
+/// This drives the real one: a key that arrives and then stops, a key that
+/// never arrives at all, and the cost of asking every frame.
+#[test]
+fn tick_rules_notices_a_key_that_stops_and_one_that_never_came() {
+    use gridwatch_store::rules::{Rules, parse_all};
+    let tables: Vec<toml::Table> = [
+        r#"name = "eno1 quiet"
+key = "net.rx_bps{eno1}"
+op = "absent"
+for_s = 10"#,
+        r#"name = "wlp7s0 quiet"
+key = "net.rx_bps{wlp7s0}"
+op = "absent"
+for_s = 10"#,
+    ]
+    .iter()
+    .map(|t| toml::from_str(t).unwrap())
+    .collect();
+    let (rules, errors) = parse_all(&tables, &|k| gridwatch_store::key::lookup(k).is_some());
+    assert!(errors.is_empty(), "{errors:?}");
+    let mut store = Store::default();
+    store.set_rules(Rules::new(rules));
+
+    let sample = |t: u64| {
+        Msg::Batch(Batch {
+            source: SourceId("net"),
+            at: Ts(t * 1_000_000_000),
+            samples: vec![Sample {
+                id: gridwatch_store::keys::net::RX_BPS
+                    .named(&Arc::from("eno1"))
+                    .id,
+                datum: Datum::Scalar(1000.0),
+            }],
+        })
+    };
+    // eno1 publishes; wlp7s0 never does. The first tick starts the clock.
+    store.apply(&sample(100));
+    assert!(store.tick_rules(Ts(100_000_000_000)).is_empty());
+    assert!(store.tick_rules(Ts(105_000_000_000)).is_empty());
+    // Ten seconds on: eno1 is still fresh only if it kept publishing.
+    store.apply(&sample(110));
+    let ev = store.tick_rules(Ts(111_000_000_000));
+    assert_eq!(ev.len(), 1, "the radio that never appeared: {ev:?}");
+    assert_eq!(ev[0].title.as_ref(), "wlp7s0 quiet");
+    assert_eq!(ev[0].source, gridwatch_store::source::RULES);
+    // Now eno1 stops too.
+    let ev = store.tick_rules(Ts(121_000_000_000));
+    assert_eq!(ev.len(), 1, "{ev:?}");
+    assert_eq!(ev[0].title.as_ref(), "eno1 quiet");
+    assert_eq!(store.alerts().active().count(), 2);
+    // It comes back and resolves.
+    store.apply(&sample(130));
+    let ev = store.tick_rules(Ts(130_000_000_000));
+    assert_eq!(ev.len(), 1);
+    assert_eq!(ev[0].transition, gridwatch_store::Transition::Resolved);
+
+    // The cost of asking, with a store holding a realistic number of
+    // series: this runs every frame, so it may not walk the store.
+    for i in 0..2000u32 {
+        store.apply(&Msg::Batch(Batch {
+            source: SourceId("sensors"),
+            at: Ts(200_000_000_000),
+            samples: vec![Sample {
+                id: gridwatch_store::keys::sensors::TEMP_C
+                    .named(&Arc::from(format!("chip{i}:Sensor").as_str()))
+                    .id,
+                datum: Datum::Scalar(40.0),
+            }],
+        }));
+    }
+    let n = 500;
+    let t0 = std::time::Instant::now();
+    for i in 0..n {
+        store.tick_rules(Ts(200_000_000_000 + i * 1_000_000));
+    }
+    let per_tick = t0.elapsed() / n as u32;
+    println!("tick_rules: {per_tick:?} per frame with 2 absent rules over 2000+ series");
+    assert!(
+        per_tick < Duration::from_micros(200),
+        "the absent rules cost {per_tick:?} a frame — they must range-seek, not walk"
+    );
+    // A store whose rules are all comparisons does no per-frame work.
+    let mut plain = Store::default();
+    let (only_gt, _) = parse_all(
+        &[toml::from_str("name = \"g\"\nkey = \"gpu.temp_c\"\nop = \">\"\nvalue = 1").unwrap()],
+        &|k| gridwatch_store::key::lookup(k).is_some(),
+    );
+    plain.set_rules(Rules::new(only_gt));
+    assert!(!plain.rules().has_absent());
+    assert!(plain.tick_rules(Ts(1)).is_empty());
+}

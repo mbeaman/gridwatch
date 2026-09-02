@@ -97,17 +97,9 @@ pub fn read_link(sys: &Path, name: &str, addrs: Vec<String>) -> Link {
     }
 }
 
-/// Glob-lite: `*` everything, a leading or trailing `*` a suffix or prefix,
-/// else exact — the same rule the sensors source uses for chips.
-pub fn matches(pattern: &str, name: &str) -> bool {
-    match (pattern.strip_prefix('*'), pattern.strip_suffix('*')) {
-        (Some("") | None, Some("")) | (Some(""), None) => true,
-        (Some(rest), None) => name.ends_with(rest),
-        (None, Some(rest)) => name.starts_with(rest),
-        (Some(a), Some(_)) => name.contains(a.strip_suffix('*').unwrap_or(a)),
-        (None, None) => pattern == name,
-    }
-}
+/// The project's one glob rule (`store::rules::glob`, D57 amendment 9):
+/// `*` anywhere, so `en*1` filters the way the person writing it meant.
+pub use gridwatch_store::rules::glob as matches;
 
 #[cfg(test)]
 mod tests {
@@ -176,6 +168,11 @@ mod tests {
         assert!(matches("*7s0", "wlp7s0"));
         assert!(!matches("en", "eno1"));
         assert!(matches("*veth*", "x-veth-y"));
+        // A star in the middle: the private copy this now delegates to
+        // `store::rules::glob` for got this wrong.
+        assert!(matches("en*1", "eno1"));
+        assert!(!matches("en*1", "eno2"));
+        assert!(matches("br-*", "br-6bb7413a559e"));
         assert!(interfaces(Path::new("/nonexistent")).is_empty());
         let missing = read_link(Path::new("/nonexistent"), "eth9", Vec::new());
         assert_eq!(missing.speed_mbps, -1);

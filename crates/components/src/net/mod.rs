@@ -193,16 +193,10 @@ pub struct Model {
     pub conns: Option<net::Conns>,
 }
 
-/// The same glob rule the source and the sensors tile use.
-pub fn glob(pattern: &str, name: &str) -> bool {
-    match (pattern.strip_prefix('*'), pattern.strip_suffix('*')) {
-        (Some("") | None, Some("")) | (Some(""), None) => true,
-        (Some(rest), None) => name.ends_with(rest),
-        (None, Some(rest)) => name.starts_with(rest),
-        (Some(a), Some(_)) => name.contains(a.strip_suffix('*').unwrap_or(a)),
-        (None, None) => pattern == name,
-    }
-}
+/// The project's one glob rule (`store::rules::glob`, D57 amendment 9): a
+/// `*` anywhere, so `en*1` means what a person writing it expects. This was
+/// a private copy that handled only a leading or trailing star.
+pub use gridwatch_store::rules::glob;
 
 impl Model {
     /// Derive from the store. `show_all` is the `a` key: the hide list off.

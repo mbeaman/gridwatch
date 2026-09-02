@@ -191,6 +191,9 @@ pub type KnownLabels<'a> = &'a dyn Fn(&str, &str) -> Vec<(String, Ts)>;
 pub struct Rules {
     rules: Vec<Rule>,
     states: BTreeMap<(usize, String), State>,
+    /// When this set of rules started watching — the clock a key that has
+    /// never arrived is counted absent from.
+    started: Option<Ts>,
 }
 
 /// What `config check` prints and what a parse error says.
@@ -211,11 +214,31 @@ impl Rules {
         Rules {
             rules,
             states: BTreeMap::new(),
+            started: None,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
+    }
+
+    /// Whether any rule watches for a key that stopped arriving. The frame
+    /// loop asks before doing the work `tick` needs (review: `tick_rules`
+    /// ran a store walk every frame even when no rule wanted one).
+    pub fn has_absent(&self) -> bool {
+        self.rules.iter().any(|r| r.op == Op::Absent)
+    }
+
+    /// The exact labels the `absent` rules name (a pattern with no `*`).
+    /// A key that has **never** arrived has no series for the store to
+    /// enumerate, so these are asked for by name — which is what makes
+    /// "link down" fire for an interface that was missing at startup.
+    pub fn absent_exact_labels(&self) -> Vec<(String, String)> {
+        self.rules
+            .iter()
+            .filter(|r| r.op == Op::Absent && !r.label.contains('*'))
+            .map(|r| (r.key.clone(), r.label.clone()))
+            .collect()
     }
 
     pub fn list(&self) -> &[Rule] {
@@ -261,12 +284,22 @@ impl Rules {
     /// The `absent` rules, and the clear-side of every rule whose key
     /// stopped arriving. Called on the frame's clock, not per batch.
     pub fn tick(&mut self, at: Ts, source: SourceId, known: KnownLabels<'_>) -> Vec<AlertEvent> {
+        // The clock the never-seen case counts from: a key that has never
+        // arrived is treated as last seen when the rules were installed,
+        // so `for_s` still means what it says.
+        let started = *self.started.get_or_insert(at);
         let mut out = Vec::new();
         for (i, rule) in self.rules.iter().enumerate() {
             if rule.op != Op::Absent {
                 continue;
             }
-            for (label, last) in known(&rule.key, &rule.label) {
+            let mut labels = known(&rule.key, &rule.label);
+            if labels.is_empty() && !rule.label.contains('*') {
+                // Nothing has ever published it: that is the absence the
+                // rule was written for, dated from installation.
+                labels.push((rule.label.clone(), started));
+            }
+            for (label, last) in labels {
                 // `for_s` is how long the key may be missing before this
                 // counts as absent; it is not a *second* hold on top.
                 let gone = at.since(last) > rule.for_s;

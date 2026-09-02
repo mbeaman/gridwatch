@@ -114,17 +114,10 @@ fn threshold(p: &Path, kind: Kind) -> Option<f64> {
     Some(raw as f64 / kind.divisor())
 }
 
-/// Glob-lite chip filter: `*` matches anything, a leading or trailing `*`
-/// a suffix or prefix, `*x*` a substring, else exact.
-pub fn chip_matches(pattern: &str, name: &str) -> bool {
-    match (pattern.strip_prefix('*'), pattern.strip_suffix('*')) {
-        (Some("") | None, Some("")) | (Some(""), None) => true,
-        (Some(rest), None) => name.ends_with(rest),
-        (None, Some(rest)) => name.starts_with(rest),
-        (Some(a), Some(_)) => name.contains(a.strip_suffix('*').unwrap_or(a)),
-        (None, None) => pattern == name,
-    }
-}
+/// The chip filter is the project's one glob rule (`store::rules::glob`,
+/// D57 amendment 9): a `*` anywhere, so `nvme*Composite` and `k10*` both
+/// mean what the person writing them expects.
+pub use gridwatch_store::rules::glob as chip_matches;
 
 /// Walk `<sys>/class/hwmon` once: the inventory.
 pub fn walk(sys: &Path, chips: &[String]) -> Inventory {

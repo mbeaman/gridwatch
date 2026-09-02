@@ -86,15 +86,24 @@ impl Store {
     /// The `absent` rules, on the frame's clock rather than a batch's.
     pub fn tick_rules(&mut self, at: Ts) -> SmallVec<[AlertEvent; 2]> {
         let mut out = SmallVec::new();
-        if self.rules.is_empty() {
+        if !self.rules.has_absent() {
             return out;
         }
-        // The labels a rule watches, and when each last arrived.
+        // The labels a rule watches, and when each last arrived. `MetricId`
+        // orders by name first, so this is a range over one key's labels —
+        // not a walk of the store (review: it was, once per frame).
         let mut rules = std::mem::take(&mut self.rules);
         let known = |name: &str, pattern: &str| -> Vec<(String, Ts)> {
+            let Some(meta) = crate::key::lookup(name) else {
+                return Vec::new();
+            };
+            let from = MetricId {
+                name: meta.name,
+                label: crate::key::Label::None,
+            };
             self.series
-                .iter()
-                .filter(|(id, _)| id.name == name)
+                .range(from..)
+                .take_while(|(id, _)| id.name == meta.name)
                 .map(|(id, s)| (crate::rules::label_text(&id.label), s.last_at()))
                 .filter(|(label, _)| crate::rules::glob(pattern, label))
                 .collect()
@@ -148,7 +157,10 @@ impl Store {
                             };
                             self.series.get(&id)?.last_scalar().map(|(_, v)| v)
                         };
-                        for ev in rules.observe(b.source, b.at, &scalars, &lookup) {
+                        // The alert belongs to the rule, not to whichever
+                        // source published the sample that tripped it
+                        // (D57 amendment 12) — `tick` uses the same id.
+                        for ev in rules.observe(crate::source::RULES, b.at, &scalars, &lookup) {
                             self.alerts.observe(&ev);
                             out.push(ev);
                         }
