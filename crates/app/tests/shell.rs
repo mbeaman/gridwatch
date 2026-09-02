@@ -729,3 +729,242 @@ fn a_source_failure_reaches_the_screen() {
         "duplicate toasts:\n{t}"
     );
 }
+
+// ───────────────────────────── arc 3b (seams 8–10) ─────────────────────────────
+
+/// The cells of a rect as plain text — one tile's content, so a toast at the
+/// bottom right of the body does not enter the comparison.
+fn region_text(sh: &mut Shell, w: u16, h: u16, r: ratatui::layout::Rect) -> String {
+    let frame = shot_frame(sh, w, h);
+    let mut out = String::new();
+    for y in r.y..r.y + r.height {
+        for x in r.x..r.x + r.width {
+            out.push_str(frame.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "));
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// Seam 8: a reload keeps an instance whose `(kind, options)` did not change
+/// — its state (here htop's inverted sort) survives — and rebuilds one whose
+/// options changed; a broken file keeps everything and toasts the line.
+#[test]
+fn reload_keeps_unchanged_instances_and_toasts_a_broken_file() {
+    use gridwatch_store::ReloadKind;
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    let cpu = ratatui::layout::Rect::new(0, 1, 120, 30);
+    let before = region_text(&mut sh, 250, 70, cpu);
+    // Capture the cpu tile and invert its sort: component state.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Enter)));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('I'))));
+    let inverted = region_text(&mut sh, 250, 70, cpu);
+    assert_ne!(before, inverted, "`I` did not change the table");
+    // Same files again: 1 config.toml reload, every instance kept.
+    sh.reload_from_texts(
+        ReloadKind::Config,
+        config::DEFAULT_CONFIG,
+        config::DEFAULT_LAYOUT,
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("config.toml reloaded"), "{text}");
+    assert!(text.contains("kept"), "{text}");
+    assert!(!text.contains("rebuilt"), "{text}");
+    assert_eq!(
+        region_text(&mut sh, 250, 70, cpu),
+        inverted,
+        "an unchanged instance lost its state"
+    );
+    // Changed options for `cpu`: that one is rebuilt (default sort again).
+    let changed = config::DEFAULT_CONFIG.replace(
+        "id = \"cpu\"\nkind = \"htop\"",
+        "id = \"cpu\"\nkind = \"htop\"\noptions = { table_rows = 5 }",
+    );
+    assert_ne!(changed, config::DEFAULT_CONFIG);
+    sh.reload_from_texts(ReloadKind::Config, &changed, config::DEFAULT_LAYOUT);
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("1 rebuilt"), "{text}");
+    assert_ne!(
+        region_text(&mut sh, 250, 70, cpu),
+        inverted,
+        "a changed instance was not rebuilt"
+    );
+    let rebuilt = region_text(&mut sh, 250, 70, cpu);
+    // A broken config.toml: nothing changes, the toast names file and line.
+    sh.reload_from_texts(
+        ReloadKind::Config,
+        "schema = 1\nfps = \"thirty\"\n",
+        config::DEFAULT_LAYOUT,
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("kept the old config"), "{text}");
+    assert!(text.contains("config.toml:2:"), "{text}");
+    assert_eq!(region_text(&mut sh, 250, 70, cpu), rebuilt);
+    // A layout with two pages of which the current one vanished: page 0.
+    sh.set_page(1);
+    let one_page = "schema = 1\n[grid]\ncolumns = 12\nrows = 6\n[[pages]]\nname = \"Only\"\nhotkey = \"1\"\nplace = [{ id = \"cpu\", at = [0, 0], size = [12, 6] }]\n";
+    sh.reload_from_texts(ReloadKind::Layout, &changed, one_page);
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("layout.toml reloaded (1 pages"), "{text}");
+    assert!(text.contains(" 1 only "), "{text}");
+}
+
+/// Seam 8: `T` reloads the theme; a config reload that names another theme
+/// swaps it unless the CLI locked the theme.
+#[test]
+fn theme_reload_follows_the_config_unless_locked() {
+    use gridwatch_store::ReloadKind;
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    assert_eq!(sh.theme().name, "mono");
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('T'))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("theme reloaded: mono"), "{text}");
+    let modern = config::DEFAULT_CONFIG.replace("theme = \"retrowave\"", "theme = \"modern\"");
+    sh.reload_from_texts(ReloadKind::Config, &modern, config::DEFAULT_LAYOUT);
+    assert_eq!(
+        sh.theme().name,
+        "modern",
+        "the config's theme was not followed"
+    );
+    assert_eq!(sh.theme_ref(), "modern");
+    sh.theme_locked = true;
+    let phos =
+        config::DEFAULT_CONFIG.replace("theme = \"retrowave\"", "theme = \"phosphor-green\"");
+    sh.reload_from_texts(ReloadKind::Config, &phos, config::DEFAULT_LAYOUT);
+    assert_eq!(
+        sh.theme().name,
+        "modern",
+        "a locked theme followed the config"
+    );
+    // `t` cycles through every built-in and moves the reload target with it.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('t'))));
+    assert_eq!(sh.theme().name, "mono");
+    assert_eq!(sh.theme_ref(), "mono");
+    // A theme file that does not exist keeps the old theme and says so.
+    sh.set_theme_ref("/nonexistent/theme.toml");
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('T'))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("kept the old theme"), "{text}");
+    assert_eq!(sh.theme().name, "mono");
+}
+
+/// Seam 9: a `[components.<kind>]` override reaches the rendered tile — the
+/// frame under the overriding theme differs from the base and carries the
+/// override colour — and no other tile changes.
+#[test]
+fn component_gradient_override_reaches_the_tile() {
+    let modern = include_str!("../../../themes/modern.toml");
+    let over =
+        format!("{modern}\n[components.htop]\ngradients.load = [\"#123456\", \"#123456\"]\n");
+    let dir = std::env::temp_dir().join(format!("gridwatch-theme-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("over.toml");
+    std::fs::write(&path, over).unwrap();
+    let theme =
+        gridwatch_app::load_theme_by_name(path.to_str().unwrap(), ColorMode::TrueColor).unwrap();
+    let mut base = shell_with_theme(config::DEFAULT_LAYOUT, 1, "modern");
+    let mut sh = shell_with_theme(config::DEFAULT_LAYOUT, 1, "modern");
+    sh.swap_theme(theme);
+    let a = gridwatch_ui::dump::cells(&shot_frame(&mut base, 250, 70));
+    let b = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    assert_ne!(a, b);
+    // The LUT's own value (Oklab round-trips within a step of #123456).
+    let ratatui::style::Color::Rgb(r, g, bl) = sh
+        .theme()
+        .for_kind("htop")
+        .gradient(gridwatch_ui::GradientId::Load)
+        .sample(0.5)
+    else {
+        panic!("rgb")
+    };
+    let hex = format!("#{r:02x}{g:02x}{bl:02x}");
+    assert!(
+        b.contains(&hex),
+        "the override colour {hex} is not on screen"
+    );
+    assert!(!a.contains(&hex));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A registry with the real sources so the shell knows their cadences.
+fn shell_with_sources(caps: gridwatch_store::CapSet) -> Shell {
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    gridwatch_sources::builtin_sources(&mut reg);
+    let loaded = config::load_embedded().unwrap();
+    let theme = load_builtin("mono", ColorMode::Mono).unwrap();
+    let mut sh = Shell::new(
+        reg,
+        &loaded,
+        theme,
+        caps,
+        0,
+        Clock::new_virtual(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        false,
+    );
+    gridwatch_app::feed_synth(&mut sh, 42, 40);
+    sh
+}
+
+/// Seam 10: a tile whose source aged past 3 × its visible cadence on the
+/// virtual clock is dimmed and badged `STALE Ns`; fresh data and a deliberate
+/// pause show no badge.
+#[test]
+fn stale_sources_are_badged_after_three_cadences() {
+    let mut sh = shell_with_sources(probe::probe());
+    // 40 ticks at 1.5 s = 60 s of data; the clock sits at the last sample.
+    sh.set_clock(Ts(60_000_000_000));
+    let fresh = page_text(&mut sh, 250, 70);
+    assert!(!fresh.contains("stale"), "{fresh}");
+    // 4 s later: the cpu source (1.5 s visible → 4.5 s) is not stale yet,
+    // the gpu (0.5 s → 1.5 s) and pins (0.5 s → 1.5 s) are.
+    sh.set_clock(Ts(64_000_000_000));
+    let partly = page_text(&mut sh, 250, 70);
+    assert_eq!(partly.matches("stale 4s").count(), 2, "{partly}");
+    sh.set_clock(Ts(70_000_000_000));
+    let all = page_text(&mut sh, 250, 70);
+    assert_eq!(all.matches("stale 10s").count(), 3, "{all}");
+    // Dimmed: the cpu tile's cells are drawn in the muted role — in mono
+    // that is `Reset` either way, so check the badge style instead.
+    let frame = shot_frame(&mut sh, 250, 70);
+    let badge = (0..250u16)
+        .flat_map(|x| (0..70u16).map(move |y| (x, y)))
+        .find(|&(x, y)| {
+            "STALE".chars().enumerate().all(|(i, ch)| {
+                frame
+                    .cell((x + i as u16, y))
+                    .is_some_and(|c| c.symbol() == ch.to_string())
+            })
+        })
+        .expect("a STALE badge");
+    assert!(
+        frame
+            .cell(badge)
+            .unwrap()
+            .modifier
+            .contains(ratatui::style::Modifier::BOLD)
+    );
+    // Paused: no badge — the pause is deliberate and the key bar says so.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char(' '))));
+    let paused = page_text(&mut sh, 250, 70);
+    assert!(!paused.contains("stale"), "{paused}");
+}
+
+/// Seam 10: a component whose required capability is missing is a chip that
+/// says the reason **and the fix**, in the doctor's words.
+#[test]
+fn a_missing_required_capability_chips_reason_and_fix() {
+    let mut sh = shell_with_sources(gridwatch_store::CapSet::empty());
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        text.contains("needs procfs: /proc is not mounted"),
+        "{text}"
+    );
+    assert!(text.contains("fix: mount procfs at /proc"), "{text}");
+    // With the capability the same layout builds the tile.
+    let mut ok = shell_with_sources(probe::probe());
+    let text = page_text(&mut ok, 250, 70);
+    assert!(!text.contains("needs procfs"), "{text}");
+}

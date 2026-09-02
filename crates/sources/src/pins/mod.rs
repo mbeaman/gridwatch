@@ -37,6 +37,47 @@ pub const REPROBE: Duration = Duration::from_secs(10);
 /// Misses before the status turns `Degraded`.
 const DEGRADED_AFTER: u32 = 3;
 
+/// `gridwatch doctor`'s live probes (seam 10): the exporter is asked once
+/// (250 ms connect), then `detect_bus` — which opens `/dev/i2c-*`, so this
+/// never runs at startup and never from a test on torch (MACHINE.md).
+pub fn doctor(exporter: Option<&str>) -> Vec<(gridwatch_store::Capability, bool, String)> {
+    use gridwatch_store::Capability;
+    let addr = exporter.unwrap_or(DEFAULT_EXPORTER);
+    let mut out = Vec::new();
+    match exporter::fetch(addr) {
+        Ok(body) => {
+            let scrape = parse::parse_metrics(&body);
+            let version = scrape
+                .version
+                .as_deref()
+                .map(|v| format!(" (astral-watch {v})"))
+                .unwrap_or_default();
+            out.push((
+                Capability::AstralExporter,
+                true,
+                format!("answers at {addr}{version}"),
+            ));
+        }
+        Err(e) => out.push((
+            Capability::AstralExporter,
+            false,
+            format!("no answer at {addr}: {e}"),
+        )),
+    }
+    match i2c::I2cBackend::detect() {
+        Ok(b) => out.push((
+            Capability::I2cNvidia,
+            true,
+            format!("chip found on i2c-{} @ 0x2b", b.bus()),
+        )),
+        Err(d) => {
+            let (reason, hint) = i2c::I2cBackend::explain(d);
+            out.push((Capability::I2cNvidia, false, format!("{reason} — {hint}")));
+        }
+    }
+    out
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pick {
     Auto,

@@ -92,8 +92,12 @@ enum Cmd {
         #[command(subcommand)]
         what: ConfigCmd,
     },
-    /// Show the capability probe.
-    Doctor,
+    /// Every capability with a reason and a fix, plus the sources' live probes.
+    Doctor {
+        /// Skip the live probes (the exporter GET and i2c detect_bus).
+        #[arg(long)]
+        offline: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -106,8 +110,12 @@ enum ComponentCmd {
 
 #[derive(Subcommand)]
 enum ConfigCmd {
-    /// Parse and validate config.toml + layout.toml.
-    Check,
+    /// Parse and validate config.toml + layout.toml, then the theme (the
+    /// config's, or --theme NAME) with its WCAG contrast report.
+    Check {
+        #[arg(long)]
+        theme: Option<String>,
+    },
     /// Print the embedded defaults.
     Default,
 }
@@ -227,19 +235,21 @@ fn main() -> std::process::ExitCode {
             }
         },
         Cmd::Config { what } => match what {
-            ConfigCmd::Check => gridwatch_app::config_check().map(|lines| {
-                for l in lines {
-                    println!("{l}");
-                }
-            }),
+            ConfigCmd::Check { theme } => {
+                gridwatch_app::config_check(theme.as_deref()).map(|lines| {
+                    for l in lines {
+                        println!("{l}");
+                    }
+                })
+            }
             ConfigCmd::Default => {
                 let (c, l) = gridwatch_app::config_default();
                 println!("# ---- config.toml ----\n{c}\n# ---- layout.toml ----\n{l}");
                 Ok(())
             }
         },
-        Cmd::Doctor => {
-            for l in gridwatch_app::doctor() {
+        Cmd::Doctor { offline } => {
+            for l in gridwatch_app::doctor(offline) {
                 println!("{l}");
             }
             Ok(())

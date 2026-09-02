@@ -10,6 +10,7 @@ pub mod probe;
 pub mod stats;
 pub mod sys;
 pub mod terminal;
+pub mod watch;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -43,14 +44,41 @@ pub struct RunOpts {
     pub speed: Option<f64>,
 }
 
-fn load_theme_by_name(name: &str, mode: gridwatch_ui::ColorMode) -> Result<Theme, String> {
-    if name.ends_with(".toml") {
-        let text = std::fs::read_to_string(name).map_err(|e| format!("{name}: {e}"))?;
-        build_theme(&load_theme_file(&text).map_err(|e| e.to_string())?, mode)
-            .map_err(|e| e.to_string())
-    } else {
-        load_builtin(name, mode).map_err(|e| e.to_string())
+/// Load a theme by built-in name or `.toml` path (§7, D52). A file may
+/// `inherits` a built-in or a sibling file (`<name>` or `<name>.toml` next to
+/// it); the parent must not inherit in turn (one level — a chain is an error).
+pub fn load_theme_by_name(name: &str, mode: gridwatch_ui::ColorMode) -> Result<Theme, String> {
+    if !name.ends_with(".toml") {
+        return load_builtin(name, mode).map_err(|e| e.to_string());
     }
+    let path = Path::new(name);
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{name}: {e}"))?;
+    let file = load_theme_file(&text).map_err(|e| format!("{name}: {e}"))?;
+    let parent = match &file.meta.inherits {
+        None => None,
+        Some(p) => Some(resolve_parent(path, p)?),
+    };
+    build_theme(&file, parent.as_ref(), mode).map_err(|e| format!("{name}: {e}"))
+}
+
+fn resolve_parent(child: &Path, parent: &str) -> Result<gridwatch_ui::theme::ThemeFile, String> {
+    if let Some(text) = gridwatch_ui::theme::builtin(parent) {
+        return load_theme_file(text).map_err(|e| format!("built-in {parent}: {e}"));
+    }
+    let dir = child.parent().unwrap_or_else(|| Path::new("."));
+    let candidate = if parent.ends_with(".toml") {
+        dir.join(parent)
+    } else {
+        dir.join(format!("{parent}.toml"))
+    };
+    let text = std::fs::read_to_string(&candidate).map_err(|e| {
+        format!(
+            "{}: inherits '{parent}' — not a built-in and {} cannot be read: {e}",
+            child.display(),
+            candidate.display()
+        )
+    })?;
+    load_theme_file(&text).map_err(|e| format!("{}: {e}", candidate.display()))
 }
 
 /// Full assembly for the live terminal (§5): config → theme → sources →
@@ -173,6 +201,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     for w in theme.warnings.iter().chain(&loaded.warnings) {
         tracing::warn!("{w}");
     }
+    let theme_warnings = theme.warnings.clone();
 
     let source_names: Vec<String> = registry
         .sources()
@@ -186,6 +215,32 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     for w in shell.view_warnings().to_vec() {
         shell.warn_toast(w);
     }
+    // The theme's own warnings (the WCAG gate, ignored tables) at start (D52).
+    for w in theme_warnings {
+        shell.warn_toast(w);
+    }
+    shell.set_theme_ref(theme_name.clone());
+    shell.theme_locked = force_mono || opts.theme.is_some();
+    // Hot reload (§9, seam 8): the watcher stats the two config files and the
+    // theme file (when the theme is a file) once per second; the shell
+    // re-parses on `ControlMsg::Reload`. Not under `--replay`, whose frames
+    // must be reproducible from the journal alone.
+    let _watch = (opts.replay.is_none()).then(|| {
+        let mut files: Vec<watch::Watched> = config::watched_paths()
+            .into_iter()
+            .enumerate()
+            .map(|(i, path)| watch::Watched {
+                kind: if i == 0 {
+                    gridwatch_store::ReloadKind::Config
+                } else {
+                    gridwatch_store::ReloadKind::Layout
+                },
+                path,
+            })
+            .collect();
+        files.extend(watch::theme_files(&theme_name));
+        watch::spawn(files, ch.control.clone())
+    });
     shell.bytes_counter = Some(bytes);
     if let Some(path) = &opts.record {
         let size = term.size().map(|s| (s.width, s.height)).unwrap_or((0, 0));
@@ -527,8 +582,10 @@ Keys once captured with `Enter`:
     out
 }
 
-/// `gridwatch config check` / `default` support.
-pub fn config_check() -> Result<Vec<String>, String> {
+/// `gridwatch config check [--theme NAME]`: the two files, then the theme —
+/// the config's or the named one — with its loader warnings and the WCAG
+/// contrast report (D52).
+pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
     let loaded = config::load().map_err(|e| e.to_string())?;
     let mut lines = vec![
         format!(
@@ -548,9 +605,22 @@ pub fn config_check() -> Result<Vec<String>, String> {
                 .unwrap_or_else(|| "embedded default".into()),
             loaded.pages.len()
         ),
-        format!("theme: {}", loaded.config.theme),
     ];
     lines.extend(loaded.warnings.iter().map(|w| format!("warning: {w}")));
+    let name = theme.unwrap_or(&loaded.config.theme);
+    match load_theme_by_name(name, gridwatch_ui::ColorMode::TrueColor) {
+        Ok(t) => {
+            lines.push(format!("theme: {name} ({}, {:?})", t.name, t.class));
+            lines.extend(t.warnings.iter().map(|w| format!("warning: {w}")));
+            lines.push("contrast (WCAG 2.1):".into());
+            lines.extend(t.contrast_report().iter().map(|r| format!("  {r}")));
+            let kinds: Vec<&str> = t.overridden_kinds().collect();
+            if !kinds.is_empty() {
+                lines.push(format!("component overrides: {}", kinds.join(", ")));
+            }
+        }
+        Err(e) => lines.push(format!("theme: {name} — error: {e}")),
+    }
     Ok(lines)
 }
 
@@ -558,7 +628,28 @@ pub fn config_default() -> (&'static str, &'static str) {
     (config::DEFAULT_CONFIG, config::DEFAULT_LAYOUT)
 }
 
-/// Capability table for `gridwatch doctor` (full command in arc 3).
-pub fn doctor() -> Vec<String> {
-    probe::doctor_lines(&probe::probe())
+/// `gridwatch doctor [--offline]`: every capability with a reason and a fix,
+/// plus the live probes the sources own — the exporter is asked once and
+/// `detect_bus` runs — unless `offline` (§11, seam 10).
+pub fn doctor(offline: bool) -> Vec<String> {
+    let caps = probe::probe();
+    let mut live = Vec::new();
+    if !offline {
+        let exporter = config::load().ok().and_then(|l| {
+            l.config
+                .sources
+                .get("pins")
+                .and_then(|v| v.get("exporter"))
+                .and_then(|v| v.as_str().map(str::to_string))
+        });
+        live.extend(gridwatch_sources::doctor(exporter.as_deref()));
+    }
+    let mut lines = probe::doctor_lines(&caps, &live);
+    lines.push(String::new());
+    lines.push(if offline {
+        "live probes skipped (--offline): the astral-watch exporter and i2c detect_bus".into()
+    } else {
+        "live probes ran: the astral-watch exporter (one GET) and i2c detect_bus".into()
+    });
+    lines
 }

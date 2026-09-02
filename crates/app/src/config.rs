@@ -22,13 +22,34 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
+/// `byte` → 1-based `(line, col)` in `text` (§9: errors report
+/// `file:line:col`, and the reload toast names the line).
+pub fn line_col(text: &str, byte: usize) -> (usize, usize) {
+    let byte = byte.min(text.len());
+    let before = &text[..byte];
+    let line = before.matches('\n').count() + 1;
+    let col = before
+        .rsplit('\n')
+        .next()
+        .map(|l| l.chars().count())
+        .unwrap_or(0)
+        + 1;
+    (line, col)
+}
+
 fn parse<T: serde::de::DeserializeOwned>(what: &str, text: &str) -> Result<T, ConfigError> {
     toml::from_str(text).map_err(|e| {
-        let span = e
+        let at = e
             .span()
-            .map(|s| format!(" (bytes {}..{})", s.start, s.end))
+            .map(|s| {
+                let (l, c) = line_col(text, s.start);
+                format!(":{l}:{c}")
+            })
             .unwrap_or_default();
-        ConfigError(format!("{what}{span}: {e}"))
+        // toml's message repeats the span as `at line N column M` on its own
+        // lines; the first line is the message itself.
+        let msg = e.message().to_string();
+        ConfigError(format!("{what}{at}: {msg}"))
     })
 }
 
@@ -234,7 +255,16 @@ fn config_dir() -> Option<PathBuf> {
         .map(|p| p.join("gridwatch"))
 }
 
-pub fn load() -> Result<Loaded, ConfigError> {
+/// The two file texts (or the embedded defaults) and their paths — what
+/// `load` parses, and what a hot reload re-reads (§9).
+pub fn read_texts() -> Result<(String, String), ConfigError> {
+    let (c, l, _, _) = read_all()?;
+    Ok((c, l))
+}
+
+type Read = (String, String, Option<PathBuf>, Option<PathBuf>);
+
+fn read_all() -> Result<Read, ConfigError> {
     let dir = config_dir();
     let config_path = dir
         .as_ref()
@@ -256,6 +286,20 @@ pub fn load() -> Result<Loaded, ConfigError> {
         }
         None => DEFAULT_LAYOUT.to_string(),
     };
+    Ok((config_text, layout_text, config_path, layout_path))
+}
+
+/// The files the watcher stats (§9): `config.toml` and `layout.toml` in the
+/// config dir, whether or not they exist yet — a file that appears is a
+/// change too.
+pub fn watched_paths() -> Vec<PathBuf> {
+    config_dir()
+        .map(|d| vec![d.join("config.toml"), d.join("layout.toml")])
+        .unwrap_or_default()
+}
+
+pub fn load() -> Result<Loaded, ConfigError> {
+    let (config_text, layout_text, config_path, layout_path) = read_all()?;
     load_from(&config_text, &layout_text, config_path, layout_path, true)
 }
 
@@ -503,6 +547,20 @@ mod tests {
             resolve_color(Some("16"), "truecolor", &noisy),
             (Ansi16, false)
         );
+    }
+
+    /// §9: a parse error names the file, the line and the column.
+    #[test]
+    fn parse_errors_name_the_line() {
+        let cfg = "schema = 1\ntheme = \"mono\"\nfps = \"thirty\"\n";
+        let Err(err) = load_from(cfg, DEFAULT_LAYOUT, None, None, false) else {
+            panic!("a string fps was accepted");
+        };
+        assert!(
+            err.to_string().starts_with("config: config.toml:3:"),
+            "{err}"
+        );
+        assert_eq!(line_col("ab\ncd\nef", 4), (2, 2));
     }
 
     /// A zero-column grid would underflow thresholds(); it must be rejected.

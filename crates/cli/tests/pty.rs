@@ -509,3 +509,103 @@ fn replay_of_a_non_journal_is_refused_loudly() {
     }
     let _ = std::fs::remove_file(&empty);
 }
+
+/// C.12 (arc 3b) — hot reload under a pty: editing `config.toml` swaps the
+/// theme within two seconds and toasts; a broken file keeps the old state and
+/// names the line; a `layout.toml` that appears is picked up; `T` reloads
+/// the theme on demand.
+#[test]
+fn editing_the_config_files_reloads_within_two_seconds() {
+    if skip("editing_the_config_files_reloads_within_two_seconds") {
+        return;
+    }
+    let mut s = Session::start("reload", 70, 250, "run --demo");
+    let dir = s.sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let cfg = dir.join("config.toml");
+    let seen = s.wait_for(Duration::from_secs(4), |t| {
+        t.contains("retrowave · configured")
+    });
+    assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+    // The file appears with another theme: reload + swap.
+    let modern = gridwatch_app::config::DEFAULT_CONFIG
+        .replace("theme = \"retrowave\"", "theme = \"modern\"");
+    std::fs::write(&cfg, &modern).unwrap();
+    let seen = s.wait_for(Duration::from_secs(3), |t| {
+        t.contains("config.toml reloaded")
+    });
+    assert!(
+        seen.is_some(),
+        "no reload toast in 3 s; screen: {:?}",
+        s.screen()
+    );
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
+        t.contains("modern · configured")
+    });
+    assert!(
+        seen.is_some(),
+        "theme did not follow the file; screen: {:?}",
+        s.screen()
+    );
+    // A broken edit: kept, and the toast says where.
+    std::fs::write(&cfg, "schema = 1\ntheme = \"modern\"\nfps = \"thirty\"\n").unwrap();
+    let seen = s.wait_for(Duration::from_secs(3), |t| {
+        t.contains("kept the old config")
+    });
+    assert!(seen.is_some(), "no error toast; screen: {:?}", s.screen());
+    assert!(
+        s.screen().contains("config.toml:3:"),
+        "the toast does not name the line; screen: {:?}",
+        s.screen()
+    );
+    // layout.toml appearing is a change too.
+    std::fs::write(&cfg, &modern).unwrap();
+    std::fs::write(
+        dir.join("layout.toml"),
+        gridwatch_app::config::DEFAULT_LAYOUT,
+    )
+    .unwrap();
+    let seen = s.wait_for(Duration::from_secs(3), |t| {
+        t.contains("layout.toml reloaded")
+    });
+    assert!(seen.is_some(), "no layout toast; screen: {:?}", s.screen());
+    // `T`: reload the theme now.
+    s.keys("T");
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
+        t.contains("theme reloaded: modern")
+    });
+    assert!(seen.is_some(), "no `T` toast; screen: {:?}", s.screen());
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    let bad: Vec<&str> = log.lines().filter(|l| l.contains("ERROR")).collect();
+    assert!(bad.is_empty(), "errors in the log: {bad:?}");
+}
+
+/// C.13 (arc 3b) — `gridwatch doctor --offline` prints every capability with
+/// a reason and a fix and exits 0. `--offline` skips the live probes: the
+/// exporter GET and `detect_bus`, which opens `/dev/i2c-*` — never from a
+/// test on torch (MACHINE.md); the live table is run by hand.
+#[test]
+fn doctor_prints_every_capability_with_a_fix() {
+    let out = Command::new(bin())
+        .args(["doctor", "--offline"])
+        .env("COLORTERM", "")
+        .output()
+        .expect("run doctor");
+    assert!(out.status.success(), "{:?}", out);
+    let text = String::from_utf8_lossy(&out.stdout);
+    for cap in [
+        "Procfs",
+        "Nvml",
+        "I2cNvidia",
+        "AstralExporter",
+        "PwRecord",
+        "TrueColor",
+    ] {
+        assert!(text.contains(cap), "no row for {cap}:\n{text}");
+    }
+    assert!(text.contains("✗ TrueColor"), "{text}");
+    assert!(text.contains("fix: use a truecolor terminal"), "{text}");
+    assert!(text.contains("live probes skipped (--offline)"), "{text}");
+}

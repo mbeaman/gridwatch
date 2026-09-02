@@ -8,13 +8,13 @@ use std::time::{Duration, Instant, SystemTime};
 
 use gridwatch_store::{
     CapSet, Clock, Control, ControlMsg, Detail, Inbox, InputEvent, KeyCode, Level, Msg, Recorder,
-    Severity, SourceId, Store, Ts,
+    ReloadKind, Severity, SourceId, Store, Ts,
 };
 use gridwatch_ui::component::{BuildCx, Chrome, Command, Component, Outcome, Size, pick_tier};
 use gridwatch_ui::layout::{
     Cell, Direction, Page, PlaceTarget, SolveMode, Solved, derive_mode, focus_dir, hit, solve,
 };
-use gridwatch_ui::theme::{Role, Theme, TitleStyle, load_builtin};
+use gridwatch_ui::theme::{BUILTIN_THEMES, Role, Theme, TitleStyle, load_builtin};
 use gridwatch_ui::view::Span as RSpanText;
 use gridwatch_ui::{Registry, overlay};
 use ratatui::Terminal;
@@ -34,8 +34,13 @@ const TOAST_TTL: Duration = Duration::from_secs(4);
 
 struct Instance {
     kind: String,
+    /// The `[[components]] options` it was built with: a reload keeps an
+    /// instance whose `(kind, options)` did not change (§9).
+    options: toml::Table,
     component: Option<Box<dyn Component>>,
     chip_reason: String,
+    /// The fix line under the reason (§11 placeholder tiles).
+    chip_hint: String,
 }
 
 struct Toast {
@@ -62,10 +67,24 @@ struct CacheKey {
     view_hash: u64,
 }
 
+/// Three cadences per source is the staleness threshold (§11, seam 10).
+const STALE_CADENCES: u32 = 3;
+
 pub struct Shell {
     pub store: Store,
+    registry: Registry,
     theme: Theme,
-    theme_cycle: Vec<&'static str>,
+    /// What `theme` was loaded from — a built-in name or a `.toml` path — so
+    /// `T` and a theme-file change can reload it.
+    theme_ref: String,
+    /// `--theme` or `NO_COLOR` on the command line: a `config.toml` reload
+    /// does not change the theme (§9 layering — CLI beats the file).
+    pub theme_locked: bool,
+    /// The theme `config.toml` named at the last load: a reload swaps the
+    /// theme only when *that* changes, so an fps edit never undoes `t`.
+    config_theme: String,
+    /// Visible cadence per source (from `SourceInfo`): the staleness rule.
+    cadences: BTreeMap<&'static str, Duration>,
     grid: gridwatch_ui::layout::GridSpec,
     pages: Vec<Page>,
     page: usize,
@@ -123,79 +142,22 @@ impl Shell {
         stats_on: bool,
     ) -> Shell {
         let mut store = Store::default();
+        let mut cadences = BTreeMap::new();
         for def in registry.sources() {
             store.ensure_source(def.info.id);
+            cadences.insert(def.info.id.0, def.info.cadence.visible);
         }
-        let mut instances = BTreeMap::new();
-        let build = |kind: &str, options: &toml::Table| -> Instance {
-            match registry.component(kind) {
-                None => Instance {
-                    kind: kind.to_string(),
-                    component: None,
-                    chip_reason: "arrives in a later arc".into(),
-                },
-                Some(def) => {
-                    let mut cx = BuildCx {
-                        options,
-                        caps: &caps,
-                    };
-                    match (def.build)(&mut cx) {
-                        Ok(c) => Instance {
-                            kind: kind.to_string(),
-                            component: Some(c),
-                            chip_reason: String::new(),
-                        },
-                        Err(e) => Instance {
-                            kind: kind.to_string(),
-                            component: None,
-                            chip_reason: e.0,
-                        },
-                    }
-                }
-            }
-        };
-        for inst in &loaded.config.components {
-            instances.insert(inst.id.clone(), build(&inst.kind, &inst.options));
-        }
-        let empty = toml::Table::new();
-        for page in &loaded.pages {
-            for p in &page.place {
-                if let PlaceTarget::Kind(k) = &p.target {
-                    let key = format!("kind:{k}");
-                    instances.entry(key).or_insert_with(|| build(k, &empty));
-                }
-            }
-        }
-        // §4.6: a placement may name a preferred tier; an unknown name is a
-        // config warning and is ignored (the richest fitting tier is used).
-        // Only here can it be checked — the tier list lives on the component.
-        let mut view_warnings = Vec::new();
-        for page in &loaded.pages {
-            for p in &page.place {
-                let Some(view) = &p.view else { continue };
-                let key = match &p.target {
-                    PlaceTarget::Id(id) => id.clone(),
-                    PlaceTarget::Kind(k) => format!("kind:{k}"),
-                };
-                let Some(component) = instances.get(&key).and_then(|i| i.component.as_ref()) else {
-                    continue;
-                };
-                if !component.tiers().iter().any(|t| t.name == view) {
-                    let known: Vec<&str> = component.tiers().iter().map(|t| t.name).collect();
-                    let msg = format!(
-                        "{key}: view = \"{view}\" is not a tier of `{}` (have {}) — ignored",
-                        component.manifest().kind,
-                        known.join(" ")
-                    );
-                    tracing::warn!("{msg}");
-                    view_warnings.push(msg);
-                }
-            }
-        }
+        let instances = build_instances(&registry, loaded, &caps, None);
+        let view_warnings = view_warnings(loaded, &instances);
+        let theme_ref = theme.name.clone();
         Shell {
             store,
+            registry,
             theme,
-            theme_cycle: vec!["retrowave", "modern", "mono"],
+            theme_ref,
+            theme_locked: false,
+            config_theme: loaded.config.theme.clone(),
+            cadences,
             grid: loaded.grid,
             pages: loaded.pages.clone(),
             page: 0,
@@ -234,6 +196,155 @@ impl Shell {
             stats_log: None,
             view_warnings,
             recorder: None,
+        }
+    }
+
+    /// What the theme was loaded from (a built-in name or a `.toml` path).
+    pub fn theme_ref(&self) -> &str {
+        &self.theme_ref
+    }
+
+    pub fn set_theme_ref(&mut self, r: impl Into<String>) {
+        self.theme_ref = r.into();
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
+    /// Swap the theme (§9 hot reload, `t`, `T`): the render cache is keyed by
+    /// theme name, and cleared anyway so a same-named edited file redraws.
+    pub fn swap_theme(&mut self, theme: Theme) {
+        for w in theme.warnings.clone() {
+            self.toast(Severity::Warn, w);
+        }
+        self.theme = theme;
+        self.cache.clear();
+    }
+
+    /// Apply a re-parsed config + layout (§9 hot reload): instances whose
+    /// `(kind, options)` did not change keep their state (selection, peaks,
+    /// a frozen display); the rest are rebuilt; removed ones go. Pages, the
+    /// grid, fps and the unfocused fps follow the files. Returns what
+    /// changed, for the toast.
+    pub fn apply_loaded(&mut self, loaded: &Loaded) -> Vec<String> {
+        let old = std::mem::take(&mut self.instances);
+        let mut kept = 0;
+        let mut rebuilt = 0;
+        let mut removed = 0;
+        let mut fresh = build_instances(&self.registry, loaded, &self.caps, Some(&old));
+        for (key, inst) in old {
+            match fresh.get_mut(&key) {
+                Some(new) if new.kind == inst.kind && new.options == inst.options => {
+                    // Same kind, same options: the old instance and its state.
+                    *new = inst;
+                    kept += 1;
+                }
+                Some(_) => rebuilt += 1,
+                None => removed += 1,
+            }
+        }
+        let added = fresh.len().saturating_sub(kept + rebuilt);
+        self.instances = fresh;
+        self.view_warnings = view_warnings(loaded, &self.instances);
+        self.grid = loaded.grid;
+        self.pages = loaded.pages.clone();
+        self.fps = loaded.config.fps.clamp(1, 60);
+        self.unfocused_fps = loaded.config.perf.unfocused_fps;
+        if self.page >= self.pages.len() {
+            self.page = 0;
+        }
+        let n = self.pages[self.page].place.len();
+        if self.focus.is_some_and(|f| f >= n) {
+            self.focus = if n == 0 { None } else { Some(0) };
+            self.captured = false;
+        }
+        if self.zoom.is_some_and(|z| z >= n) {
+            self.zoom = None;
+        }
+        self.stack_scroll = 0;
+        self.cache.clear();
+        self.last_solved = None;
+        let mut what = Vec::new();
+        if kept > 0 {
+            what.push(format!("{kept} kept"));
+        }
+        if rebuilt > 0 {
+            what.push(format!("{rebuilt} rebuilt"));
+        }
+        if added > 0 {
+            what.push(format!("{added} added"));
+        }
+        if removed > 0 {
+            what.push(format!("{removed} removed"));
+        }
+        what
+    }
+
+    /// Reload config + layout from a pair of texts (§9): the parse and the
+    /// validation run here on the render thread; an error keeps the old state
+    /// and toasts the file, line and column. `kind` names the file that
+    /// changed, for the toast; both are always re-read (one `Loaded`).
+    pub fn reload_from_texts(&mut self, kind: ReloadKind, config_text: &str, layout_text: &str) {
+        match crate::config::load_texts(config_text, layout_text) {
+            Ok(loaded) => {
+                let what = self.apply_loaded(&loaded);
+                let file = match kind {
+                    ReloadKind::Layout => "layout.toml",
+                    _ => "config.toml",
+                };
+                let detail = if what.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {}", what.join(", "))
+                };
+                self.toast(
+                    Severity::Info,
+                    format!("{file} reloaded ({} pages{detail})", self.pages.len()),
+                );
+                for w in loaded
+                    .warnings
+                    .iter()
+                    .chain(self.view_warnings.clone().iter())
+                {
+                    self.toast(Severity::Warn, w.clone());
+                }
+                let theme_changed = loaded.config.theme != self.config_theme;
+                self.config_theme = loaded.config.theme.clone();
+                if !self.theme_locked && theme_changed {
+                    self.theme_ref = loaded.config.theme.clone();
+                    self.reload_theme();
+                }
+            }
+            Err(e) => {
+                tracing::warn!("reload: {e}");
+                self.toast(Severity::Warn, format!("kept the old config — {e}"));
+            }
+        }
+    }
+
+    /// `T`, and a change to the theme file: re-read `theme_ref` at the
+    /// current colour mode; an error keeps the old theme and toasts.
+    pub fn reload_theme(&mut self) {
+        match crate::load_theme_by_name(&self.theme_ref, self.theme.mode) {
+            Ok(t) => {
+                let name = t.name.clone();
+                self.swap_theme(t);
+                self.toast(Severity::Info, format!("theme reloaded: {name}"));
+            }
+            Err(e) => self.toast(Severity::Warn, format!("kept the old theme — {e}")),
+        }
+    }
+
+    /// A `ControlMsg::Reload` from the watcher (§9): read the files the way
+    /// startup did and apply them.
+    fn handle_reload(&mut self, kind: ReloadKind) {
+        match kind {
+            ReloadKind::Theme => self.reload_theme(),
+            ReloadKind::Config | ReloadKind::Layout => match crate::config::read_texts() {
+                Ok((c, l)) => self.reload_from_texts(kind, &c, &l),
+                Err(e) => self.toast(Severity::Warn, format!("kept the old config — {e}")),
+            },
         }
     }
 
@@ -301,6 +412,10 @@ impl Shell {
     /// transition the user would otherwise only find in the log is a failure
     /// nobody saw.
     pub fn apply_control(&mut self, c: ControlMsg) {
+        if let ControlMsg::Reload(r) = &c {
+            self.handle_reload(r.kind);
+            return;
+        }
         if let ControlMsg::Status(id, st) = &c
             && st.state == gridwatch_store::SourceState::Unavailable
             && self.store.status(*id).state != gridwatch_store::SourceState::Unavailable
@@ -692,7 +807,7 @@ impl Shell {
                 format!("Esc release · {keys}")
             }
         } else {
-            "q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · space pause · a ack · A alerts · S shot · F12 hud"
+            "q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack · A alerts · S shot · F12 hud"
                 .to_string()
         };
         let warns = self.warn_count();
@@ -740,7 +855,7 @@ impl Shell {
                     ("Enter / Esc", "capture / release keys"),
                     ("z", "zoom tile"),
                     ("d", "dense mode"),
-                    ("t", "cycle theme"),
+                    ("t / T", "cycle / reload theme"),
                     ("space", "pause sources"),
                     ("a", "acknowledge the alert banner"),
                     ("A", "alerts: active list and log"),
@@ -831,7 +946,14 @@ impl Shell {
                     .render(cell.outer, buf);
             }
             if cell.inner.width > 0 && cell.inner.height > 0 {
-                overlay::chip(&key, "not in config.toml", cell.inner, &self.theme, buf);
+                overlay::chip(
+                    &key,
+                    "not in config.toml",
+                    "add a [[components]] entry with this id",
+                    cell.inner,
+                    &self.theme,
+                    buf,
+                );
             }
             return;
         }
@@ -896,13 +1018,20 @@ impl Shell {
         };
         let component = match &mut inst.component {
             None => {
-                overlay::chip(&kind, &inst.chip_reason, inner, &self.theme, buf);
+                overlay::chip(
+                    &kind,
+                    &inst.chip_reason,
+                    &inst.chip_hint,
+                    inner,
+                    &self.theme,
+                    buf,
+                );
                 return;
             }
             Some(c) => c,
         };
         if cell.chip {
-            overlay::chip(&kind, "starved", inner, &self.theme, buf);
+            overlay::chip(&kind, "starved", "", inner, &self.theme, buf);
             return;
         }
         let inner_size = Size::new(inner.width, inner.height);
@@ -928,7 +1057,7 @@ impl Shell {
             zoomed,
             dense,
             store: &self.store,
-            theme: &self.theme,
+            theme: self.theme.for_kind(&kind),
             now,
             wall,
             tz_offset_s: self.tz_offset_s,
@@ -950,7 +1079,7 @@ impl Shell {
             Ok(v) => v,
             Err(_) => {
                 self.disable_instance(&key);
-                overlay::chip(&kind, "panicked — see the log", inner, &self.theme, buf);
+                overlay::chip(&kind, "panicked — see the log", "", inner, &self.theme, buf);
                 return;
             }
         };
@@ -1008,22 +1137,30 @@ impl Shell {
         if needs_render {
             let mut tile = Buffer::empty(local);
             crate::terminal::CONTAINED.with(|f| f.set(true));
+            let kind_theme = self.theme.for_kind(&kind);
             let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.theme
+                kind_theme
                     .renderer()
-                    .render(&view, local, &self.theme, &mut tile);
+                    .render(&view, local, kind_theme, &mut tile);
             }))
             .is_ok();
             crate::terminal::CONTAINED.with(|f| f.set(false));
             if !ok {
                 self.disable_instance(&key);
-                overlay::chip(&kind, "panicked — see the log", inner, &self.theme, buf);
+                overlay::chip(&kind, "panicked — see the log", "", inner, &self.theme, buf);
                 return;
             }
             self.cache.insert(cell.index, (cache_key, tile));
         }
         if let Some((_, tile)) = self.cache.get(&cell.index) {
             blit(tile, inner, buf);
+        }
+        // Staleness (§11, seam 10): a post-render pass over the tile rect,
+        // never inside the component (which does not know cadences) and never
+        // in the cache (the tile itself is fine; its age is not).
+        if let Some(age) = self.stale_age(m) {
+            overlay::dim(inner, &self.theme, buf);
+            overlay::stale_badge(age.as_secs(), inner, &self.theme, buf);
         }
         if fallback {
             // After the blit so it survives (§4.6): the pinned view does not fit.
@@ -1033,10 +1170,37 @@ impl Shell {
         }
     }
 
+    /// The age of the oldest required source's last sample when any of them
+    /// is past `STALE_CADENCES` × its visible cadence; `None` while paused
+    /// (the pause is deliberate and the key bar says so), for a source that
+    /// has not sampled yet (that is `Starting`, on the chip and the sources
+    /// tile), or when everything is fresh.
+    fn stale_age(&self, m: &gridwatch_ui::Manifest) -> Option<Duration> {
+        if self.paused {
+            return None;
+        }
+        let now = self.clock.now();
+        let mut worst: Option<Duration> = None;
+        for src in m.sources {
+            let Some(last) = self.store.last_sample(*src) else {
+                continue;
+            };
+            let Some(cadence) = self.cadences.get(src.0) else {
+                continue;
+            };
+            let age = now.since(last);
+            if age > *cadence * STALE_CADENCES && worst.is_none_or(|w| age > w) {
+                worst = Some(age);
+            }
+        }
+        worst
+    }
+
     fn disable_instance(&mut self, key: &str) {
         if let Some(i) = self.instances.get_mut(key) {
             i.component = None;
             i.chip_reason = "panicked — see the log".into();
+            i.chip_hint = String::new();
         }
     }
 
@@ -1188,23 +1352,22 @@ impl Shell {
                 true
             }
             KeyCode::Char('t') => {
-                let cur = self
-                    .theme_cycle
+                let cur = BUILTIN_THEMES
                     .iter()
                     .position(|n| *n == self.theme.name)
                     .unwrap_or(0);
-                let next = self.theme_cycle[(cur + 1) % self.theme_cycle.len()];
+                let next = BUILTIN_THEMES[(cur + 1) % BUILTIN_THEMES.len()];
                 match load_builtin(next, self.theme.mode) {
                     Ok(t) => {
-                        self.theme = t;
-                        self.cache.clear();
+                        self.theme_ref = next.to_string();
+                        self.swap_theme(t);
                     }
                     Err(e) => self.toast(Severity::Warn, format!("theme: {e}")),
                 }
                 true
             }
             KeyCode::Char('T') => {
-                self.toast(Severity::Info, "hot reload arrives in arc 3");
+                self.reload_theme();
                 true
             }
             KeyCode::Char(' ') => {
@@ -1403,6 +1566,113 @@ impl Shell {
         std::fs::write(&path, gridwatch_ui::dump::ansi(&b)).map_err(|e| e.to_string())?;
         Ok(path.display().to_string())
     }
+}
+
+/// Build every configured instance plus the anonymous `kind:` placements
+/// (§6, §9). A kind the registry lacks chips "arrives in a later arc"; a
+/// missing *required* capability skips `build` and chips the reason and the
+/// fix (§11); a `build` error chips its message. `previous` lets a reload
+/// skip building an instance it is going to keep anyway.
+fn build_instances(
+    registry: &Registry,
+    loaded: &Loaded,
+    caps: &CapSet,
+    previous: Option<&BTreeMap<String, Instance>>,
+) -> BTreeMap<String, Instance> {
+    let build = |kind: &str, options: &toml::Table| -> Instance {
+        let mk = |component, reason: String, hint: String| Instance {
+            kind: kind.to_string(),
+            options: options.clone(),
+            component,
+            chip_reason: reason,
+            chip_hint: hint,
+        };
+        match registry.component(kind) {
+            None => mk(None, "arrives in a later arc".into(), String::new()),
+            Some(def) => {
+                if let Some(missing) = caps.missing(def.manifest.requires).first() {
+                    let (reason, hint) = crate::probe::missing_lines(*missing);
+                    return mk(None, reason, hint);
+                }
+                let mut cx = BuildCx { options, caps };
+                match (def.build)(&mut cx) {
+                    Ok(c) => mk(Some(c), String::new(), String::new()),
+                    Err(e) => mk(None, e.0, String::new()),
+                }
+            }
+        }
+    };
+    // A stand-in for an instance the caller is about to replace with the one
+    // it kept: same kind and options, never drawn.
+    let stand_in = |kind: &str, options: &toml::Table| Instance {
+        kind: kind.to_string(),
+        options: options.clone(),
+        component: None,
+        chip_reason: String::new(),
+        chip_hint: String::new(),
+    };
+    let unchanged = |key: &str, kind: &str, options: &toml::Table| -> bool {
+        previous
+            .and_then(|p| p.get(key))
+            .is_some_and(|i| i.kind == kind && i.options == *options)
+    };
+    let mut instances = BTreeMap::new();
+    for inst in &loaded.config.components {
+        let value = if unchanged(&inst.id, &inst.kind, &inst.options) {
+            stand_in(&inst.kind, &inst.options)
+        } else {
+            build(&inst.kind, &inst.options)
+        };
+        instances.insert(inst.id.clone(), value);
+    }
+    let empty = toml::Table::new();
+    for page in &loaded.pages {
+        for p in &page.place {
+            if let PlaceTarget::Kind(k) = &p.target {
+                let key = format!("kind:{k}");
+                if instances.contains_key(&key) {
+                    continue;
+                }
+                let value = if unchanged(&key, k, &empty) {
+                    stand_in(k, &empty)
+                } else {
+                    build(k, &empty)
+                };
+                instances.insert(key, value);
+            }
+        }
+    }
+    instances
+}
+
+/// §4.6: a placement may name a preferred tier; an unknown name is a config
+/// warning and is ignored (the richest fitting tier is used). Only here can
+/// it be checked — the tier list lives on the component.
+fn view_warnings(loaded: &Loaded, instances: &BTreeMap<String, Instance>) -> Vec<String> {
+    let mut out = Vec::new();
+    for page in &loaded.pages {
+        for p in &page.place {
+            let Some(view) = &p.view else { continue };
+            let key = match &p.target {
+                PlaceTarget::Id(id) => id.clone(),
+                PlaceTarget::Kind(k) => format!("kind:{k}"),
+            };
+            let Some(component) = instances.get(&key).and_then(|i| i.component.as_ref()) else {
+                continue;
+            };
+            if !component.tiers().iter().any(|t| t.name == view) {
+                let known: Vec<&str> = component.tiers().iter().map(|t| t.name).collect();
+                let msg = format!(
+                    "{key}: view = \"{view}\" is not a tier of `{}` (have {}) — ignored",
+                    component.manifest().kind,
+                    known.join(" ")
+                );
+                tracing::warn!("{msg}");
+                out.push(msg);
+            }
+        }
+    }
+    out
 }
 
 /// The journal timestamp of a drained message (§4.5): a status keeps `since`
