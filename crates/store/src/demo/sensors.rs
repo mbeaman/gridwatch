@@ -120,22 +120,23 @@ const ROWS: &[Row] = &[
 
 /// The inventory the synth publishes (also the journal exemplar).
 pub fn sensors_info() -> SensorsInfo {
-    let chip = |name: &str, n: usize, kinds: &[&str]| ChipInfo {
+    let chip = |name: &str, n: usize, device: &str, kinds: &[&str]| ChipInfo {
         name: name.into(),
         path: format!("/sys/class/hwmon/hwmon{n}"),
+        device: device.into(),
         kinds: kinds.iter().map(|k| k.to_string()).collect(),
     };
     SensorsInfo {
         chips: vec![
-            chip("nvme", 0, &["temp"]),
-            chip("nvme#2", 1, &["temp"]),
-            chip("nvme#3", 2, &["temp"]),
-            chip("mt7925_phy0", 3, &["temp"]),
-            chip("k10temp", 4, &["temp"]),
-            chip("r8169_0_b00:00", 5, &["temp"]),
-            chip("r8169_0_c00:00", 6, &["temp"]),
-            chip("spd5118", 8, &["temp"]),
-            chip("spd5118#2", 9, &["temp"]),
+            chip("nvme", 1, "nvme0", &["temp"]),
+            chip("nvme#2", 2, "nvme1", &["temp"]),
+            chip("nvme#3", 0, "nvme2", &["temp"]),
+            chip("mt7925_phy0", 3, "0000:07:00.0", &["temp"]),
+            chip("k10temp", 4, "0000:00:18.3", &["temp"]),
+            chip("r8169_0_b00:00", 5, "r8169_0_b00:00", &["temp"]),
+            chip("r8169_0_c00:00", 6, "r8169_0_c00:00", &["temp"]),
+            chip("spd5118", 8, "8-0051", &["temp"]),
+            chip("spd5118#2", 9, "8-0053", &["temp"]),
         ],
         rapl: RaplState::RootOnly,
     }

@@ -50,6 +50,10 @@ pub struct ChipInfo {
     pub name: String,
     /// The hwmon directory (`/sys/class/hwmon/hwmon4`) — not stable across boots.
     pub path: String,
+    /// The device the chip hangs off (`nvme0`, `0000:00:18.3`, `8-0051`):
+    /// what makes `nvme#2` the *same* drive after a reboot.
+    #[serde(default)]
+    pub device: String,
     /// The reading kinds the chip exports: `temp`, `fan`, `in`, `power`.
     pub kinds: Vec<String>,
 }
