@@ -593,3 +593,80 @@ mod loader_v2 {
         assert_eq!(gridwatch_ui::overlay::stale_age_text(7200), "2h");
     }
 }
+
+// ───────────────────────── arc 4a: the mouse inverse ─────────────────────────
+
+mod unit_inverse {
+    use gridwatch_ui::component::Size;
+    use gridwatch_ui::layout::{
+        GridSpec, Page, PlaceTarget, Placement, SolveMode, footprint_cycle, solve, unit_at,
+        unit_rect,
+    };
+    use proptest::prelude::*;
+    use ratatui_core::layout::Rect;
+
+    fn page() -> Page {
+        let p = |id: &str, at, size| Placement {
+            target: PlaceTarget::Id(id.into()),
+            at,
+            size,
+            view: None,
+            priority: 0,
+        };
+        Page {
+            name: "p".into(),
+            hotkey: None,
+            place: vec![
+                p("a", (0, 0), (6, 3)),
+                p("b", (6, 0), (6, 3)),
+                p("c", (0, 3), (4, 2)),
+                p("d", (10, 5), (2, 1)),
+            ],
+        }
+    }
+
+    proptest! {
+        /// Every cell of every solved tile maps back to a unit inside that
+        /// placement, in both grid modes and at every body size that solves.
+        #[test]
+        fn unit_at_inverts_solve(w in 60u16..300, h in 20u16..90, dense in any::<bool>()) {
+            let spec = GridSpec::default();
+            let mode = if dense { SolveMode::Dense } else { SolveMode::Configured };
+            let body = Rect::new(3, 2, w, h);
+            let solved = solve(&spec, &page(), body, mode, None, 0);
+            for cell in &solved.cells {
+                let p = &page().place[cell.index];
+                let r = cell.outer;
+                // Dense mode shares one border column/row between neighbours
+                // (§6): that cell belongs to both tiles, and `unit_at` gives
+                // it to the left/upper one — so the shared edge is skipped.
+                let ov = u16::from(dense);
+                for y in r.y + ov..r.y + r.height {
+                    for x in r.x + ov..r.x + r.width {
+                        let (ux, uy) = unit_at(&spec, body, mode, x, y).expect("inside the body");
+                        prop_assert!(ux >= p.at.0 && ux < p.at.0 + p.size.0, "x {x} → unit {ux} outside {:?}", p.at);
+                        prop_assert!(uy >= p.at.1 && uy < p.at.1 + p.size.1, "y {y} → unit {uy} outside {:?}", p.at);
+                    }
+                }
+                // And the ghost rect for that placement is its outer rect.
+                prop_assert_eq!(unit_rect(&spec, body, mode, p.at, p.size), Some(r));
+            }
+            prop_assert!(unit_at(&spec, body, mode, body.x + body.width, body.y).is_none());
+            prop_assert!(unit_at(&spec, body, SolveMode::Stack, body.x, body.y).is_none());
+        }
+    }
+
+    #[test]
+    fn footprint_cycle_wraps_and_starts_over() {
+        let fps = [(1, 1), (2, 1), (4, 2)];
+        assert_eq!(footprint_cycle(&fps, (1, 1)), Some((2, 1)));
+        assert_eq!(footprint_cycle(&fps, (4, 2)), Some((1, 1)));
+        assert_eq!(
+            footprint_cycle(&fps, (6, 3)),
+            Some((1, 1)),
+            "unlisted → first"
+        );
+        assert_eq!(footprint_cycle(&[], (1, 1)), None);
+        let _ = Size::new(8, 3);
+    }
+}

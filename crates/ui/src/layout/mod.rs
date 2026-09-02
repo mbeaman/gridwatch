@@ -6,6 +6,7 @@ mod grid;
 mod page;
 
 pub use edit::{EditError, insert_first_fit, move_by, remove, resize_by, swap};
+// `unit_at`, `unit_rect`, `unit_tracks`, `footprint_cycle` are defined below.
 pub use grid::{BorderMode, GridSpec, thresholds, tracks};
 pub use page::{Page, PlaceTarget, Placement};
 
@@ -208,6 +209,93 @@ fn tracks_overlap(len: u16, n: u8, gap: u16, overlap: u16) -> Vec<(u16, u16)> {
         .enumerate()
         .map(|(i, (s, w))| (s - i as u16 * overlap, w))
         .collect()
+}
+
+/// `(start, size)` per track (§6).
+pub type Tracks = Vec<(u16, u16)>;
+
+/// The column and row tracks the solver uses for a body in a mode (§6):
+/// the inverse of `solve` for the mouse and the edit-mode ghost.
+pub fn unit_tracks(spec: &GridSpec, body: Rect, mode: SolveMode) -> (Tracks, Tracks) {
+    let gap = if mode == SolveMode::Dense {
+        0
+    } else {
+        u16::from(spec.gap)
+    };
+    let overlap = u16::from(mode == SolveMode::Dense);
+    (
+        tracks_overlap(body.width, spec.columns, gap, overlap),
+        tracks_overlap(body.height, spec.rows, gap, overlap),
+    )
+}
+
+/// The grid unit under a screen position (§6, brief arc 4 seam 3): the
+/// inverse of `tracks`. A position in a gutter maps to the nearest track on
+/// its left/top so a drag never loses the pointer; outside the body → None.
+/// Stack mode has no units.
+pub fn unit_at(spec: &GridSpec, body: Rect, mode: SolveMode, x: u16, y: u16) -> Option<(u8, u8)> {
+    if mode == SolveMode::Stack
+        || x < body.x
+        || y < body.y
+        || x >= body.x + body.width
+        || y >= body.y + body.height
+    {
+        return None;
+    }
+    let (cols, rows) = unit_tracks(spec, body, mode);
+    // The first track that contains `v` wins (in dense mode a shared border
+    // column belongs to the tile on its left, as `solve` drew it); a gutter
+    // cell falls back to the track on its left.
+    let find = |tracks: &[(u16, u16)], v: u16| -> Option<u8> {
+        if let Some(i) = tracks.iter().position(|(s, w)| v >= *s && v < s + w) {
+            return Some(i as u8);
+        }
+        tracks.iter().rposition(|(s, _)| v >= *s).map(|i| i as u8)
+    };
+    Some((find(&cols, x - body.x)?, find(&rows, y - body.y)?))
+}
+
+/// The outer rect a placement at `at` with `size` would occupy — the ghost
+/// edit mode draws (§10). `None` when it does not fit the tracks.
+pub fn unit_rect(
+    spec: &GridSpec,
+    body: Rect,
+    mode: SolveMode,
+    at: (u8, u8),
+    size: (u8, u8),
+) -> Option<Rect> {
+    if mode == SolveMode::Stack || size.0 == 0 || size.1 == 0 {
+        return None;
+    }
+    let (cols, rows) = unit_tracks(spec, body, mode);
+    let (cx, cy) = (usize::from(at.0), usize::from(at.1));
+    let (cw, ch) = (usize::from(size.0), usize::from(size.1));
+    if cx + cw > cols.len() || cy + ch > rows.len() {
+        return None;
+    }
+    let x0 = cols[cx].0;
+    let y0 = rows[cy].0;
+    let x1 = cols[cx + cw - 1].0 + cols[cx + cw - 1].1;
+    let y1 = rows[cy + ch - 1].0 + rows[cy + ch - 1].1;
+    Some(Rect {
+        x: body.x + x0,
+        y: body.y + y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    })
+}
+
+/// The next footprint after `current` in a manifest's list (`s` in edit
+/// mode); the first when `current` is not listed; `None` for an empty list.
+pub fn footprint_cycle(footprints: &[(u8, u8)], current: (u8, u8)) -> Option<(u8, u8)> {
+    if footprints.is_empty() {
+        return None;
+    }
+    let i = footprints.iter().position(|f| *f == current);
+    Some(match i {
+        Some(i) => footprints[(i + 1) % footprints.len()],
+        None => footprints[0],
+    })
 }
 
 /// Which placement contains a position (mouse → grid, §6).
