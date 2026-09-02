@@ -117,6 +117,24 @@ Evidence for every claim is in `docs/research/htop-parity.md`,
 | CSV tail | **arc 8** (D50 §5) | |
 | `notify` transports (ntfy, webhook) | **out** — gridwatch is a viewer; the astral-watch service alerts (D51) | |
 
+## bmon / nload / bandwhich — the network tile (arc 7a, `docs/research/network-monitoring.md`)
+
+| upstream feature | gridwatch | Where |
+|---|---|---|
+| bmon/nload: per-interface rx/tx rates from `/proc/net/dev`, refreshed once a second | **in — arc 7a**, rates from the *measured* interval rather than an assumed one, with `saturating_sub` so a re-created veth resets instead of spiking | `sources::net::dev` |
+| bmon: rx/tx history graphs | **in — arc 7a** as the `sparks` tier's two sparklines over the store's own two-minute window (`store.resample`) | `components::net::view::spark` |
+| nload: "Curr/Avg/Min/Max/Ttl" per direction | **deviation**: the tile shows the current rate and the sparkline's shape; the store keeps the series, so min/avg/max are a question for the chart, not four more numbers on a 4x2 tile | |
+| `ip -s link` / bmon: errors and drops | **in — arc 7a** as per-second deltas, in `Warn` (drops) and `Crit` (errors) when they are not zero | `view::iface_rows` |
+| `ip link`: link state, MTU, MAC, speed, duplex | **in — arc 7a**; a speed the driver will not report (a down radio, a carrier-less bridge) is **unknown**, never a guessed number | `sources::net::link` |
+| `ip route` / `resolvectl`: the default route and the resolvers | **in — arc 7a** in the `full` tier; systemd-resolved's stub is labelled rather than reported as a real server | `sources::net::route` |
+| `iw dev`: SSID, signal dBm, bitrate | **wired, unproven**: the Record and the tile carry it, and the source has no nl80211 path yet — `wlp7s0` is down on torch, so an agent could not test one. The live row is Matt's | `keys::net::WifiInfo`; PERFORMANCE arc 7a notes |
+| `ss -tunap`: the connection table with owning processes | **in — arc 7a** from `/proc/net/{tcp,tcp6,udp,udp6}` joined with an inode map from `/proc/*/fd`; a socket whose owner is unreadable shows its **uid**, and the tile prints how many of how many were attributed | `sources::net::conns` |
+| bandwhich: per-process **bandwidth** | **out — a later arc**: it needs a capability this dashboard refuses to take (`CAP_NET_RAW`) or an eBPF toolchain that is not installed. The plan is a small setcap'd helper, not an elevated TUI | D17, the digest's Tier 0 recommendation |
+| `ping`: min/avg/max/mdev and loss | **in — arc 7a** over a 60-sample ring per target, plus RFC 3550 jitter; the socket is an **unprivileged** `SOCK_DGRAM` ICMP (torch allows it) with a TCP connect as the fallback, and the tile says `tcp` when it fell back | `sources::net::probe` |
+| `mtr`: per-hop tracing | **out** — it needs `CAP_NET_RAW` | |
+| bandwhich/iftop: reverse DNS for remote addresses | **deferred**: `nsswitch` here includes `mdns4_minimal`, so `getnameinfo` can stall; the option is accepted and does nothing until it is async | `net::Options::rdns` |
+| A public-IP lookup | **off by default and not implemented**: an outbound request from a dashboard is the user's decision, and the option says so where it is read | `keys::net::Route::public_ip` |
+
 ## Winamp 2.x classic skin — the now-playing tile (arc 6)
 
 | classic-skin feature | gridwatch | Where |

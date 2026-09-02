@@ -9,6 +9,7 @@
 | `clock` | Clock | — | 2x1 | mini → big | wall-clock time |
 | `gpu` | GPU | `gpu`, `cpu`? | 6x3 | badge → gauges → header → charts → procs → full | nvtop's header, gauges, ten-minute charts and the GPU process table over NVML |
 | `htop` | CPU | `cpu` | 6x3 | tiny → big-number → meters → cores → table | htop's meters, per-core CCD blocks, memory, load and pressure |
+| `net` | network | `net` | 4x2 | rates → sparks → table → conns → full | interface rates and link state, the default route and DNS, latency probes and the connection table |
 | `pins` | 12V-2x6 pins | `pins`, `gpu`? | 4x2 | watts-badge → mini-bars → bars → trend → full | astral-watch's per-pin amperage: bars, balance, the watts trend and the alert log |
 | `sensors` | sensors | `sensors`, `gpu`? | 6x1 | hottest → strip → table → chart → full | every hwmon chip's temperatures, fans, volts and power, hottest first; RAPL and the GPU row |
 | `sources` | Sources | — | 4x1 | list → table | source health: state, generation, age, drops, restarts |
@@ -116,6 +117,29 @@ Keys once captured with `Enter`:
 - `↑/↓ j/k PgUp/PgDn Home/End` — select a process
 - `< > F6` — sort column
 - `I` — invert the sort
+
+## `net` — network
+
+interface rates and link state, the default route and DNS, latency probes and the connection table
+
+- contract 1 · chrome Themed · footprints 1x1 2x1 4x2 6x3 · default 4x2
+- requires none · optional PingSocket, NetRaw
+- sources `net` · optional sources none
+- example `options = { interfaces = ["en*", "wl*"], sort = "name" }`
+
+| tier | min | demand | adds | signature |
+|---|---|---|---|---|
+| `rates` | 8×3 | Meters | the default interface's rate pair, a link dot | `↓` |
+| `sparks` | 20×5 | Meters | rx and tx sparklines, the speed or SSID | `↓` |
+| `table` | 48×10 | Meters | every shown interface, drops and errors, the probe strip | `iface` |
+| `conns` | 70×16 | Table | the connection table | `conns` |
+| `full` (zoom) | 100×24 | Table | the route and DNS, per-interface detail, the probe statistics | `route` |
+
+Keys once captured with `Enter`:
+
+- `a` — every interface
+- `s` — sort
+- `↑/↓` — scroll
 
 ## `pins` — 12V-2x6 pins
 

@@ -92,8 +92,8 @@ Each arc: implement → adversarial review → fix → report → user approves 
 ## Arc 7 — v0.7.0 "wired"
 **Goal:** the network component (Tier 0) and generic alert rules.
 **Deliverables**
-- [ ] `net` source: all-interface rates/link/addrs/route/DNS, connection table at `Detail::Table`, `net-probe` (ICMP DGRAM → TCP fallback) with ring stats, optional neli-wifi and NM fallback, public IP opt-in
-- [ ] `net` component tiers rates/sparks/table/conns/full with instance-level interface filters and rDNS opt-in
+- [x] `net` source: all-interface rates/link/addrs/route/DNS, connection table at `Detail::Table`, `net-probe` (ICMP DGRAM → TCP fallback) with ring stats, optional neli-wifi and NM fallback, public IP opt-in — 7a, 2026-09-02 (Wi-Fi is fixture-shaped only: `wlp7s0` is down on torch; the public-IP lookup is wired as an option and not implemented — both owed)
+- [x] `net` component tiers rates/sparks/table/conns/full with instance-level interface filters and rDNS opt-in — 7a, 2026-09-02 (rDNS is an accepted option, not yet implemented)
 - [ ] `[[rules]]` engine (name-indexed, hold/clear, metric RHS, label wildcards, absent) + `config check` for rules; default rules for gpu-hot, cpu-hot, nvme-crit, link-down
 - [ ] Capability badge and design note for the future `gridwatch-netd` helper (per-process bandwidth)
 **Acceptance:** rates match `ip -s link` deltas; probes show gateway ~1–4 ms; own-process connections attributed; a rule raises and clears with hysteresis in replay.
