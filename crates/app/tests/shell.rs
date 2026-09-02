@@ -1501,7 +1501,14 @@ fn matrix_shell() -> Shell {
     let mut reg = Registry::default();
     gridwatch_components::builtin_components(&mut reg);
     let loaded = config::load_texts(config::DEFAULT_CONFIG, config::DEFAULT_LAYOUT).unwrap();
-    let theme = load_builtin("matrix", ColorMode::TrueColor).unwrap();
+    let mut theme = load_builtin("matrix", ColorMode::TrueColor).unwrap();
+    // Determinism under load: the governor reads wall-clock frame costs and
+    // the effects watchdog trips on a wall-clock budget — on a slow CI runner
+    // either would step one shell and not another. Both are exercised by
+    // their own tests; here the layer must be a pure function of the inputs.
+    if let Some(a) = theme.ambient.as_mut() {
+        a.governor = false;
+    }
     let mut sh = Shell::new(
         reg,
         &loaded,
@@ -1514,7 +1521,7 @@ fn matrix_shell() -> Shell {
         false,
     );
     gridwatch_app::feed_synth(&mut sh, 42, 20);
-    sh.set_effects(true, 4);
+    sh.set_effects(true, 1_000);
     sh
 }
 
