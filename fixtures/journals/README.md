@@ -11,6 +11,7 @@ every line is what `gridwatch run --record` writes and nothing else:
 | file | recorded | what the box was doing | lines | size |
 |---|---|---|---|---|
 | `torch-idle.jsonl` | 2026-09-01, arc 2b (re-recorded with the gpu source; 2a's cpu-only file replaced) | idle desktop, Ptyxis, no game; the Overview's cpu tile focused (500 ms cadence), the gpu tile visible (500 ms fast tier, 1 s slow tier) | see `wc -l` | — |
+| `synth-overload.jsonl` | 2026-09-02, arc 3a | `gridwatch run --demo 42 --record …` for 63 s: every synth, the pins synth's scripted overload (pins 1–2 at 9.5 A from 20 s to 40 s) with its `al` lines — `pins/overload` raised at 21.5 s, resolved at 50 s — so the replay test finds the banner on page 2 at the scripted instant | see `wc -l` | — |
 | `torch-game.jsonl` | **owed** | a game running — Matt starts it; an agent must not (MACHINE.md). No game was up during 2a or 2b | — | — |
 
 Record the game fixture with the same command, `torch-game.jsonl` in place of `torch-idle.jsonl`, while the game runs.
