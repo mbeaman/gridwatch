@@ -41,4 +41,10 @@ pub fn builtin_sources(reg: &mut Registry) {
         start: crate::mpris::start,
         demo: gridwatch_store::demo::media_demo,
     });
+    #[cfg(feature = "net")]
+    reg.register_source(gridwatch_store::SourceDef {
+        info: gridwatch_store::demo::net_info(),
+        start: crate::net::start,
+        demo: gridwatch_store::demo::net_demo,
+    });
 }

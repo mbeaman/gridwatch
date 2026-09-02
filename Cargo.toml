@@ -46,6 +46,7 @@ zbus             = { version = "5.19.0", default-features = false, features = ["
 tokio            = { version = "1.53", features = ["rt", "sync", "time", "macros"] }        # sources only, behind mpris
 image            = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }  # sources only, feature mpris (album art)
 ureq             = { version = "3.4", default-features = false, features = ["rustls", "gzip"] }        # sources only, feature mpris (https art)
+socket2          = "0.6"                                             # sources only, feature net-probe: the unprivileged DGRAM ICMP socket
 futures-lite     = { version = "2.6", default-features = false, features = ["std"] }        # sources only, feature mpris: the stream adapter zbus's own API returns
 astral-watch     = { git = "https://github.com/mbeaman/astral-watch", rev = "dce7eee77676268c66b3624c7a2870ed9d84eb9c", default-features = false }   # sources only, feature pins (D50 §1: pinned rev, v0.8.0 not required)
 # dev

@@ -11,6 +11,8 @@ pub mod cpu;
 pub mod gpu;
 #[cfg(feature = "mpris")]
 pub mod mpris;
+#[cfg(feature = "net")]
+pub mod net;
 #[cfg(feature = "pins")]
 pub mod pins;
 pub mod registry;
@@ -28,6 +30,8 @@ pub fn doctor_offline() -> Vec<(gridwatch_store::Capability, bool, String)> {
     let mut out = Vec::new();
     #[cfg(feature = "sensors")]
     out.extend(sensors::doctor());
+    #[cfg(feature = "net")]
+    out.extend(net::doctor());
     out
 }
 
