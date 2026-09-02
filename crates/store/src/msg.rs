@@ -38,7 +38,7 @@ pub struct Reload {
     pub kind: ReloadKind,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ControlMsg {
     Status(SourceId, SourceStatus),
     Alert(AlertEvent),
@@ -46,7 +46,10 @@ pub enum ControlMsg {
     Reload(Reload),
 }
 
-#[derive(Debug)]
+/// `Clone` so the recorder can tee a message to its writer thread (§4.5):
+/// batches share their samples' `Arc`s, so the clone is a Vec copy, not a
+/// re-serialisation on the render thread.
+#[derive(Clone, Debug)]
 pub enum Msg {
     Batch(Batch),
     Control(ControlMsg),

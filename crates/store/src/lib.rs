@@ -24,9 +24,13 @@ pub mod ts;
 pub use alert::{ActiveAlert, AlertEvent, AlertId, AlertLog, Severity, Transition};
 pub use capability::{ALL_CAPABILITIES, CapSet, Capability};
 pub use input::{InputEvent, KeyCode, KeyEvent, Mods, MouseButton, MouseEvent, MouseKind};
-pub use journal::JournalError;
+pub use journal::{
+    Decoder, Entry, Header, JOURNAL, JournalError, JournalSource, RecordOpts, Recorded, Recorder,
+    Replay,
+};
 pub use key::{
-    CATALOGUE, Datum, DatumKind, Key, KeyMeta, Label, MetricId, RecordValue, Unit, Vec32, lookup,
+    CATALOGUE, Datum, DatumKind, Key, KeyMeta, Label, MetricId, RecordValue, Unit, Vec32,
+    intern_source, lookup, parse_name,
 };
 pub use msg::{
     ActionId, Batch, Channels, ControlMsg, DATA_BOUND, Inbox, Msg, Reload, ReloadKind, Sample,

@@ -14,6 +14,9 @@ pub const TASKS_TOTAL: Key<f64> = Key::new("tasks.total");
 pub const TASKS_THREADS: Key<f64> = Key::new("tasks.threads");
 pub const TASKS_RUNNING: Key<f64> = Key::new("tasks.running");
 pub const TASKS_KERNEL: Key<f64> = Key::new("tasks.kernel");
+/// Wall time of the last pid-level scan, in milliseconds — P15's evidence,
+/// shown by the `sources` tile. Published only when a scan ran.
+pub const SCAN_MS: Key<f64> = Key::new("sys.scan_ms");
 
 macro_rules! meta {
     ($name:expr, $unit:ident, $doc:expr) => {
@@ -58,6 +61,11 @@ pub static METAS: &[KeyMeta] = &[
     meta!(
         "tasks.kernel",
         Count,
-        "kernel threads (PF_KTHREAD per pid) — produced from arc 2"
+        "kernel threads (PF_KTHREAD per pid); only while the pid-level scan runs (Detail::Table)"
+    ),
+    meta!(
+        "sys.scan_ms",
+        Milliseconds,
+        "wall milliseconds of the last pid-level /proc scan (P15 evidence); only while it runs"
     ),
 ];

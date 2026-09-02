@@ -12,9 +12,11 @@ repository = "https://github.com/mbeaman/gridwatch"
 [workspace.dependencies]
 gridwatch-store = { path = "crates/store" }
 gridwatch-ui = { path = "crates/ui" }
-gridwatch-sources = { path = "crates/sources" }
-gridwatch-components = { path = "crates/components" }
-gridwatch-app = { path = "crates/app" }
+# default-features = false at the root so `gridwatch-app` and the bin can
+# forward per-source/per-component features (WORKSPACE.md §15, D47 seam 5).
+gridwatch-sources = { path = "crates/sources", default-features = false }
+gridwatch-components = { path = "crates/components", default-features = false }
+gridwatch-app = { path = "crates/app", default-features = false }
 # TUI
 ratatui          = { version = "0.30.2", features = ["serde", "palette"] }        # app + cli only
 ratatui-core     = { version = "0.1.2", features = ["std", "serde", "underline-color", "layout-cache"] }   # ui, components (default = [] upstream)

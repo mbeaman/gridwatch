@@ -33,7 +33,8 @@ pub enum Transition {
     Resolved,
 }
 
-#[derive(Clone, Debug)]
+/// Serde so the journal carries it verbatim (§4.5, D47).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AlertEvent {
     pub id: AlertId,
     pub source: SourceId,

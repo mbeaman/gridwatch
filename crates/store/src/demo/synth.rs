@@ -8,7 +8,9 @@ use crate::capability::Capability;
 use crate::key::{Datum, Label, MetricId};
 use crate::keys::{cpu, sys};
 use crate::msg::{Batch, Sample};
-use crate::source::{Cadence, Level, Source, SourceCtx, SourceInfo, SourceState, SourceStatus};
+use crate::source::{
+    Cadence, Detail, Level, Source, SourceCtx, SourceInfo, SourceState, SourceStatus,
+};
 use crate::ts::Ts;
 
 /// xorshift64* — tiny, seedable, good enough for plausible wiggle.
@@ -55,6 +57,12 @@ pub struct CpuSynth {
     /// The die map is published once per source generation, exactly as the live
     /// sampler does it — demo and live must emit the same keys (§12.5).
     topology_sent: bool,
+    /// Ticks so far — the process set's clock (TIME+ accrues, one PID flickers).
+    ticks: u64,
+    seed: u64,
+    /// The first table tick publishes whatever the parity, so a tile that
+    /// just asked for the table is not left waiting a tick for it.
+    table_sent: bool,
 }
 
 impl CpuSynth {
@@ -64,6 +72,9 @@ impl CpuSynth {
             core: [0.3; CORES],
             mem_used_frac: 0.18,
             topology_sent: false,
+            ticks: 0,
+            seed,
+            table_sent: false,
         }
     }
 
@@ -82,7 +93,18 @@ impl CpuSynth {
         }
     }
 
+    /// The meters-only batch (`Detail::Meters`): what the live source publishes
+    /// when no table tier is visible.
     pub fn tick(&mut self, at: Ts) -> Batch {
+        self.tick_at(at, Detail::Meters)
+    }
+
+    /// The batch at a demand detail: `Table`+ adds `proc.table`, `tasks.kernel`
+    /// and `sys.scan_ms`, exactly the keys the live scan adds (§12.5) — a demo
+    /// must never claim a number the live tile cannot show.
+    pub fn tick_at(&mut self, at: Ts, detail: Detail) -> Batch {
+        let tick = self.ticks;
+        self.ticks += 1;
         let mut samples = Vec::with_capacity(CORES * 3 + 24);
         let mut total = 0.0;
         for i in 0..CORES {
@@ -203,6 +225,29 @@ impl CpuSynth {
             });
         }
 
+        // The live scan runs on its own slower grid (every second meters tick
+        // at the visible cadence), so the demo publishes the table on every
+        // second tick too — a tile must cope with the table being older than
+        // the meters, in demo and live alike (§12.5).
+        if detail >= Detail::Table && (tick.is_multiple_of(2) || !self.table_sent) {
+            self.table_sent = true;
+            samples.push(Sample {
+                id: cpu::PROC_TABLE.id.clone(),
+                datum: Datum::Record(Arc::new(crate::demo::proc_table(tick, self.seed))),
+            });
+            samples.push(Sample {
+                id: sys::TASKS_KERNEL.id.clone(),
+                datum: Datum::Scalar(crate::demo::KERNEL_THREADS),
+            });
+            // A plausible scan cost, so the sources tile has its P15 column;
+            // its own stream, for the same reason as the table's.
+            let mut jitter = XorShift::new(self.seed ^ tick.wrapping_add(7));
+            samples.push(Sample {
+                id: sys::SCAN_MS.id.clone(),
+                datum: Datum::Scalar(5.0 + jitter.f64() * 2.0),
+            });
+        }
+
         Batch {
             source: cpu::SOURCE,
             at,
@@ -250,7 +295,7 @@ impl Source for CpuDemoSource {
         // paused source emits nothing, restart or not (§4.3).
         if cx.demand.level() != Level::Paused {
             let at = cx.clock.now();
-            let first = synth.tick(at);
+            let first = synth.tick_at(at, cx.demand.detail());
             cx.emit(at, first.samples);
         }
         cx.status(SourceStatus {
@@ -278,7 +323,9 @@ impl Source for CpuDemoSource {
             }
             if level != Level::Paused {
                 let at = cx.clock.now();
-                let batch = synth.tick(at);
+                // The synth publishes the table only while a table tier is
+                // visible, like the live scan (brief 2a task 4).
+                let batch = synth.tick_at(at, cx.demand.detail());
                 cx.emit(at, batch.samples);
             }
         }

@@ -15,8 +15,19 @@ use crate::capability::Capability;
 use crate::msg::{Batch, Channels, ControlMsg, Sample};
 use crate::ts::{Clock, Ts};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+/// A source's identity: a static name, so a `SourceId` in a journal is
+/// *interned* back onto the catalogue on read (`key::intern_source`) rather
+/// than leaked — an unknown source name fails to deserialise (§4.1, §4.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct SourceId(pub &'static str);
+
+impl<'de> Deserialize<'de> for SourceId {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<SourceId, D::Error> {
+        let name = String::deserialize(d)?;
+        crate::key::intern_source(&name)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown source `{name}`")))
+    }
+}
 
 impl std::fmt::Display for SourceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -263,6 +274,30 @@ impl SourceCtx {
 
     pub fn alert(&self, e: AlertEvent) {
         let _ = self.ch.control.send(ControlMsg::Alert(e));
+    }
+
+    /// Re-emit a journaled message through the normal channels, as the source
+    /// it was recorded from (§4.5, D47 seam 2): batches go on `data`
+    /// **blocking** — replay must never drop a line, it waits for the render
+    /// thread instead — statuses and alerts on `control`, inputs on `input`.
+    /// Only `JournalSource` calls this; a live source has `emit`/`status`.
+    /// A blocked `send` returns only when a receiver takes a slot or every
+    /// receiver is gone, so the app **drops its `Inbox` before joining** the
+    /// journal source (D48) — otherwise a full channel at quit is a deadlock.
+    pub fn inject(&self, msg: crate::msg::Msg) {
+        use crate::msg::Msg;
+        match msg {
+            Msg::Batch(b) => {
+                let _ = self.ch.data.send(b);
+            }
+            Msg::Control(c) => {
+                let _ = self.ch.control.send(c);
+            }
+            Msg::Input(i) => {
+                let _ = self.ch.input.send(i);
+            }
+            Msg::Heartbeat => {}
+        }
     }
 
     /// Non-blocking control read; `Stop` flips the stop flag and is returned.

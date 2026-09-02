@@ -774,6 +774,7 @@ dependencies = [
  "gridwatch-store",
  "gridwatch-ui",
  "insta",
+ "ratatui-core",
  "serde",
  "toml",
 ]
@@ -797,6 +798,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "toml",
+ "tracing",
 ]
 
 [[package]]

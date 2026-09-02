@@ -146,6 +146,7 @@ pub enum Unit {
     Megahertz,
     Count,
     Seconds,
+    Milliseconds,
     Ratio,
     Text,
     None,
@@ -175,4 +176,33 @@ pub fn lookup(name: &str) -> Option<&'static KeyMeta> {
         .iter()
         .flat_map(|d| d.iter())
         .find(|m| m.name == name)
+}
+
+/// Every `SourceId` the catalogue knows plus the journal's own, so a source
+/// name read from a file becomes a `&'static str` without a leak (§4.5).
+pub fn intern_source(name: &str) -> Option<SourceId> {
+    if name == crate::journal::JOURNAL.0 {
+        return Some(crate::journal::JOURNAL);
+    }
+    CATALOGUE
+        .iter()
+        .flat_map(|d| d.iter())
+        .map(|m| m.source)
+        .find(|s| s.0 == name)
+}
+
+/// Split a journal sample name `cpu.core_pct{3}` into its catalogue name and
+/// label: `{n}` is an index, `{text}` a name, nothing is `Label::None`.
+pub fn parse_name(full: &str) -> (&str, Label) {
+    match full.split_once('{') {
+        Some((base, rest)) => {
+            let inner = rest.strip_suffix('}').unwrap_or(rest);
+            let label = match inner.parse::<u16>() {
+                Ok(i) if !inner.is_empty() => Label::Index(i),
+                _ => Label::Name(Arc::from(inner)),
+            };
+            (base, label)
+        }
+        None => (full, Label::None),
+    }
 }
