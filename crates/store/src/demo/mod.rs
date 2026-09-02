@@ -4,6 +4,7 @@
 mod audio;
 mod gpu;
 mod media;
+mod net;
 mod pins;
 mod procs;
 mod sensors;
@@ -12,6 +13,7 @@ mod synth;
 pub use audio::{AudioSynth, audio_demo, audio_info, audio_sink, band_of};
 pub use gpu::{GpuSynth, gpu_demo, gpu_info, gpu_procs};
 pub use media::{ART_PX, BUS as MEDIA_BUS, MediaSynth, art_for, media_demo, media_info};
+pub use net::{NetSynth, conns_exemplar as net_conns_exemplar, net_demo, net_info};
 pub use pins::{
     OVERLOAD_RAISE_S, OVERLOAD_RESOLVE_S, PinsSynth, pins_demo, pins_info, pins_source_info,
 };
