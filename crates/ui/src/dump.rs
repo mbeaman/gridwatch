@@ -1,8 +1,9 @@
 //! Buffer and view dumps (§12): run-length styled cells for snapshots, ANSI
-//! for screenshots, and the semantic view tree as JSON for the YAML snapshots.
+//! for screenshots, SVG for the README images CI regenerates (arc 2a), and
+//! the semantic view tree as JSON for the YAML snapshots.
 
 use ratatui_core::buffer::Buffer;
-use ratatui_core::style::Color;
+use ratatui_core::style::{Color, Modifier};
 use serde_json::{Value, json};
 
 use crate::view::View;
@@ -73,6 +74,137 @@ pub fn ansi(buf: &Buffer) -> String {
         }
         out.push_str("\x1b[0m\n");
     }
+    out
+}
+
+/// Cell size of the SVG dump in px: an 8×16 monospace cell.
+pub const SVG_CELL_W: u32 = 8;
+pub const SVG_CELL_H: u32 = 16;
+
+fn svg_color(c: Color, default: &str) -> String {
+    match c {
+        Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+        // The 16/256-colour ladders are never what `shot` renders (TrueColor
+        // is forced, D41); map them to the defaults rather than guess a palette.
+        _ => default.to_string(),
+    }
+}
+
+fn xml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Hand-written SVG (§12.5, brief 2a task 5): one `<rect>` per background run
+/// and one `<text>` per foreground run, `xml:space="preserve"`, a monospace
+/// font stack, cells 8×16 px. Deterministic for a deterministic buffer, so CI
+/// can diff it. No crate.
+pub fn svg(buf: &Buffer) -> String {
+    let area = *buf.area();
+    let w = u32::from(area.width) * SVG_CELL_W;
+    let h = u32::from(area.height) * SVG_CELL_H;
+    const DEFAULT_FG: &str = "#c8c8c8";
+    const DEFAULT_BG: &str = "#101010";
+    let mut out = String::new();
+    out.push_str(&format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" font-family=\"DejaVu Sans Mono, Menlo, Consolas, monospace\" font-size=\"13\">\n"
+    ));
+    out.push_str(&format!(
+        "<rect width=\"{w}\" height=\"{h}\" fill=\"{DEFAULT_BG}\"/>\n"
+    ));
+    // Backgrounds: runs of equal bg per row.
+    for y in 0..area.height {
+        let mut run_start = 0u16;
+        let mut run_bg: Option<String> = None;
+        let flush = |out: &mut String, bg: &Option<String>, x0: u16, x1: u16, y: u16| {
+            if let Some(bg) = bg
+                && bg != DEFAULT_BG
+                && x1 > x0
+            {
+                out.push_str(&format!(
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{bg}\"/>\n",
+                    u32::from(x0) * SVG_CELL_W,
+                    u32::from(y) * SVG_CELL_H,
+                    u32::from(x1 - x0) * SVG_CELL_W,
+                    SVG_CELL_H
+                ));
+            }
+        };
+        for x in 0..area.width {
+            let Some(cell) = buf.cell((area.x + x, area.y + y)) else {
+                continue;
+            };
+            let reversed = cell.modifier.contains(Modifier::REVERSED);
+            let bg = if reversed {
+                svg_color(cell.fg, DEFAULT_FG)
+            } else {
+                svg_color(cell.bg, DEFAULT_BG)
+            };
+            if run_bg.as_deref() != Some(bg.as_str()) {
+                flush(&mut out, &run_bg, run_start, x, y);
+                run_bg = Some(bg);
+                run_start = x;
+            }
+        }
+        flush(&mut out, &run_bg, run_start, area.width, y);
+    }
+    // Text: runs of equal fg + weight per row; blanks break a run.
+    for y in 0..area.height {
+        // (x0, fg, bold, text, cells): a wide glyph's continuation cell has an
+        // empty symbol and still counts, so the run's width stays honest.
+        let mut run: Option<(u16, String, bool, String, u32)> = None;
+        let flush = |out: &mut String, run: &Option<(u16, String, bool, String, u32)>, y: u16| {
+            if let Some((x0, fg, bold, text, cells)) = run
+                && !text.trim().is_empty()
+            {
+                // `textLength` pins the run to its cells whatever the viewer's
+                // monospace advance is (DejaVu's is 7.83 px at 13 px, which
+                // drifted a cell every ~46 characters without it).
+                out.push_str(&format!(
+                    "<text x=\"{}\" y=\"{}\" fill=\"{fg}\"{} textLength=\"{}\" lengthAdjust=\"spacingAndGlyphs\" xml:space=\"preserve\">{}</text>\n",
+                    u32::from(*x0) * SVG_CELL_W,
+                    u32::from(y) * SVG_CELL_H + 12,
+                    if *bold { " font-weight=\"bold\"" } else { "" },
+                    *cells * SVG_CELL_W,
+                    xml_escape(text)
+                ));
+            }
+        };
+        for x in 0..area.width {
+            let Some(cell) = buf.cell((area.x + x, area.y + y)) else {
+                continue;
+            };
+            let reversed = cell.modifier.contains(Modifier::REVERSED);
+            let fg = if reversed {
+                svg_color(cell.bg, DEFAULT_BG)
+            } else {
+                svg_color(cell.fg, DEFAULT_FG)
+            };
+            let bold = cell.modifier.contains(Modifier::BOLD);
+            let sym = cell.symbol();
+            match &mut run {
+                Some((_, rfg, rbold, text, cells)) if *rfg == fg && *rbold == bold => {
+                    text.push_str(sym);
+                    *cells += 1;
+                }
+                _ => {
+                    flush(&mut out, &run, y);
+                    run = Some((x, fg, bold, sym.to_string(), 1));
+                }
+            }
+        }
+        flush(&mut out, &run, y);
+    }
+    out.push_str("</svg>\n");
     out
 }
 

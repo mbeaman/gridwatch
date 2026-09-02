@@ -403,15 +403,7 @@ fn table(
             x += 1;
             continue;
         }
-        let mut title = c.title.to_string();
-        if let Some((si, dir)) = sort
-            && si == i
-        {
-            title.push(match dir {
-                SortDir::Desc => '▽',
-                SortDir::Asc => '△',
-            });
-        }
+        let title = c.title.to_string();
         let pad_w = *w as usize;
         let cell = if c.right {
             format!("{title:>pad_w$}")
@@ -419,6 +411,18 @@ fn table(
             format!("{title:<pad_w$}")
         };
         buf.set_stringn(x, area.y, &cell, pad_w, header_style);
+        // The sort column's *separator* carries htop's glyph (§8.1), so a
+        // four-wide `CPU%` keeps all four characters.
+        if let Some((si, dir)) = sort
+            && si == i
+            && x + w < area.x + area.width
+        {
+            let glyph = match dir {
+                SortDir::Desc => "▽",
+                SortDir::Asc => "△",
+            };
+            buf.set_string(x + w, area.y, glyph, header_style);
+        }
         x += w + 1;
     }
     // Rows.
@@ -427,10 +431,20 @@ fn table(
         let y = area.y + 1 + ri as u16;
         let absolute = ri + scroll;
         let sel = selected == Some(absolute);
-        if sel {
-            let style = Style::new()
+        // A theme whose selection colours are the terminal defaults (`mono`)
+        // would make the selected row invisible: reverse video carries it.
+        let sel_style = || {
+            let s = Style::new()
                 .fg(theme.color(Role::SelectionFg))
                 .bg(theme.color(Role::SelectionBg));
+            if theme.color(Role::SelectionBg) == ratatui_core::style::Color::Reset {
+                s.add_modifier(Modifier::REVERSED)
+            } else {
+                s
+            }
+        };
+        if sel {
+            let style = sel_style();
             for cx in area.x..area.x + area.width {
                 buf.set_string(cx, y, " ", style);
             }
@@ -451,11 +465,7 @@ fn table(
             if sel {
                 for cx in x..x + w {
                     if let Some(cell) = buf.cell_mut((cx, y)) {
-                        cell.set_style(
-                            Style::new()
-                                .fg(theme.color(Role::SelectionFg))
-                                .bg(theme.color(Role::SelectionBg)),
-                        );
+                        cell.set_style(sel_style());
                     }
                 }
             }

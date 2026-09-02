@@ -10,13 +10,19 @@ use crate::component::{Component, Size, Tier, pick_tier};
 use crate::theme::{ColorMode, GRADIENTS, ROLES, Theme, load_builtin};
 
 /// A store fed by the seeded synth at fixed 1.5 s ticks — the same generator
-/// `--demo` uses, so snapshots and demo mode cannot drift (§12.5).
+/// `--demo` uses, so snapshots and demo mode cannot drift (§12.5). Fed at
+/// `Detail::Table`, so the process tables are there for the table tiers.
 pub fn demo_store(seed: u64, ticks: usize) -> Store {
+    demo_store_at(seed, ticks, gridwatch_store::Detail::Table)
+}
+
+/// `demo_store` at an explicit demand detail (`Meters` = no process table).
+pub fn demo_store_at(seed: u64, ticks: usize, detail: gridwatch_store::Detail) -> Store {
     let mut store = Store::default();
     let mut synth = demo::CpuSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
-        let batch: Batch = synth.tick(at);
+        let batch: Batch = synth.tick_at(at, detail);
         store.apply(&Msg::Batch(batch));
     }
     store
@@ -41,7 +47,7 @@ pub fn real_grid_sizes() -> Vec<(&'static str, Size)> {
 
 /// Render one component tier into a fresh buffer (view → default renderer).
 pub fn render_component(
-    c: &dyn Component,
+    c: &mut dyn Component,
     store: &Store,
     th: &Theme,
     size: Size,
@@ -54,6 +60,7 @@ pub fn render_component(
         height: size.h,
     };
     let (tier, fallback) = pick_tier(c.tiers(), size, zoomed, None);
+    tick(c, store, tier);
     let cx = crate::component::RenderCx {
         inner,
         tier,
@@ -75,9 +82,21 @@ pub fn render_component(
     (tier, buf)
 }
 
+/// The shell's per-frame `tick` before `view` (§5): the table tiers derive
+/// their rows here, so a test that skips it sees an empty table.
+pub fn tick(c: &mut dyn Component, store: &Store, tier: usize) {
+    let cx = crate::component::TickCx {
+        store,
+        now: store.latest(),
+        visible: true,
+        tier,
+    };
+    c.tick(&cx);
+}
+
 /// The view a component builds at a size — the input to the renderer and to
 /// `view::fingerprint`, exposed so tests can measure or inspect it directly.
-pub fn view_of(c: &dyn Component, store: &Store, th: &Theme, size: Size) -> crate::view::View {
+pub fn view_of(c: &mut dyn Component, store: &Store, th: &Theme, size: Size) -> crate::view::View {
     let inner = Rect {
         x: 0,
         y: 0,
@@ -85,6 +104,7 @@ pub fn view_of(c: &dyn Component, store: &Store, th: &Theme, size: Size) -> crat
         height: size.h,
     };
     let (tier, fallback) = pick_tier(c.tiers(), size, false, None);
+    tick(c, store, tier);
     let cx = crate::component::RenderCx {
         inner,
         tier,
@@ -105,7 +125,7 @@ pub fn view_of(c: &dyn Component, store: &Store, th: &Theme, size: Size) -> crat
 
 /// The semantic snapshot: tier name + view tree at a size.
 pub fn view_snapshot(
-    c: &dyn Component,
+    c: &mut dyn Component,
     store: &Store,
     th: &Theme,
     size: Size,
@@ -117,6 +137,7 @@ pub fn view_snapshot(
         height: size.h,
     };
     let (tier, fallback) = pick_tier(c.tiers(), size, false, None);
+    tick(c, store, tier);
     let cx = crate::component::RenderCx {
         inner,
         tier,
@@ -192,9 +213,9 @@ pub fn assert_renders_everywhere(
     sizes.push((Size::new(248, 66), true));
     for (size, zoomed) in sizes {
         for (store, with_data) in [(data, true), (empty, false)] {
-            let c = mk();
+            let mut c = mk();
             let r = catch_unwind(AssertUnwindSafe(|| {
-                render_component(c.as_ref(), store, th, size, zoomed)
+                render_component(c.as_mut(), store, th, size, zoomed)
             }));
             let Ok((tier, buf)) = r else {
                 panic!(
