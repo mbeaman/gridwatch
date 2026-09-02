@@ -24,6 +24,7 @@ Each arc: implement → adversarial review → fix → report → user approves 
 **Risks:** VTE throughput below expectation (the HUD decides whether 60 fps stays opt-in); the trimmed theme loader tempting scope creep back in (inherits/overrides are explicitly arc 3).
 
 ## Arc 2 — v0.2.0 "history and the GPU"
+*Brief: `docs/briefs/arc-2.md` (D47, 2026-09-01) — two Opus sessions, **2a** journal + pid scan + htop table + tooling, then **2b** the GPU.*
 **Goal:** the GPU component with nvtop's rolling charts, the process table, and journal record/replay with a determinism test and CI screenshots.
 **Deliverables**
 - [ ] Journal: RecordValue to_json/decode, Recorder tee, Replay + JournalSource, virtual clock, round-trip test over every catalogued Record type, `--record F`, `--replay F --speed N`, `--record-input`

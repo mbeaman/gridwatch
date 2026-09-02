@@ -1,6 +1,6 @@
 # gridwatch — the plan
 
-> **Status: arc 1 is built, committed and pushed (2026-09-01) — `main` on `github.com/mbeaman/gridwatch`, CI green on all eight jobs. `v0.1.0` is deliberately NOT tagged yet: P4/P21/P9/P10 need a human in Ptyxis (see `PERFORMANCE.md`'s owed list), as do the glyph check and the README PNG. Arc 2 (GPU + journal + process tables) is next, and per D36 its brief is written in a Fable session before any code.** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
+> **Status: arc 1 is built, committed and pushed (2026-09-01) — `main` on `github.com/mbeaman/gridwatch`, CI green on all eight jobs. `v0.1.0` is deliberately NOT tagged yet: P4/P21/P9/P10 need a human in Ptyxis (see `PERFORMANCE.md`'s owed list), as do the glyph check and the README PNG. Arc 2 is next; its brief is written (`docs/briefs/arc-2.md`, D47) — start session 2a from it.** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
 
 ## What we are building
 
@@ -75,7 +75,7 @@ An arc starts by updating the spec it implements — `ARCHITECTURE.md` sections,
 
 ## Who builds what (D36)
 
-Fable 5 builds the foundation — arc 1a's core seam, the schemas and testkit, the per-arc briefs, the review gates, the hard kernels; Opus 5 executes the implementation verticals against those briefs, one brief per session, escalating any seam question back to a Fable session. `docs/MODELS.md` is the contract; `docs/REVIEW.md` holds the gate templates; `docs/briefs/arc-1a.md` and `arc-1b.md` are written and verified.
+Fable 5 builds the foundation — arc 1a's core seam, the schemas and testkit, the per-arc briefs, the review gates, the hard kernels; Opus 5 executes the implementation verticals against those briefs, one brief per session, escalating any seam question back to a Fable session. `docs/MODELS.md` is the contract; `docs/REVIEW.md` holds the gate templates; `docs/briefs/arc-1a.md`, `arc-1b.md` and `arc-2.md` are written.
 
 ## How a session starts
 
