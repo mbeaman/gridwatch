@@ -11,8 +11,8 @@ use serde::Deserialize;
 use super::color::{ColorMode, parse_color, to_mode};
 use super::gradient::Gradient;
 use super::{
-    BarStyle, BorderKind, BorderSpec, GRADIENTS, GaugeStyle, GlyphSet, GlyphTier, HeaderStyle,
-    PerfClass, PixelStyle, Role, Theme, ThemeError, TitleSpec, TitleStyle, WidgetSet,
+    BarStyle, BorderKind, BorderSpec, ChartMarker, GRADIENTS, GaugeStyle, GlyphSet, GlyphTier,
+    HeaderStyle, PerfClass, PixelStyle, Role, Theme, ThemeError, TitleSpec, TitleStyle, WidgetSet,
 };
 
 #[derive(Debug, Deserialize)]
@@ -347,7 +347,22 @@ pub fn build_theme(file: &ThemeFile, mode: ColorMode) -> Result<Theme, ThemeErro
         mode,
         colors,
         gradients,
-        GlyphSet { tier },
+        GlyphSet {
+            tier,
+            marker: pick(
+                &file.glyphs.chart_marker,
+                &[
+                    ("braille", ChartMarker::Braille),
+                    // §7 names it; VTE's native octants are arc 4's
+                    // renderer work — braille until then, never an error.
+                    ("octant_if_vte", ChartMarker::Braille),
+                    ("block", ChartMarker::Block),
+                    ("dot", ChartMarker::Dot),
+                ],
+                "chart marker",
+            )?
+            .unwrap_or_default(),
+        },
         borders,
         title,
         widgets,

@@ -132,9 +132,21 @@ pub enum GlyphTier {
     Nerd,
 }
 
+/// How `View::Chart` draws a line (§7 `[glyphs] chart_marker`): braille dots
+/// (2×4 per cell, the default on the unicode tier), lower-eighth block
+/// columns, or a plain dot per point. The ascii tier always falls back to `*`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ChartMarker {
+    #[default]
+    Braille,
+    Block,
+    Dot,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GlyphSet {
     pub tier: GlyphTier,
+    pub marker: ChartMarker,
 }
 
 impl GlyphSet {

@@ -56,7 +56,11 @@ impl Renderer for DefaultRenderer {
                 gradient,
                 max,
             } => sparkline(series, *gradient, *max, area, theme, buf),
-            View::Chart { series, bounds, .. } => chart(series, bounds, area, theme, buf),
+            View::Chart {
+                series,
+                bounds,
+                marker,
+            } => chart(series, bounds, *marker, area, theme, buf),
             View::Table {
                 columns,
                 rows,
@@ -339,27 +343,174 @@ fn sparkline(
     }
 }
 
+/// `View::Chart` (§4.6, arc 2b): a real line chart. The theme's `chart_marker`
+/// picks the form — braille dots (2×4 per cell) drawing connected segments,
+/// lower-eighth block columns, or one dot per point; the ascii tier always
+/// gets `*`. Series are drawn in order, so the last one wins a contested cell;
+/// colour comes from each series' gradient sampled at the point's height.
 fn chart(
     series: &[crate::view::Series],
     bounds: &crate::view::Bounds,
+    hint: crate::view::MarkerHint,
     area: Rect,
     theme: &Theme,
     buf: &mut Buffer,
 ) {
-    // Minimal in arc 1a (real charts land with the GPU arc): scaled dots.
+    use crate::theme::{ChartMarker, GlyphTier};
+    use crate::view::MarkerHint;
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let marker = match (theme.glyphs.tier, hint, theme.glyphs.marker) {
+        (GlyphTier::Ascii, _, _) => ChartMarker::Dot,
+        (_, MarkerHint::Braille, _) => ChartMarker::Braille,
+        (_, MarkerHint::Block, _) => ChartMarker::Block,
+        (_, MarkerHint::Auto, m) => m,
+    };
     let (x0, x1) = bounds.x;
     let (y0, y1) = bounds.y;
     let xr = (x1 - x0).max(f64::EPSILON);
     let yr = (y1 - y0).max(f64::EPSILON);
-    for s in series {
-        let g = theme.gradient(s.gradient);
-        for (px, py) in &s.data {
-            let fx = ((px - x0) / xr).clamp(0.0, 1.0);
-            let fy = ((py - y0) / yr).clamp(0.0, 1.0);
-            let x = area.x + (fx * f64::from(area.width.saturating_sub(1))) as u16;
-            let y =
-                area.y + area.height - 1 - (fy * f64::from(area.height.saturating_sub(1))) as u16;
-            buf.set_string(x, y, "•", Style::new().fg(g.sample(fy as f32)));
+    // Normalised (0..=1) coordinates, x ascending as the series supplies them.
+    let norm = |s: &crate::view::Series| -> Vec<(f64, f64)> {
+        s.data
+            .iter()
+            .map(|(px, py)| {
+                (
+                    ((px - x0) / xr).clamp(0.0, 1.0),
+                    ((py - y0) / yr).clamp(0.0, 1.0),
+                )
+            })
+            .collect()
+    };
+    match marker {
+        ChartMarker::Braille => {
+            let w = usize::from(area.width) * 2;
+            let h = usize::from(area.height) * 4;
+            let mut mask = vec![0u8; usize::from(area.width) * usize::from(area.height)];
+            let mut color: Vec<Option<ratatui_core::style::Color>> = vec![None; mask.len()];
+            for s in series {
+                let g = theme.gradient(s.gradient);
+                let pts: Vec<(i64, i64)> = norm(s)
+                    .iter()
+                    .map(|(fx, fy)| {
+                        (
+                            (fx * (w - 1) as f64).round() as i64,
+                            ((1.0 - fy) * (h - 1) as f64).round() as i64,
+                        )
+                    })
+                    .collect();
+                let heights: Vec<f64> = norm(s).iter().map(|(_, fy)| *fy).collect();
+                let mut plot = |dx: i64, dy: i64, fy: f64| {
+                    if dx < 0 || dy < 0 || dx >= w as i64 || dy >= h as i64 {
+                        return;
+                    }
+                    let (cx, cy) = ((dx / 2) as usize, (dy / 4) as usize);
+                    let bit = match (dx % 2, dy % 4) {
+                        (0, 0) => 0x01,
+                        (0, 1) => 0x02,
+                        (0, 2) => 0x04,
+                        (0, 3) => 0x40,
+                        (1, 0) => 0x08,
+                        (1, 1) => 0x10,
+                        (1, 2) => 0x20,
+                        _ => 0x80,
+                    };
+                    let i = cy * usize::from(area.width) + cx;
+                    mask[i] |= bit;
+                    color[i] = Some(g.sample(fy as f32));
+                };
+                if pts.len() == 1 {
+                    plot(pts[0].0, pts[0].1, heights[0]);
+                }
+                for (i, pair) in pts.windows(2).enumerate() {
+                    let ((ax, ay), (bx, by)) = (pair[0], pair[1]);
+                    let fy = (heights[i] + heights[i + 1]) / 2.0;
+                    // Bresenham between consecutive points.
+                    let (dx, dy) = ((bx - ax).abs(), -(by - ay).abs());
+                    let (sx, sy) = ((bx - ax).signum(), (by - ay).signum());
+                    let (mut x, mut y, mut err) = (ax, ay, dx + dy);
+                    loop {
+                        plot(x, y, fy);
+                        if x == bx && y == by {
+                            break;
+                        }
+                        let e2 = 2 * err;
+                        if e2 >= dy {
+                            err += dy;
+                            x += sx;
+                        }
+                        if e2 <= dx {
+                            err += dx;
+                            y += sy;
+                        }
+                    }
+                }
+            }
+            for cy in 0..usize::from(area.height) {
+                for cx in 0..usize::from(area.width) {
+                    let i = cy * usize::from(area.width) + cx;
+                    if mask[i] == 0 {
+                        continue;
+                    }
+                    let ch = char::from_u32(0x2800 + u32::from(mask[i])).unwrap_or('•');
+                    let style = color[i].map(|c| Style::new().fg(c)).unwrap_or_default();
+                    buf.set_string(
+                        area.x + cx as u16,
+                        area.y + cy as u16,
+                        ch.to_string(),
+                        style,
+                    );
+                }
+            }
+        }
+        ChartMarker::Block => {
+            let eighths = theme.glyphs.eighths();
+            let cols = usize::from(area.width);
+            for s in series {
+                let g = theme.gradient(s.gradient);
+                // The highest point landing in each column.
+                let mut top: Vec<Option<f64>> = vec![None; cols];
+                for (fx, fy) in norm(s) {
+                    let c = ((fx * (cols - 1) as f64).round() as usize).min(cols - 1);
+                    top[c] = Some(top[c].map_or(fy, |t: f64| t.max(fy)));
+                }
+                for (c, v) in top.iter().enumerate() {
+                    let Some(v) = v else { continue };
+                    let total8 = (*v * f64::from(area.height) * 8.0).round() as u16;
+                    let colour = Style::new().fg(g.sample(*v as f32));
+                    for row in 0..area.height {
+                        let y = area.y + area.height - 1 - row;
+                        let cell8 = total8.saturating_sub(row * 8);
+                        if cell8 == 0 {
+                            continue;
+                        }
+                        let ch = if cell8 >= 8 {
+                            eighths[7]
+                        } else {
+                            eighths[(cell8 as usize) - 1]
+                        };
+                        buf.set_string(area.x + c as u16, y, ch.to_string(), colour);
+                    }
+                }
+            }
+        }
+        ChartMarker::Dot => {
+            let glyph = if theme.glyphs.tier == GlyphTier::Ascii {
+                "*"
+            } else {
+                "•"
+            };
+            for s in series {
+                let g = theme.gradient(s.gradient);
+                for (fx, fy) in norm(s) {
+                    let x = area.x + (fx * f64::from(area.width.saturating_sub(1))).round() as u16;
+                    let y = area.y + area.height
+                        - 1
+                        - (fy * f64::from(area.height.saturating_sub(1))).round() as u16;
+                    buf.set_string(x, y, glyph, Style::new().fg(g.sample(fy as f32)));
+                }
+            }
         }
     }
 }

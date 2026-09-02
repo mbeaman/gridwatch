@@ -9,9 +9,10 @@ use ratatui_core::layout::Rect;
 use crate::component::{Component, Size, Tier, pick_tier};
 use crate::theme::{ColorMode, GRADIENTS, ROLES, Theme, load_builtin};
 
-/// A store fed by the seeded synth at fixed 1.5 s ticks — the same generator
-/// `--demo` uses, so snapshots and demo mode cannot drift (§12.5). Fed at
-/// `Detail::Table`, so the process tables are there for the table tiers.
+/// A store fed by the seeded cpu and gpu synths at fixed 1.5 s ticks — the
+/// same generators `--demo` uses, so snapshots and demo mode cannot drift
+/// (§12.5). Fed at `Detail::Table`, so the process tables are there for the
+/// table tiers.
 pub fn demo_store(seed: u64, ticks: usize) -> Store {
     demo_store_at(seed, ticks, gridwatch_store::Detail::Table)
 }
@@ -20,9 +21,14 @@ pub fn demo_store(seed: u64, ticks: usize) -> Store {
 pub fn demo_store_at(seed: u64, ticks: usize, detail: gridwatch_store::Detail) -> Store {
     let mut store = Store::default();
     let mut synth = demo::CpuSynth::new(seed);
+    let mut gpu = demo::GpuSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let batch: Batch = synth.tick_at(at, detail);
+        store.apply(&Msg::Batch(batch));
+        // The gpu synth on the same ticks (arc 2b): one store, both sources,
+        // as `--demo` runs them.
+        let batch: Batch = gpu.tick_at(at, detail);
         store.apply(&Msg::Batch(batch));
     }
     store
