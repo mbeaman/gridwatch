@@ -9,7 +9,14 @@ use std::path::{Path, PathBuf};
 use gridwatch_store::Ts;
 use gridwatch_store::keys::sensors::RaplState;
 
-pub const UDEV_HINT: &str = "RAPL power needs a udev rule: SUBSYSTEM==\"powercap\", KERNEL==\"intel-rapl:0\", RUN+=\"/bin/chmod 0444 /sys%p/energy_uj\" — see doctor";
+/// The fix `doctor` prints: a group-readable rule, never world-readable —
+/// the kernel locked `energy_uj` because of Platypus (CVE-2020-8694), so
+/// widening it to everyone is the wrong advice (review).
+pub const UDEV_HINT: &str = "RAPL power needs a udev rule: SUBSYSTEM==\"powercap\", KERNEL==\"intel-rapl:0\", GROUP=\"powermon\", MODE=\"0440\" (and add yourself to that group)";
+
+/// A package draw above this is not a reading, it is a counter reset: the
+/// sample is dropped and the baseline re-seeded (review).
+pub const MAX_PLAUSIBLE_W: f64 = 2_000.0;
 
 #[derive(Clone, Debug)]
 pub struct Rapl {
@@ -54,6 +61,17 @@ impl Rapl {
         self.state
     }
 
+    /// Re-probe (a udev rule applied, `powercap` loaded after start): called
+    /// on the source's re-walk so a fix takes effect without a restart.
+    pub fn reprobe(&mut self, sys: &Path) {
+        if self.state != RaplState::Ok {
+            let fresh = Rapl::probe(sys);
+            if fresh.state != self.state {
+                *self = fresh;
+            }
+        }
+    }
+
     /// The package power since the last call, in W; `None` on the first
     /// call, when unreadable, or when Δt is zero.
     pub fn sample(&mut self, at: Ts) -> Option<f64> {
@@ -70,10 +88,18 @@ impl Rapl {
         let delta = if now >= e0 {
             now - e0
         } else {
-            // Wrapped at `max_energy_range_uj`.
+            // Wrapped at `max_energy_range_uj` — or the counter reset
+            // (a resume, a driver reload). Both look the same; only the
+            // resulting power tells them apart.
             self.range.saturating_sub(e0).saturating_add(now)
         };
-        Some(delta as f64 / 1e6 / dt)
+        let w = delta as f64 / 1e6 / dt;
+        if !w.is_finite() || w > MAX_PLAUSIBLE_W {
+            // Re-seeded by the `replace` above; this sample is not a number
+            // anyone should read.
+            return None;
+        }
+        Some(w)
     }
 }
 
@@ -119,6 +145,20 @@ mod tests {
         let w = r.sample(Ts(4_000_000_000)).unwrap();
         assert!((w - 450e-6 / 2.0).abs() < 1e-12, "{w}");
         assert_eq!(r.sample(Ts(4_000_000_000)), None, "Δt = 0");
+        // A counter reset (resume, driver reload) is not a 65 kW package.
+        std::fs::write(&e, "999\n").unwrap();
+        r.sample(Ts(5_000_000_000));
+        std::fs::write(&e, "1\n").unwrap();
+        let mut big = Rapl {
+            state: RaplState::Ok,
+            energy: e.clone(),
+            range: u64::MAX,
+            last: Some((Ts(5_000_000_000), 999)),
+        };
+        assert_eq!(big.sample(Ts(6_000_000_000)), None, "implausible → dropped");
+        std::fs::write(&e, "500001\n").unwrap();
+        let w = big.sample(Ts(7_000_000_000)).unwrap();
+        assert!((w - 0.5).abs() < 1e-9, "the baseline was re-seeded: {w}");
         let _ = std::fs::remove_dir_all(&root);
         // Root-only (skipped when running as root, where 0o000 still reads).
         let root = tree(false);

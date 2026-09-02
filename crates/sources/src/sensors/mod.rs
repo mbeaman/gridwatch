@@ -55,6 +55,11 @@ pub fn clamp_refresh(ms: i64) -> Duration {
     ))
 }
 
+/// The chip the cpu source hands over (§16): the sensors source walks it
+/// whatever the filter says, or nobody publishes `sensor.temp_c{k10temp:*}`
+/// and htop's `Tccd` column goes blank (review).
+pub const HANDOVER_CHIP: &str = "k10temp";
+
 impl Options {
     pub fn from_table(t: &toml::Table) -> Options {
         let mut o = Options::default();
@@ -68,15 +73,26 @@ impl Options {
             }
         }
         if let Some(list) = t.get("chips").and_then(|v| v.as_array()) {
-            let chips: Vec<String> = list
+            let mut chips: Vec<String> = list
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect();
             if !chips.is_empty() {
+                if !chips.iter().any(|p| hwmon::chip_matches(p, HANDOVER_CHIP)) {
+                    tracing::warn!(
+                        "[sources.sensors] chips = {chips:?} excludes {HANDOVER_CHIP}; \
+                         adding it — the cpu source handed those temperatures over (§16)"
+                    );
+                    chips.push(HANDOVER_CHIP.to_string());
+                }
                 o.chips = chips;
             }
         }
-        o.rapl = !matches!(t.get("rapl").and_then(|v| v.as_str()), Some("off"));
+        o.rapl = match t.get("rapl") {
+            Some(toml::Value::Boolean(b)) => *b,
+            Some(toml::Value::String(s)) => !matches!(s.as_str(), "off" | "no" | "false"),
+            _ => true,
+        };
         o
     }
 }
@@ -173,6 +189,7 @@ impl Sampler {
             .walked
             .is_none_or(|w| now.saturating_duration_since(w) >= REWALK);
         if rewalk {
+            self.rapl.reprobe(&self.sys);
             let inv = hwmon::walk(&self.sys, &self.options.chips);
             let changed = inv != self.inv;
             self.inv = inv;
@@ -276,7 +293,18 @@ impl Source for SensorsSource {
     }
 
     fn run(self: Box<Self>, cx: SourceCtx) {
-        status(&cx, SourceState::Starting, None, None);
+        // Statuses go out on transitions only: a re-sent status re-stamps
+        // `since`, so "degraded for N s" would never grow (review).
+        let mut last: Option<(SourceState, String)> = None;
+        let mut set_status =
+            |cx: &SourceCtx, state: SourceState, reason: &str, hint: Option<&str>| {
+                let key = (state, reason.to_string());
+                if last.as_ref() != Some(&key) {
+                    last = Some(key);
+                    status(cx, state, Some(reason), hint);
+                }
+            };
+        set_status(&cx, SourceState::Starting, "starting", None);
         let mut sampler = Sampler::new(PathBuf::from("/sys"), self.options.clone());
         let cadence = self.cadence();
         // Prime the pump (P18: every source live within 2 s).
@@ -307,10 +335,10 @@ impl Source for SensorsSource {
             let samples = sampler.sample(at, Instant::now());
             let chips = sampler.inventory().chips.len();
             if chips == 0 {
-                status(
+                set_status(
                     &cx,
                     SourceState::Unavailable,
-                    Some("no hwmon chips"),
+                    "no hwmon chips",
                     Some("nothing under /sys/class/hwmon exports an input"),
                 );
                 cx.emit(at, samples);
@@ -325,7 +353,7 @@ impl Source for SensorsSource {
                 "{chips} chips, {} inputs",
                 sampler.inventory().sensors.len()
             );
-            status(&cx, SourceState::Ok, Some(&reason), hint);
+            set_status(&cx, SourceState::Ok, &reason, hint);
             cx.emit(at, samples);
         }
     }
@@ -339,6 +367,34 @@ pub fn start(options: &toml::Table) -> Box<dyn Source> {
 mod tests {
     use super::*;
 
+    /// The handover (§16): with the sensors feature on the cpu source starts
+    /// with `k10temp = false` and publishes no `sensor.temp_c`; the sensors
+    /// source always walks that chip, filter or not.
+    #[test]
+    fn the_k10temp_handover_leaves_exactly_one_publisher() {
+        assert_eq!(crate::cpu::k10temp_default(), !cfg!(feature = "sensors"));
+        let t: toml::Table = toml::from_str(r#"chips = ["nvme*"]"#).unwrap();
+        let o = Options::from_table(&t);
+        assert!(
+            o.chips.iter().any(|c| c == HANDOVER_CHIP),
+            "the filter cannot orphan k10temp: {:?}",
+            o.chips
+        );
+        // The cpu sampler with the flag off publishes no temperatures.
+        let mut s = crate::cpu::sampler::CpuSampler::new(crate::cpu::sampler::Roots::default())
+            .with_k10temp(false);
+        let out = gridwatch_store::Sampler::sample(
+            &mut s,
+            gridwatch_store::Ts(1_000_000_000),
+            gridwatch_store::Detail::Meters,
+        )
+        .expect("the cpu sampler reads /proc");
+        assert!(
+            !out.iter().any(|x| x.id.name == "sensor.temp_c"),
+            "k10temp = false still published temperatures"
+        );
+    }
+
     #[test]
     fn options_parse_and_clamp() {
         let t: toml::Table = toml::from_str(
@@ -351,6 +407,15 @@ rapl = "off""#,
         assert_eq!(o.refresh, MIN_REFRESH);
         assert_eq!(o.chips, ["nvme*", "k10temp"]);
         assert!(!o.rapl);
+        // `rapl` takes a bool or a word.
+        for (text, want) in [
+            ("rapl = false", false),
+            (r#"rapl = "no""#, false),
+            ("rapl = true", true),
+        ] {
+            let t: toml::Table = toml::from_str(text).unwrap();
+            assert_eq!(Options::from_table(&t).rapl, want, "{text}");
+        }
         let t: toml::Table = toml::from_str("refresh_ms = 60000").unwrap();
         assert_eq!(Options::from_table(&t).refresh, MAX_REFRESH);
         assert_eq!(Options::from_table(&toml::Table::new()), Options::default());

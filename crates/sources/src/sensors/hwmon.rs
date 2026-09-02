@@ -2,8 +2,10 @@
 //! every `temp*_input | fan*_input | in*_input | power*_input`, the label
 //! from `<stem>_label` else the stem, `max`/`crit` from `<stem>_max` /
 //! `<stem>_crit` with the nvme `65261850` m°C sentinel dropped. Chips are
-//! keyed by `name` (a duplicate gets `name#2`) — hwmon numbering is not
-//! stable across boots. A read error or `-ENODATA` means "absent this
+//! keyed by `name`; duplicates of a name are ordered by the **device** they
+//! hang off (`hwmonN/device`, e.g. `nvme0`, `0000:00:18.3`) and suffixed
+//! `#2`, `#3` — `hwmonN` numbering is not stable across boots, so ordering
+//! by it would rename a drive after a reboot (review). A read error or `-ENODATA` means "absent this
 //! sample", never a panic. Tested over `fixtures/hwmon/torch/`.
 
 use std::path::{Path, PathBuf};
@@ -87,6 +89,22 @@ fn read_i64(p: &Path) -> Option<i64> {
     read_trim(p)?.parse().ok()
 }
 
+/// The device a chip hangs off: the `device` symlink's target name
+/// (`nvme0`, `0000:00:18.3`, `8-0051`), or the fixture's `device_name`
+/// file, or the hwmon directory's own name. Stable across boots where the
+/// hwmon number is not.
+pub fn device_of(dir: &Path) -> String {
+    std::fs::canonicalize(dir.join("device"))
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .or_else(|| read_trim(&dir.join("device_name")))
+        .unwrap_or_else(|| {
+            dir.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
+}
+
 /// A threshold in the input's raw unit, dropping driver sentinels.
 fn threshold(p: &Path, kind: Kind) -> Option<f64> {
     let raw = read_i64(p)?;
@@ -96,16 +114,16 @@ fn threshold(p: &Path, kind: Kind) -> Option<f64> {
     Some(raw as f64 / kind.divisor())
 }
 
-/// Glob-lite chip filter: `*` matches anything, a trailing `*` a prefix,
-/// else exact.
+/// Glob-lite chip filter: `*` matches anything, a leading or trailing `*`
+/// a suffix or prefix, `*x*` a substring, else exact.
 pub fn chip_matches(pattern: &str, name: &str) -> bool {
-    if pattern == "*" {
-        return true;
+    match (pattern.strip_prefix('*'), pattern.strip_suffix('*')) {
+        (Some("") | None, Some("")) | (Some(""), None) => true,
+        (Some(rest), None) => name.ends_with(rest),
+        (None, Some(rest)) => name.starts_with(rest),
+        (Some(a), Some(_)) => name.contains(a.strip_suffix('*').unwrap_or(a)),
+        (None, None) => pattern == name,
     }
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        return name.starts_with(prefix);
-    }
-    pattern == name
 }
 
 /// Walk `<sys>/class/hwmon` once: the inventory.
@@ -115,13 +133,17 @@ pub fn walk(sys: &Path, chips: &[String]) -> Inventory {
         return Inventory::default();
     };
     let mut dirs: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
-    // Numeric order of hwmonN so `name#2` is assigned deterministically.
+    // Ordered by (chip name, device): the suffix a duplicate gets then
+    // follows the hardware, not the boot's hwmon numbering (review).
     dirs.sort_by_key(|d| {
-        d.file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|n| n.strip_prefix("hwmon"))
-            .and_then(|n| n.parse::<u32>().ok())
-            .unwrap_or(u32::MAX)
+        (
+            read_trim(&d.join("name")).unwrap_or_default(),
+            device_of(d),
+            d.file_name()
+                .and_then(|n| n.to_str())
+                .map(String::from)
+                .unwrap_or_default(),
+        )
     });
     let mut inv = Inventory::default();
     let mut seen: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
@@ -129,9 +151,6 @@ pub fn walk(sys: &Path, chips: &[String]) -> Inventory {
         let Some(raw_name) = read_trim(&dir.join("name")) else {
             continue;
         };
-        if !chips.iter().any(|p| chip_matches(p, &raw_name)) {
-            continue;
-        }
         let n = seen.entry(raw_name.clone()).or_insert(0);
         *n += 1;
         let name = if *n == 1 {
@@ -139,6 +158,14 @@ pub fn walk(sys: &Path, chips: &[String]) -> Inventory {
         } else {
             format!("{raw_name}#{n}")
         };
+        // The filter sees both the bare name and the suffixed one, so
+        // `chips = ["nvme#2"]` and `chips = ["nvme*"]` both work.
+        if !chips
+            .iter()
+            .any(|p| chip_matches(p, &raw_name) || chip_matches(p, &name))
+        {
+            continue;
+        }
         let Ok(files) = std::fs::read_dir(&dir) else {
             continue;
         };
@@ -183,6 +210,7 @@ pub fn walk(sys: &Path, chips: &[String]) -> Inventory {
         inv.chips.push(ChipInfo {
             name,
             path: dir.display().to_string(),
+            device: device_of(&dir),
             kinds,
         });
     }
@@ -226,14 +254,15 @@ mod tests {
         let root = sys_root();
         let inv = walk(&root, &["*".to_string()]);
         let names: Vec<&str> = inv.chips.iter().map(|c| c.name.as_str()).collect();
+        // Ordered by (name, device) — the suffix follows the hardware.
         assert_eq!(
             names,
             [
+                "k10temp",
+                "mt7925_phy0",
                 "nvme",
                 "nvme#2",
                 "nvme#3",
-                "mt7925_phy0",
-                "k10temp",
                 "r8169_0_b00:00",
                 "r8169_0_c00:00",
                 "spd5118",
@@ -241,13 +270,21 @@ mod tests {
             ],
             "asus (no inputs) is skipped"
         );
+        // `nvme` is the drive at `nvme0` (hwmon1 on this boot), so its
+        // thresholds are that drive's — the point of keying by device.
         let comp = inv
             .sensors
             .iter()
             .find(|s| s.key == "nvme:Composite")
             .expect("nvme composite");
-        assert_eq!(comp.max, Some(81.85));
-        assert_eq!(comp.crit, Some(84.85));
+        assert_eq!(comp.max, Some(83.85));
+        assert_eq!(comp.crit, Some(87.85));
+        let third = inv
+            .sensors
+            .iter()
+            .find(|s| s.key == "nvme#3:Composite")
+            .unwrap();
+        assert_eq!((third.max, third.crit), (Some(81.85), Some(84.85)));
         let s1 = inv
             .sensors
             .iter()
@@ -276,9 +313,24 @@ mod tests {
         assert_eq!(dimm2.max, Some(55.0));
         assert!(inv.sensors.iter().all(|s| s.kind == Kind::Temp));
         assert_eq!(inv.chips[4].kinds, ["temp"]);
-        // A filter.
+        // The device each chip hangs off (the suffix follows the hardware,
+        // not the boot's hwmon numbering).
+        let by_name: std::collections::HashMap<&str, &str> = inv
+            .chips
+            .iter()
+            .map(|c| (c.name.as_str(), c.device.as_str()))
+            .collect();
+        assert_eq!(by_name["nvme"], "nvme0", "hwmon1 sorts first by device");
+        assert_eq!(by_name["nvme#2"], "nvme1");
+        assert_eq!(by_name["nvme#3"], "nvme2");
+        assert_eq!(by_name["k10temp"], "0000:00:18.3");
+        assert_eq!(by_name["spd5118#2"], "8-0053");
+        // A filter, on the bare name and on the suffixed one.
         let only = walk(&root, &["nvme*".to_string(), "k10temp".to_string()]);
         assert_eq!(only.chips.len(), 4);
+        let one = walk(&root, &["nvme#2".to_string()]);
+        assert_eq!(one.chips.len(), 1);
+        assert_eq!(one.chips[0].device, "nvme1");
         assert!(walk(&root, &["nct6798".to_string()]).chips.is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -295,6 +347,9 @@ mod tests {
         assert!(chip_matches("nvme*", "nvme"));
         assert!(!chip_matches("nvme", "nvme#2"));
         assert!(chip_matches("nvme*", "nvme#2"));
+        assert!(chip_matches("*temp", "k10temp"), "a leading star");
+        assert!(chip_matches("*5118*", "spd5118#2"), "a substring");
+        assert!(!chip_matches("*temp", "spd5118"));
         let missing = walk(Path::new("/nonexistent"), &["*".to_string()]);
         assert!(missing.chips.is_empty());
     }
