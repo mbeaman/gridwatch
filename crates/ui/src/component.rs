@@ -265,6 +265,15 @@ pub trait Component: Send {
     /// Pure over store + now; the theme's renderer draws the result.
     fn view(&self, cx: &RenderCx<'_>) -> View;
 
+    /// Strings that must appear in the rendered cells whenever `tier` is
+    /// chosen and the store has data (D46): `Tier.adds` as a checked claim, not
+    /// a comment. The testkit's sweep asserts every one of them at every size
+    /// that picks the tier. Empty means "non-blank is enough".
+    fn signature(&self, tier: usize) -> &'static [&'static str] {
+        let _ = tier;
+        &[]
+    }
+
     fn redraw_policy(&self) -> RedrawPolicy {
         RedrawPolicy::OnChange
     }

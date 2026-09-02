@@ -3,7 +3,7 @@
 use gridwatch_components::htop::{Htop, OPTION_NAMES, Options};
 use gridwatch_ui::component::{Component, Size, pick_tier};
 use gridwatch_ui::testkit::{
-    assert_min_tier_fits, assert_never_panics, assert_tiers_well_formed, demo_store,
+    assert_min_tier_fits, assert_renders_everywhere, assert_tiers_well_formed, demo_store,
     real_grid_sizes, render_component, theme, view_of, view_snapshot,
 };
 
@@ -28,13 +28,17 @@ fn tiers_are_well_formed() {
     }
 }
 
+/// D46 layer A: no panic, non-blank where the rect fits, the tier's signature
+/// present, and nothing fabricated on an empty store — at every size.
 #[test]
-fn never_panics_across_sizes() {
-    let store = demo_store(42, 3);
-    let th = theme("modern");
-    assert_never_panics(&|| clock(), &store, &th);
-    assert_never_panics(&|| sources(), &store, &th);
-    assert_never_panics(&|| htop(), &store, &th);
+fn renders_everywhere() {
+    let store = demo_store(42, 40);
+    let empty = gridwatch_store::Store::default();
+    for th in ["modern", "retrowave", "mono"].map(theme) {
+        assert_renders_everywhere(&|| clock(), &store, &empty, &th);
+        assert_renders_everywhere(&|| sources(), &store, &empty, &th);
+        assert_renders_everywhere(&|| htop(), &store, &empty, &th);
+    }
 }
 
 #[test]

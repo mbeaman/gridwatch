@@ -55,15 +55,18 @@ the ones below structurally cannot observe.
 0×0 to the richest tier's minimum plus margin, it asserts:
 
 - **No panic** (as before).
-- **Non-blank when the rect fits tier 0.** A component handed at least its
-  declared minimum must put at least one non-space glyph in the buffer.
+- **Non-blank when the rect fits tier 0 — on a full store and on an empty
+  one.** A component handed at least its declared minimum must put at least
+  one non-space glyph in the buffer; with no data that glyph is `—` or a
+  "waiting" line. (The first draft of this rule said "with data", and a
+  mutation check showed it let the arc-1b blank tile through.)
 - **The tier's signature is present.** Each component supplies
   `signature(tier) -> &[&str]`: short strings that *must* appear whenever that
   tier is chosen with data in the store (htop: `CPU` at tier 0, `MEM`/`SWP` at
   `meters`, `CCD` at `cores`). This turns `Tier.adds` from a comment into a
   checked claim.
-- **Below the minimum, nothing is drawn by the component** — the shell owns the
-  chip in that case, and a component that scribbles outside its tier is a bug.
+- **Below the minimum, only "no panic" is required** — the shell owns the chip
+  there and never asks the component for a tier it cannot fit.
 - **No fabricated data.** With an *empty* store, the buffer must not contain a
   digit followed by `%` — a dash, a "waiting" line, or blank is honest; `0%` is
   not.

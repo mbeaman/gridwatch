@@ -242,4 +242,16 @@ impl Component for Htop {
     fn view(&self, cx: &RenderCx<'_>) -> View {
         view::render(self, cx)
     }
+
+    fn signature(&self, tier: usize) -> &'static [&'static str] {
+        match tier {
+            // `tiny` prints "CPU" only when 8+ wide; the number always ends in %.
+            TIER_TINY => &["%"],
+            // Big digits are block glyphs and the '%' is dropped below 16 wide:
+            // non-blank is the only honest textual claim.
+            TIER_BIG_NUMBER => &[],
+            TIER_METERS => &["CPU", "MEM", "SWP", "pids"],
+            _ => &["CPU", "MEM", "SWP", "CCD", "PSI"],
+        }
+    }
 }

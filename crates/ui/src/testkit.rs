@@ -139,35 +139,114 @@ pub fn view_snapshot(
     })
 }
 
-/// Sweep every inner size from 0×0 to the richest tier's min plus the zoomed
-/// body; any panic fails the test (§12.2).
-pub fn assert_never_panics(mk: &dyn Fn() -> Box<dyn Component>, store: &Store, th: &Theme) {
-    let c = mk();
-    let max = c
-        .tiers()
-        .iter()
-        .map(|t| t.min)
-        .fold(Size::new(8, 3), |a, b| {
-            Size::new(a.w.max(b.w), a.h.max(b.h))
-        });
-    drop(c);
-    let sweep_w = max.w + 4;
-    let sweep_h = max.h + 3;
-    for w in 0..=sweep_w {
-        for h in 0..=sweep_h {
-            let c = mk();
-            let r = catch_unwind(AssertUnwindSafe(|| {
-                let _ = render_component(c.as_ref(), store, th, Size::new(w, h), false);
-            }));
-            assert!(r.is_ok(), "component panicked at {w}x{h}");
+/// The plain characters of a buffer, row by row.
+pub fn plain_text(buf: &Buffer) -> String {
+    let area = *buf.area();
+    let mut out = String::new();
+    for y in 0..area.height {
+        for x in 0..area.width {
+            if let Some(c) = buf.cell((area.x + x, area.y + y)) {
+                out.push_str(c.symbol());
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// True when the text contains a number immediately followed by `%` — the
+/// shape of a fabricated reading on an empty store (D46: `—` is honest, `0%`
+/// is not).
+pub fn has_fabricated_percent(text: &str) -> bool {
+    let b = text.as_bytes();
+    b.iter()
+        .enumerate()
+        .any(|(i, c)| *c == b'%' && i > 0 && b[i - 1].is_ascii_digit())
+}
+
+/// The D46 sweep: every inner size from 0×0 to the richest tier's min plus a
+/// margin, plus the zoomed body, with `data` populated and `empty` not.
+/// Asserts, per size: no panic (both stores); when the rect fits tier 0 the
+/// buffer is non-blank on *both* stores (an honest empty tile says `—`), and
+/// with data it carries the chosen tier's `signature`; on the empty store,
+/// nothing that reads as a measured percentage. "Didn't panic" alone is never a pass (TESTING.md, layer A).
+pub fn assert_renders_everywhere(
+    mk: &dyn Fn() -> Box<dyn Component>,
+    data: &Store,
+    empty: &Store,
+    th: &Theme,
+) {
+    let probe = mk();
+    let tiers = probe.tiers();
+    let min0 = tiers[0].min;
+    let max = tiers.iter().map(|t| t.min).fold(Size::new(8, 3), |a, b| {
+        Size::new(a.w.max(b.w), a.h.max(b.h))
+    });
+    drop(probe);
+    let mut sizes: Vec<(Size, bool)> = Vec::new();
+    for w in 0..=max.w + 4 {
+        for h in 0..=max.h + 3 {
+            sizes.push((Size::new(w, h), false));
         }
     }
-    // Zoomed body.
-    let c = mk();
-    let r = catch_unwind(AssertUnwindSafe(|| {
-        let _ = render_component(c.as_ref(), store, th, Size::new(248, 66), true);
-    }));
-    assert!(r.is_ok(), "component panicked zoomed at 248x66");
+    sizes.push((Size::new(248, 66), true));
+    for (size, zoomed) in sizes {
+        for (store, with_data) in [(data, true), (empty, false)] {
+            let c = mk();
+            let r = catch_unwind(AssertUnwindSafe(|| {
+                render_component(c.as_ref(), store, th, size, zoomed)
+            }));
+            let Ok((tier, buf)) = r else {
+                panic!(
+                    "component panicked at {}x{} ({})",
+                    size.w,
+                    size.h,
+                    if with_data { "data" } else { "empty store" }
+                );
+            };
+            let text = plain_text(&buf);
+            let blank = text.chars().all(char::is_whitespace);
+            // Non-blank holds on the empty store too: an honest tile with no
+            // data says `—` or "waiting", never nothing — the arc-1b blank
+            // big-number tile was exactly this case.
+            if min0.fits(size) {
+                assert!(
+                    !blank,
+                    "blank frame at {}x{} on the {} store (tier {})",
+                    size.w,
+                    size.h,
+                    if with_data { "data" } else { "empty" },
+                    tiers[tier].name
+                );
+            }
+            if with_data && min0.fits(size) {
+                let c2 = mk();
+                for sig in c2.signature(tier) {
+                    assert!(
+                        text.contains(sig),
+                        "tier `{}` at {}x{} lacks its signature {sig:?}:\n{text}",
+                        tiers[tier].name,
+                        size.w,
+                        size.h
+                    );
+                }
+            }
+            if !with_data {
+                assert!(
+                    !has_fabricated_percent(&text),
+                    "fabricated percentage on an empty store at {}x{}:\n{text}",
+                    size.w,
+                    size.h
+                );
+            }
+        }
+    }
+}
+
+/// Kept for callers that only want the crash sweep; prefer
+/// `assert_renders_everywhere` (D46).
+pub fn assert_never_panics(mk: &dyn Fn() -> Box<dyn Component>, store: &Store, th: &Theme) {
+    assert_renders_everywhere(mk, store, &Store::default(), th);
 }
 
 /// `tiers()[0].min` must fit the grid's minimum unit (§4.6).
