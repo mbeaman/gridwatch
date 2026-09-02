@@ -1170,8 +1170,13 @@ fn edit_keys_move_resize_swap_remove_and_undo() {
         "{}",
         key_bar(&mut sh)
     );
-    // Backspace is Ctrl-h under the legacy encoding; Enter is Ctrl-j.
+    // Ctrl-Backspace narrows too; the plain Backspace key does nothing.
     sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Backspace)));
+    assert!(key_bar(&mut sh).contains("cpu @ (1,0) 5×3"));
+    sh.handle_input(InputEvent::Key(KeyEvent {
+        code: KeyCode::Backspace,
+        mods: gridwatch_store::Mods::CTRL,
+    }));
     assert!(key_bar(&mut sh).contains("cpu @ (1,0) 4×3"));
     // `K` at the top is out of the grid.
     sh.handle_input(key('K'));
@@ -1346,4 +1351,143 @@ fn mouse_drag_moves_and_corner_resizes() {
     );
     sh.handle_input(key('u'));
     assert!(key_bar(&mut sh).contains("pins @ (0,3) 4×2"));
+}
+
+// ───────────────────── arc 4a review: the confirmed findings ─────────────────────
+
+/// A refused key op draws the ghost on the *attempted* rect (review): `L`
+/// on cpu (0,0 6×3) into gpu paints the ghost one unit to the right, not
+/// over cpu; in mono the Crit ghost is REVERSED so it differs from a fit.
+#[test]
+fn refused_op_ghost_sits_on_the_attempted_rect() {
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    sh.handle_input(key('e'));
+    let _ = shot_frame(&mut sh, 250, 70);
+    sh.handle_input(key('L'));
+    let frame = shot_frame(&mut sh, 250, 70);
+    let corner = (0..250u16)
+        .flat_map(|x| (0..70u16).map(move |y| (x, y)))
+        .find(|&(x, y)| frame.cell((x, y)).is_some_and(|c| c.symbol() == "╔"))
+        .expect("a ghost");
+    // Unit column 1 starts at x = 21 at 250 wide (12 tracks, gap 1); cpu's
+    // own corner is at x = 0.
+    assert_eq!(corner, (21, 1), "the ghost is not on the attempted rect");
+    let c = frame.cell(corner).unwrap();
+    assert!(
+        c.modifier.contains(ratatui::style::Modifier::REVERSED),
+        "mono: Crit = REVERSED"
+    );
+    // The cpu tile's own frame and title are intact underneath.
+    assert_eq!(frame.cell((0, 1)).unwrap().symbol(), "┏");
+    let bar = key_bar(&mut sh);
+    assert!(bar.starts_with("▲ would overlap another tile"), "{bar}");
+    assert!(
+        bar.contains("Esc leave"),
+        "the way out survives the note: {bar}"
+    );
+}
+
+/// The dotted grid lives in the gutters only (review): no `·` inside any
+/// tile's outer rect; a gutter cell between two tiles is dotted.
+#[test]
+fn dotted_grid_never_enters_a_tile() {
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    // cpu occupies x 0..125, y 1..36 at 250x70: its cells are untouched by
+    // edit chrome (the tile's own `·` separators are content, not dots).
+    let cpu = ratatui::layout::Rect::new(0, 1, 125, 35);
+    let before = region_text(&mut sh, 250, 70, cpu);
+    sh.handle_input(key('e'));
+    let after = region_text(&mut sh, 250, 70, cpu);
+    assert_same(&before, &after, "edit chrome entered the cpu tile");
+    // The gutter column between cpu and gpu (x = 125) is dotted.
+    let frame = shot_frame(&mut sh, 250, 70);
+    assert_eq!(frame.cell((125, 10)).unwrap().symbol(), "·");
+}
+
+/// A page change on a dirty page is deferred, not refused (review): after
+/// `w` or `y` the requested page opens, still in edit mode.
+#[test]
+fn page_change_while_dirty_is_taken_after_the_answer() {
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    sh.handle_input(key('e'));
+    sh.handle_input(ctrl('h'));
+    sh.handle_input(key('2'));
+    assert!(key_bar(&mut sh).starts_with("unsaved changes"));
+    sh.handle_input(key('y'));
+    assert!(sh.editing(), "still editing on the new page");
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains(" 2 audio "), "{text}");
+    // `q` during the prompt still quits.
+    sh.handle_input(ctrl('h'));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
+    sh.handle_input(key('q'));
+    assert!(sh.quit);
+}
+
+/// A layout reload under edit mode re-baselines the session (review): `y`
+/// after the reload restores the *reloaded* page, never another page's.
+#[test]
+fn reload_under_edit_mode_resets_the_baseline() {
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 2);
+    sh.handle_input(key('e'));
+    let one_page = "schema = 1\n[grid]\ncolumns = 12\nrows = 6\n[[pages]]\nname = \"Only\"\nhotkey = \"1\"\nplace = [{ id = \"cpu\", at = [0, 0], size = [12, 6] }]\n";
+    sh.reload_from_texts(
+        gridwatch_store::ReloadKind::Layout,
+        config::DEFAULT_CONFIG,
+        one_page,
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("reloaded under edit mode"), "{text}");
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
+    assert!(
+        !sh.editing(),
+        "a clean re-baselined page leaves without asking"
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains(" 1 only "), "{text}");
+    assert!(
+        !text.contains("winamp"),
+        "audio's tiles must not leak: {text}"
+    );
+}
+
+/// The picker keeps its cursor on screen (review): with more items than the
+/// panel has rows, moving past the window scrolls it and says how many more.
+#[test]
+fn picker_scrolls_with_the_cursor() {
+    let mut ids = String::new();
+    for i in 0..30 {
+        ids.push_str(&format!(
+            "[[components]]\nid = \"c{i:02}\"\nkind = \"clock\"\n"
+        ));
+    }
+    let cfg = format!("{}\n{ids}", config::DEFAULT_CONFIG);
+    let loaded = config::load_texts(&cfg, config::DEFAULT_LAYOUT).unwrap();
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    let theme = load_builtin("mono", ColorMode::Mono).unwrap();
+    let mut sh = Shell::new(
+        reg,
+        &loaded,
+        theme,
+        probe::probe(),
+        0,
+        Clock::new_virtual(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        false,
+    );
+    sh.handle_input(key('e'));
+    sh.handle_input(key('a'));
+    for _ in 0..25 {
+        sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Down)));
+    }
+    let text = page_text(&mut sh, 100, 24);
+    // `amp` (configured, unplaced) leads the list, so item 25 is c24.
+    assert!(text.contains("▶ c24"), "cursor off screen: {text}");
+    assert!(text.contains("more above"), "{text}");
+    // A filter may start with `j`.
+    sh.handle_input(key('j'));
+    let text = page_text(&mut sh, 100, 24);
+    assert!(text.contains("filter: j"), "{text}");
 }

@@ -915,6 +915,7 @@ dependencies = [
  "gridwatch-store",
  "gridwatch-ui",
  "libc",
+ "proptest",
  "ratatui",
  "serde",
  "serde_json",

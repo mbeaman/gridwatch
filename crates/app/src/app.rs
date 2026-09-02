@@ -312,6 +312,16 @@ impl Shell {
         self.stack_scroll = 0;
         self.cache.clear();
         self.last_solved = None;
+        // A live edit session was about another page: re-baseline it on the
+        // reloaded one (review: a stale `saved` let `y` copy another page's
+        // tiles over the reloaded page).
+        if self.edit.is_some() {
+            self.edit = Some(EditState::new(&self.pages[self.page]));
+            self.toast(
+                Severity::Warn,
+                "layout reloaded under edit mode — undo history and unsaved edits reset",
+            );
+        }
         let mut what = Vec::new();
         if kept > 0 {
             what.push(format!("{kept} kept"));
@@ -916,11 +926,22 @@ impl Shell {
             width: area.width,
             height: 1,
         };
-        RLine::from(RSpan::styled(
-            format!(" {hints}"),
-            self.theme.style(Role::TextMuted),
-        ))
-        .render(status, buf);
+        let muted = self.theme.style(Role::TextMuted);
+        let status_line = match hints.strip_prefix("EDIT") {
+            // The mode token stands out (review): bold + reversed, roles only.
+            Some(rest) if self.edit.is_some() => RLine::from(vec![
+                RSpan::styled(" ", muted),
+                RSpan::styled(
+                    "EDIT",
+                    self.theme
+                        .style(Role::AccentPrimary)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+                ),
+                RSpan::styled(rest.to_string(), muted),
+            ]),
+            _ => RLine::from(RSpan::styled(format!(" {hints}"), muted)),
+        };
+        status_line.render(status, buf);
 
         // Overlays. Toasts yield on a body too small to share (the lattice
         // found them covering the only tile at 15×7).
@@ -963,10 +984,11 @@ impl Shell {
                     ("space", "pause sources"),
                     ("a", "acknowledge the alert banner"),
                     ("A", "alerts: active list and log"),
-                    (
-                        "e",
-                        "edit mode: HJKL move · ^hjkl size · s footprint · S swap · a add · x remove · u/^r undo · w save",
-                    ),
+                    ("e / Esc", "enter / leave edit mode"),
+                    ("edit HJKL", "move a unit; ^hjkl widen/narrow/grow/shrink"),
+                    ("edit s S", "cycle footprint; S+dir swaps with neighbour"),
+                    ("edit a x", "add a tile (picker); remove (also Delete)"),
+                    ("edit u ^r w", "undo; redo; save layout.toml (y discards)"),
                     ("S", "screenshot to state dir"),
                     ("F12", "stats HUD"),
                 ],
@@ -993,20 +1015,45 @@ impl Shell {
                 Role::TextMuted,
                 format!("filter: {}▏", pk.filter),
             )]];
-            for (i, item) in pk.visible().iter().enumerate() {
-                let role = if i == pk.cursor {
+            // A window around the cursor: the panel has body.height - 6 rows
+            // for items, and the cursor stays inside it (review).
+            let visible = pk.visible();
+            // Title, filter, padding and the two "more" lines take 8 rows.
+            let rows = usize::from(body.height.saturating_sub(8)).max(1);
+            let first = pk
+                .cursor
+                .saturating_sub(rows - 1)
+                .min(visible.len().saturating_sub(rows));
+            let end = (first + rows).min(visible.len());
+            let shown = &visible[first.min(visible.len())..end];
+            if first > 0 {
+                lines.push(vec![RSpanText::new(
+                    Role::TextGhost,
+                    format!("  … {first} more above"),
+                )]);
+            }
+            for (i, item) in shown.iter().enumerate() {
+                let idx = first + i;
+                let role = if idx == pk.cursor {
                     Role::AccentPrimary
                 } else {
                     Role::Text
                 };
-                let mark = if i == pk.cursor { "▶ " } else { "  " };
+                let mark = if idx == pk.cursor { "▶ " } else { "  " };
                 lines.push(vec![RSpanText::new(role, format!("{mark}{}", item.label))]);
             }
-            if pk.visible().is_empty() {
+            let rest = visible.len().saturating_sub(end);
+            if rest > 0 {
+                lines.push(vec![RSpanText::new(
+                    Role::TextGhost,
+                    format!("  … {rest} more below"),
+                )]);
+            }
+            if visible.is_empty() {
                 lines.push(vec![RSpanText::new(Role::TextGhost, "  (nothing matches)")]);
             }
             overlay::panel(
-                "add a tile  ·  j/k move · type to filter · Enter add · Esc close",
+                "add a tile  ·  ↑/↓ move · type to filter · Enter add · Esc close",
                 &lines,
                 body,
                 &self.theme,
@@ -1792,6 +1839,7 @@ impl Shell {
         }
         self.captured = false;
         self.help = false;
+        self.alerts_overlay = false;
         self.edit = Some(EditState::new(&self.pages[self.page]));
         self.cache.clear();
         self.toast(
@@ -1826,16 +1874,26 @@ impl Shell {
                 )
             })
             .unwrap_or_else(|| "no tile".into());
-        let mut s = format!(
-            "EDIT · {focus} · HJKL move · ^hjkl size · s footprint · S swap · a add · x remove · u/^r undo · w save · Esc leave"
-        );
+        // 120 columns must hold the way out (review): the keys are terse,
+        // a note replaces the key list, `?` has the long form.
+        let keys = "HJKL move · ^hjkl size · s size · S swap · a add · x del · u/^r undo · w save · Esc leave";
+        let mode_note = match self.mode {
+            SolveMode::Stack => "stack mode: edits apply but are not drawn — widen the terminal · ",
+            SolveMode::Dense => "dense: no gutters to dot · ",
+            SolveMode::Configured => "",
+        };
+        let empty_note = if self.pages[self.page].place.is_empty() {
+            " — a adds one"
+        } else {
+            ""
+        };
         if ed.pending_swap {
-            s = format!("EDIT · swap with… h/j/k/l · {focus}");
+            return format!("EDIT · swap with… h/j/k/l (Esc cancels) · {focus}");
         }
-        if let Some(n) = &ed.note {
-            s = format!("▲ {n} · {s}");
+        match &ed.note {
+            Some(n) => format!("▲ {n} · EDIT · {focus}{empty_note} · w save · Esc leave · ? keys"),
+            None => format!("EDIT · {focus}{empty_note} · {mode_note}{keys}"),
         }
-        s
     }
 
     /// The dotted unit grid in the gutters and the ghost of a refused or
@@ -1843,36 +1901,62 @@ impl Shell {
     fn draw_edit_chrome(&self, body: Rect, buf: &mut Buffer) {
         let (cols, rows) = gridwatch_ui::layout::unit_tracks(&self.grid, body, self.mode);
         let ghost_style = self.theme.style(Role::TextGhost);
-        if self.mode == SolveMode::Configured {
-            // Gutter columns and rows: the cells before each track's start.
-            for (start, _) in cols.iter().skip(1) {
-                let x = body.x + start - 1;
+        // Gutters only (review: a gutter line crosses a multi-unit tile's
+        // interior, which must stay untouched), and only where the grid has
+        // gutters at all — dense mode shares borders, gap 0 has none.
+        if self.mode == SolveMode::Configured && self.grid.gap > 0 {
+            let covered: Vec<Rect> = self
+                .last_solved
+                .as_ref()
+                .map(|s| s.cells.iter().map(|c| c.outer).collect())
+                .unwrap_or_default();
+            let inside = |x: u16, y: u16| {
+                covered
+                    .iter()
+                    .any(|r| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
+            };
+            let gutter_cols: Vec<u16> = cols
+                .windows(2)
+                .flat_map(|w| (w[0].0 + w[0].1)..w[1].0)
+                .map(|x| body.x + x)
+                .collect();
+            let gutter_rows: Vec<u16> = rows
+                .windows(2)
+                .flat_map(|w| (w[0].0 + w[0].1)..w[1].0)
+                .map(|y| body.y + y)
+                .collect();
+            let dot = |x: u16, y: u16, buf: &mut Buffer| {
+                if inside(x, y) {
+                    return;
+                }
+                if let Some(c) = buf.cell_mut((x, y))
+                    && c.symbol() == " "
+                {
+                    c.set_char('·');
+                    c.set_style(ghost_style);
+                }
+            };
+            for &x in &gutter_cols {
                 for y in body.y..body.y + body.height {
-                    if let Some(c) = buf.cell_mut((x, y))
-                        && c.symbol() == " "
-                    {
-                        c.set_char('·');
-                        c.set_style(ghost_style);
-                    }
+                    dot(x, y, buf);
                 }
             }
-            for (start, _) in rows.iter().skip(1) {
-                let y = body.y + start - 1;
+            for &y in &gutter_rows {
                 for x in body.x..body.x + body.width {
-                    if let Some(c) = buf.cell_mut((x, y))
-                        && c.symbol() == " "
-                    {
-                        c.set_char('·');
-                        c.set_style(ghost_style);
-                    }
+                    dot(x, y, buf);
                 }
             }
         }
         if let Some(g) = self.edit.as_ref().and_then(|e| e.ghost)
             && let Some(r) = unit_rect(&self.grid, body, self.mode, g.at, g.size)
         {
-            let role = if g.ok { Role::Ok } else { Role::Crit };
-            let style = self.theme.style(role).add_modifier(Modifier::BOLD);
+            // The theme's own severity rule: a refusal is Crit and carries
+            // BOLD|REVERSED, so mono can tell red from green (review).
+            let style = if g.ok {
+                self.theme.style(Role::Ok).add_modifier(Modifier::BOLD)
+            } else {
+                self.theme.severity(Severity::Crit).0
+            };
             ratatui::widgets::Block::new()
                 .borders(ratatui::widgets::Borders::ALL)
                 .border_type(ratatui::widgets::BorderType::Double)
@@ -1887,12 +1971,14 @@ impl Shell {
         };
         // The picker eats every key while open (seam 2).
         if let Some(pk) = ed.picker.as_mut() {
+            // Arrows (or Ctrl-n/p, Ctrl-j/k) move; every plain letter filters,
+            // so a filter may start with `j` or `k` (review).
             match k.code {
                 KeyCode::Esc => ed.picker = None,
-                KeyCode::Down | KeyCode::Char('j') if k.mods.ctrl || k.code == KeyCode::Down => {
-                    pk.down()
-                }
-                KeyCode::Up | KeyCode::Char('k') if k.mods.ctrl || k.code == KeyCode::Up => pk.up(),
+                KeyCode::Down | KeyCode::Tab => pk.down(),
+                KeyCode::Up | KeyCode::BackTab => pk.up(),
+                KeyCode::Char('n') | KeyCode::Char('j') if k.mods.ctrl => pk.down(),
+                KeyCode::Char('p') | KeyCode::Char('k') if k.mods.ctrl => pk.up(),
                 KeyCode::Enter => {
                     let item = pk.selected();
                     ed.picker = None;
@@ -1901,41 +1987,38 @@ impl Shell {
                     }
                 }
                 KeyCode::Backspace => pk.backspace(),
-                KeyCode::Char(c) if !k.mods.ctrl => {
-                    // `j`/`k` navigate unless a filter is being typed.
-                    if pk.filter.is_empty() && c == 'j' {
-                        pk.down();
-                    } else if pk.filter.is_empty() && c == 'k' {
-                        pk.up();
-                    } else {
-                        pk.type_char(c);
-                    }
-                }
+                KeyCode::Char(c) if !k.mods.ctrl => pk.type_char(c),
                 _ => {}
             }
             return true;
         }
         if ed.confirm_leave {
+            let pending_page = ed.pending_page;
             match crate::edit::decode(k) {
                 EditKey::Save => {
                     ed.confirm_leave = false;
+                    ed.pending_page = None;
                     self.execute(Command::SaveLayout);
                     if self
                         .edit
                         .as_ref()
                         .is_some_and(|e| !e.dirty(&self.pages[self.page]))
                     {
-                        self.leave_edit();
+                        self.finish_leave(pending_page);
                     }
                 }
                 EditKey::Discard => {
                     let saved = ed.saved.clone();
                     self.pages[self.page] = saved;
                     self.clamp_focus();
-                    self.leave_edit();
+                    self.finish_leave(pending_page);
+                }
+                EditKey::Other if k.code == KeyCode::Char('q') => {
+                    self.quit = true;
                 }
                 _ => {
                     ed.confirm_leave = false;
+                    ed.pending_page = None;
                     ed.note = None;
                 }
             }
@@ -1944,13 +2027,20 @@ impl Shell {
         let pending = std::mem::take(&mut ed.pending_swap);
         ed.note = None;
         ed.ghost = None;
+        // Esc closes what is open first: a pending swap, the help panel.
+        if k.code == KeyCode::Esc && (pending || self.help) {
+            self.help = false;
+            return true;
+        }
         match crate::edit::decode(k) {
-            EditKey::Move(dx, dy) => {
-                self.edit_op(|spec, page, f| gridwatch_ui::layout::move_by(spec, page, f, dx, dy))
-            }
-            EditKey::Resize(dw, dh) => {
-                self.edit_op(|spec, page, f| gridwatch_ui::layout::resize_by(spec, page, f, dw, dh))
-            }
+            EditKey::Move(dx, dy) => self.edit_op_at(
+                |spec, page, f| gridwatch_ui::layout::move_by(spec, page, f, dx, dy),
+                |at, size| (shift(at, dx, dy, 0), size),
+            ),
+            EditKey::Resize(dw, dh) => self.edit_op_at(
+                |spec, page, f| gridwatch_ui::layout::resize_by(spec, page, f, dw, dh),
+                |at, size| (at, shift(size, dw, dh, 1)),
+            ),
             EditKey::Footprint => {
                 let next = self.focus.and_then(|f| {
                     let p = self.pages[self.page].place.get(f)?;
@@ -1967,16 +2057,19 @@ impl Shell {
                     gridwatch_ui::layout::footprint_cycle(&fps, p.size)
                 });
                 match next {
-                    Some((w, h)) => self.edit_op(|spec, page, f| {
-                        let cur = page.place[f].size;
-                        gridwatch_ui::layout::resize_by(
-                            spec,
-                            page,
-                            f,
-                            i16::from(w) as i8 - i16::from(cur.0) as i8,
-                            i16::from(h) as i8 - i16::from(cur.1) as i8,
-                        )
-                    }),
+                    Some((w, h)) => self.edit_op_at(
+                        |spec, page, f| {
+                            let cur = page.place[f].size;
+                            gridwatch_ui::layout::resize_by(
+                                spec,
+                                page,
+                                f,
+                                i16::from(w) as i8 - i16::from(cur.0) as i8,
+                                i16::from(h) as i8 - i16::from(cur.1) as i8,
+                            )
+                        },
+                        move |at, _| (at, (w, h)),
+                    ),
                     None => {
                         if let Some(ed) = self.edit.as_mut() {
                             ed.note = Some("no footprints to cycle".into());
@@ -1996,8 +2089,13 @@ impl Shell {
                         _ => None,
                     };
                     match other {
-                        Some(o) => self
-                            .edit_op(|spec, page, f| gridwatch_ui::layout::swap(spec, page, f, o)),
+                        Some(o) => {
+                            let target = self.pages[self.page].place.get(o).map(|p| (p.at, p.size));
+                            self.edit_op_at(
+                                |spec, page, f| gridwatch_ui::layout::swap(spec, page, f, o),
+                                move |at, size| target.unwrap_or((at, size)),
+                            )
+                        }
                         None => {
                             if let Some(ed) = self.edit.as_mut() {
                                 ed.note = Some("no tile in that direction".into());
@@ -2085,7 +2183,15 @@ impl Shell {
                 self.quit = true;
                 true
             }
-            KeyCode::Char('?') | KeyCode::F(12) | KeyCode::Char(' ') | KeyCode::Char('t') => {
+            KeyCode::Char('?')
+            | KeyCode::F(12)
+            | KeyCode::Char(' ')
+            | KeyCode::Char('t')
+            | KeyCode::Char('T')
+            | KeyCode::Char('d')
+            | KeyCode::Char('A')
+            | KeyCode::Tab
+            | KeyCode::BackTab => {
                 // Run the normal handler with edit mode set aside, then restore.
                 let ed = self.edit.take();
                 let r = self.handle_key(k);
@@ -2107,7 +2213,9 @@ impl Shell {
                 } else {
                     (self.page + 1) % n
                 };
-                self.edit_change_page(next);
+                if next != self.page {
+                    self.edit_change_page(next);
+                }
                 true
             }
             _ => false,
@@ -2124,12 +2232,25 @@ impl Shell {
         if dirty {
             if let Some(ed) = self.edit.as_mut() {
                 ed.confirm_leave = true;
-                ed.note = Some("save or discard before changing page".into());
+                ed.pending_page = Some(next);
             }
             return;
         }
         self.set_page(next);
         self.edit = Some(EditState::new(&self.pages[self.page]));
+    }
+
+    /// Leaving after a confirm: either out of edit mode, or — when a page
+    /// change was what the user asked for — onto that page, still editing.
+    fn finish_leave(&mut self, pending_page: Option<usize>) {
+        match pending_page {
+            Some(p) => {
+                self.set_page(p);
+                self.edit = Some(EditState::new(&self.pages[self.page]));
+                self.cache.clear();
+            }
+            None => self.leave_edit(),
+        }
     }
 
     /// Run a page op on the focused placement; commit or refuse (seam 1).
@@ -2141,6 +2262,21 @@ impl Shell {
             usize,
         ) -> Result<Page, gridwatch_ui::layout::EditError>,
     ) {
+        self.edit_op_at(op, |at, size| (at, size));
+    }
+
+    /// Like `edit_op`, with the geometry the op *tried* for the ghost
+    /// (review: the ghost sat on the tile itself): `attempted(at, size)`
+    /// maps the current placement to the attempted one, clamped at 0/1.
+    fn edit_op_at(
+        &mut self,
+        op: impl FnOnce(
+            &gridwatch_ui::layout::GridSpec,
+            &Page,
+            usize,
+        ) -> Result<Page, gridwatch_ui::layout::EditError>,
+        attempted: impl FnOnce((u8, u8), (u8, u8)) -> ((u8, u8), (u8, u8)),
+    ) {
         let Some(f) = self.focus else {
             if let Some(ed) = self.edit.as_mut() {
                 ed.note = Some("no tile focused".into());
@@ -2149,10 +2285,13 @@ impl Shell {
         };
         let page = self.pages[self.page].clone();
         let Some(p) = page.place.get(f) else { return };
-        let (at, size) = (p.at, p.size);
+        let (at, size) = attempted(p.at, p.size);
         let result = op(&self.grid, &page, f);
         let Some(ed) = self.edit.as_mut() else { return };
         match result {
+            Ok(next) if next == page => {
+                // A no-op (a clamped drag): nothing to remember.
+            }
             Ok(next) => {
                 ed.commit(&mut self.pages[self.page], next);
                 self.after_edit();
@@ -2163,7 +2302,20 @@ impl Shell {
 
     fn after_edit(&mut self) {
         self.cache.clear();
-        self.last_solved = None;
+        // Re-solve now: the next key in the same input batch (key repeat, a
+        // paste, a pty write) needs the new geometry, not a frame later.
+        if self.last_body.width > 0 && self.last_body.height > 0 {
+            self.last_solved = Some(solve(
+                &self.grid,
+                &self.pages[self.page],
+                self.last_body,
+                self.mode,
+                self.zoom,
+                self.stack_scroll,
+            ));
+        } else {
+            self.last_solved = None;
+        }
         self.clamp_focus();
     }
 
@@ -2189,7 +2341,7 @@ impl Shell {
                     d.manifest.default_footprint.h,
                 )
             })
-            .unwrap_or((1, 1));
+            .unwrap_or((2, 1)); // a kind this build lacks: a chip slot, not a 1x1 badge
         let placement = crate::edit::placement_for(&item, footprint);
         let page = self.pages[self.page].clone();
         let result = gridwatch_ui::layout::insert_first_fit(&self.grid, &page, placement);
@@ -2284,6 +2436,11 @@ impl Shell {
                 }
                 let (at, size) = drag.proposed(cur);
                 match self.drag_result(drag, cur) {
+                    Ok(next) if next == self.pages[self.page] => {
+                        if let Some(ed) = self.edit.as_mut() {
+                            ed.ghost = None;
+                        }
+                    }
                     Ok(next) => {
                         if let Some(ed) = self.edit.as_mut() {
                             ed.commit(&mut self.pages[self.page], next);
@@ -2332,17 +2489,36 @@ impl Shell {
             Err(e) => return Err(format!("{}: {e}", path.display())),
         };
         let text = crate::save::render_layout(&existing, &self.pages)?;
+        if path.exists() && text == existing {
+            return Ok("layout.toml unchanged — nothing to save".into());
+        }
         let (config_text, _) = crate::config::read_texts().map_err(|e| e.to_string())?;
         crate::save::verify(&text, &config_text, &self.pages)?;
         if let Some(tx) = &self.watch_ignore {
             let _ = tx.send((ReloadKind::Layout, crate::save::hash_of(&text)));
         }
-        crate::save::write_atomic(path, &text)?;
+        if let Err(e) = crate::save::write_atomic(path, &text) {
+            // Withdraw the hash: nothing landed.
+            if let Some(tx) = &self.watch_ignore {
+                let _ = tx.send((ReloadKind::Layout, 0));
+            }
+            return Err(e);
+        }
         if let Some(ed) = self.edit.as_mut() {
             ed.mark_saved(&self.pages[self.page]);
         }
         Ok(format!("layout.toml saved ({} pages)", self.pages.len()))
     }
+}
+
+/// `(x, y)` moved by `(dx, dy)`, clamped at `floor` — the geometry an edit
+/// op attempted, for the ghost.
+fn shift(v: (u8, u8), dx: i8, dy: i8, floor: u8) -> (u8, u8) {
+    let f = i16::from(floor);
+    (
+        (i16::from(v.0) + i16::from(dx)).max(f) as u8,
+        (i16::from(v.1) + i16::from(dy)).max(f) as u8,
+    )
 }
 
 /// One instance: built, or a chip with the reason (and the fix when a

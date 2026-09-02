@@ -88,7 +88,7 @@ impl WatchHandle {
     /// A sender the shell keeps for its own writes (`w` in edit mode): the
     /// next change to a file of that kind whose bytes hash to the value is
     /// not reported.
-    pub fn ignore_sender(&self) -> Sender<(ReloadKind, u64)> {
+    pub fn ignore_sender(&self) -> Sender<IgnoreMsg> {
         self.ignore_tx.clone()
     }
 
@@ -156,8 +156,9 @@ pub fn spawn(files: Vec<Watched>, control: Sender<ControlMsg>) -> WatchHandle {
                     std::thread::sleep(PERIOD / 4);
                 }
                 // The shell's own writes register their hash first (§9).
+                // `0` clears (a save whose write failed withdraws its hash).
                 while let Ok((kind, hash)) = ignore_rx.try_recv() {
-                    ignore_t[usize::from(kind_key(kind))].store(hash.max(1), Ordering::Release);
+                    ignore_t[usize::from(kind_key(kind))].store(hash, Ordering::Release);
                 }
                 // The theme moved (`t`, a config edit): swap the Theme-kind
                 // entries, stamped now so the new file's state is the baseline.
@@ -170,6 +171,13 @@ pub fn spawn(files: Vec<Watched>, control: Sender<ControlMsg>) -> WatchHandle {
                 }
                 for (w, prev) in stamps.iter_mut() {
                     let now = stamp(&w.path);
+                    if now != *prev {
+                        // A hash sent between the drain above and this stat
+                        // (the app's own write landing in the same tick).
+                        while let Ok((kind, hash)) = ignore_rx.try_recv() {
+                            ignore_t[usize::from(kind_key(kind))].store(hash, Ordering::Release);
+                        }
+                    }
                     let slot = &ignore_t[usize::from(kind_key(w.kind))];
                     let pending = match slot.load(Ordering::Acquire) {
                         0 => None,

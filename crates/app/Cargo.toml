@@ -29,3 +29,6 @@ default = ["cpu", "gpu", "pins"]
 cpu = ["gridwatch-sources/cpu", "gridwatch-components/htop"]
 gpu = ["gridwatch-sources/gpu", "gridwatch-components/gpu"]
 pins = ["gridwatch-sources/pins", "gridwatch-components/pins"]
+
+[dev-dependencies]
+proptest.workspace = true

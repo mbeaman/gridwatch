@@ -19,10 +19,11 @@ place = [
   { id = "pins",  at = [0, 3], size = [4, 2], priority = 90 },
   { id = "lan",   at = [4, 3], size = [4, 2] },
   { id = "viz",   at = [8, 3], size = [4, 2] },
-  { kind = "sources", at = [0, 5], size = [4, 1] },   # amp's slot until arc 6
+  { kind = "sources", at = [0, 5], size = [4, 1] },
   { id = "temps", at = [4, 5], size = [6, 1] },
   { kind = "clock", at = [10, 5], size = [2, 1] },
 ]
+# amp's slot until arc 6 (see the placement above)
 
 [[pages]]
 name = "Audio"
@@ -30,5 +31,6 @@ hotkey = "2"
 place = [
   { id = "amp", at = [0, 0], size = [6, 3] },
   { id = "viz", at = [6, 0], size = [6, 3] },
-  { id = "cpu", at = [0, 3], size = [12, 3], view = "meters" },   # keep the CPU strip light here
+  { id = "cpu", at = [0, 3], size = [12, 3], view = "meters" },
 ]
+# keep the CPU strip light here (see the placement above)

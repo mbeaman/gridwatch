@@ -113,6 +113,8 @@ pub struct EditState {
     pub pending_swap: bool,
     /// `Esc` on a dirty page: `w` saves, `y` discards, `Esc` stays.
     pub confirm_leave: bool,
+    /// A page change asked for while dirty: taken after `w` or `y`.
+    pub pending_page: Option<usize>,
     pub picker: Option<Picker>,
     pub drag: Option<Drag>,
 }
@@ -127,6 +129,7 @@ impl EditState {
             note: None,
             pending_swap: false,
             confirm_leave: false,
+            pending_page: None,
             picker: None,
             drag: None,
         }
@@ -194,8 +197,10 @@ impl EditState {
 }
 
 /// The edit-mode keys (seam 1), decoded once so the shell's match is about
-/// meaning. `Ctrl-h` arrives as `Backspace` and `Ctrl-j` as `Enter` under
-/// the legacy encoding — both spellings are accepted.
+/// meaning. crossterm maps the bytes `0x08` and `0x0a` to `Ctrl-h` and
+/// `Ctrl-j` itself (review: the earlier "Backspace/Enter arrive instead"
+/// note was wrong), so only the ctrl spellings resize; the plain Backspace
+/// and Return keys do nothing here, and `Delete` removes like `x`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditKey {
     Move(i8, i8),
@@ -226,8 +231,6 @@ pub fn decode(k: KeyEvent) -> EditKey {
         };
     }
     match k.code {
-        Backspace => EditKey::Resize(-1, 0),
-        Enter => EditKey::Resize(0, 1),
         Char('H') => EditKey::Move(-1, 0),
         Char('J') => EditKey::Move(0, 1),
         Char('K') => EditKey::Move(0, -1),
@@ -340,15 +343,11 @@ mod tests {
         };
         assert_eq!(decode(ctrl(KeyCode::Char('l'))), EditKey::Resize(1, 0));
         assert_eq!(decode(ctrl(KeyCode::Char('h'))), EditKey::Resize(-1, 0));
-        assert_eq!(
-            decode(KeyEvent::plain(KeyCode::Backspace)),
-            EditKey::Resize(-1, 0)
-        );
+        assert_eq!(decode(ctrl(KeyCode::Backspace)), EditKey::Resize(-1, 0));
+        assert_eq!(decode(KeyEvent::plain(KeyCode::Backspace)), EditKey::Other);
         assert_eq!(decode(ctrl(KeyCode::Char('j'))), EditKey::Resize(0, 1));
-        assert_eq!(
-            decode(KeyEvent::plain(KeyCode::Enter)),
-            EditKey::Resize(0, 1)
-        );
+        assert_eq!(decode(KeyEvent::plain(KeyCode::Enter)), EditKey::Other);
+        assert_eq!(decode(KeyEvent::plain(KeyCode::Delete)), EditKey::Remove);
         assert_eq!(decode(ctrl(KeyCode::Char('k'))), EditKey::Resize(0, -1));
         assert_eq!(decode(KeyEvent::ch('H')), EditKey::Move(-1, 0));
         assert_eq!(decode(KeyEvent::ch('l')), EditKey::Dir(Direction::Right));
@@ -397,5 +396,37 @@ mod tests {
         let r = Drag { resize: true, ..d };
         assert_eq!(r.proposed((5, 1)), ((2, 1), (6, 1)));
         assert_eq!(r.proposed((0, 0)), ((2, 1), (1, 1)), "never below one unit");
+    }
+
+    proptest::proptest! {
+        /// Seam 3 / ROADMAP: the mouse paths never produce an overlapping or
+        /// out-of-grid page — whatever the press/drag units, the op either
+        /// yields a valid page or is refused.
+        #[test]
+        fn drag_ops_never_break_the_grid(
+            px in 0u8..12, py in 0u8..6, cx in 0u8..14, cy in 0u8..8, resize in proptest::bool::ANY,
+        ) {
+            use gridwatch_ui::layout::{GridSpec, move_by, resize_by};
+            let spec = GridSpec::default();
+            let mut page = page(2);
+            page.place[0].size = (4, 2);
+            page.place[1].at = (6, 0);
+            page.place[1].size = (3, 3);
+            let d = Drag { index: 0, press: (px, py), origin_at: (0, 0), origin_size: (4, 2), resize, last: (px, py) };
+            let (at, size) = d.proposed((cx, cy));
+            let r = if resize {
+                resize_by(&spec, &page, 0, (i16::from(size.0) - 4) as i8, (i16::from(size.1) - 2) as i8)
+            } else {
+                move_by(&spec, &page, 0, i16::from(at.0) as i8, i16::from(at.1) as i8)
+            };
+            if let Ok(next) = r {
+                for (i, a) in next.place.iter().enumerate() {
+                    proptest::prop_assert!(a.in_bounds(spec.columns, spec.rows));
+                    for (j, b) in next.place.iter().enumerate() {
+                        proptest::prop_assert!(i == j || !a.overlaps(b));
+                    }
+                }
+            }
+        }
     }
 }

@@ -108,7 +108,14 @@ pub fn verify(text: &str, config_text: &str, pages: &[Page]) -> Result<(), Strin
 /// file, and the watcher sees one mtime change.
 pub fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     let dir = path.parent().ok_or("layout path has no parent")?;
-    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    std::fs::create_dir_all(dir).map_err(|e| {
+        format!(
+            "{}: {e}",
+            dir.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| dir.display().to_string())
+        )
+    })?;
     let tmp = dir.join(format!(
         ".{}.tmp-{}",
         path.file_name()
@@ -116,10 +123,18 @@ pub fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
             .unwrap_or_else(|| "layout.toml".into()),
         std::process::id()
     ));
-    std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "layout.toml".into());
+    // Errors name the file, not the temp path (a toast has one row).
+    if let Err(e) = std::fs::write(&tmp, text) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("{name}: {e}"));
+    }
     if let Err(e) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
-        return Err(format!("{}: {e}", path.display()));
+        return Err(format!("{name}: {e}"));
     }
     Ok(())
 }
