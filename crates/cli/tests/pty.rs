@@ -531,12 +531,12 @@ fn editing_the_config_files_reloads_within_two_seconds() {
     let modern = gridwatch_app::config::DEFAULT_CONFIG
         .replace("theme = \"retrowave\"", "theme = \"modern\"");
     std::fs::write(&cfg, &modern).unwrap();
-    let seen = s.wait_for(Duration::from_secs(3), |t| {
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
         t.contains("config.toml reloaded")
     });
     assert!(
         seen.is_some(),
-        "no reload toast in 3 s; screen: {:?}",
+        "no reload toast in 2 s; screen: {:?}",
         s.screen()
     );
     let seen = s.wait_for(Duration::from_secs(2), |t| {
@@ -549,7 +549,7 @@ fn editing_the_config_files_reloads_within_two_seconds() {
     );
     // A broken edit: kept, and the toast says where.
     std::fs::write(&cfg, "schema = 1\ntheme = \"modern\"\nfps = \"thirty\"\n").unwrap();
-    let seen = s.wait_for(Duration::from_secs(3), |t| {
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
         t.contains("kept the old config")
     });
     assert!(seen.is_some(), "no error toast; screen: {:?}", s.screen());
@@ -565,7 +565,7 @@ fn editing_the_config_files_reloads_within_two_seconds() {
         gridwatch_app::config::DEFAULT_LAYOUT,
     )
     .unwrap();
-    let seen = s.wait_for(Duration::from_secs(3), |t| {
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
         t.contains("layout.toml reloaded")
     });
     assert!(seen.is_some(), "no layout toast; screen: {:?}", s.screen());
@@ -608,4 +608,26 @@ fn doctor_prints_every_capability_with_a_fix() {
     assert!(text.contains("✗ TrueColor"), "{text}");
     assert!(text.contains("fix: use a truecolor terminal"), "{text}");
     assert!(text.contains("live probes skipped (--offline)"), "{text}");
+}
+
+/// C.14 (arc 3b review) — `config check --theme` fails loudly on a theme that
+/// does not load (exit 1, the reason on stderr), as `run` would.
+#[test]
+fn config_check_fails_on_a_theme_that_does_not_load() {
+    let sandbox = Sandbox::new("check");
+    let mut cmd = Command::new(bin());
+    cmd.args(["config", "check", "--theme", "nonexistent"]);
+    sandbox.env(&mut cmd, "check");
+    let out = cmd.output().expect("run config check");
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("no built-in theme 'nonexistent'"), "{err}");
+    let mut cmd = Command::new(bin());
+    cmd.args(["config", "check", "--theme", "phosphor-green"]);
+    sandbox.env(&mut cmd, "check");
+    let out = cmd.output().expect("run config check");
+    assert!(out.status.success(), "{out:?}");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("contrast (WCAG 2.1):"), "{text}");
+    assert!(text.contains("text on panel: 15.93:1  ok"), "{text}");
 }

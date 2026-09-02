@@ -83,8 +83,24 @@ pub struct Shell {
     /// The theme `config.toml` named at the last load: a reload swaps the
     /// theme only when *that* changes, so an fps edit never undoes `t`.
     config_theme: String,
-    /// Visible cadence per source (from `SourceInfo`): the staleness rule.
-    cadences: BTreeMap<&'static str, Duration>,
+    /// Visible and focused cadence per source (from `SourceInfo`): the
+    /// staleness rule's default and its floor (D53).
+    cadences: BTreeMap<&'static str, (Duration, Duration)>,
+    /// `[sources.<id>]` as configured: a `refresh_ms`/`interval_ms` there is
+    /// the cadence the source actually runs at (review: the registry's
+    /// default badged a slower source STALE forever).
+    source_options: toml::Table,
+    /// `mouse` and `color` as configured — a reload cannot apply them.
+    restart_only: (bool, String),
+    /// Set on unpause and on focus regained: a source that has not sampled
+    /// since then is parked, not stale (D53).
+    resumed_at: Option<Ts>,
+    /// Under `--replay`, when the journal ended: the virtual clock stops
+    /// there, so staleness counts real time from that instant (review).
+    journal_ended: Option<Instant>,
+    /// The watcher's theme-file sender (§9): the reload target moves with
+    /// `t` and with a config edit, and the watched files follow it.
+    pub watch_theme_files: Option<std::sync::mpsc::Sender<Vec<crate::watch::Watched>>>,
     grid: gridwatch_ui::layout::GridSpec,
     pages: Vec<Page>,
     page: usize,
@@ -145,7 +161,10 @@ impl Shell {
         let mut cadences = BTreeMap::new();
         for def in registry.sources() {
             store.ensure_source(def.info.id);
-            cadences.insert(def.info.id.0, def.info.cadence.visible);
+            cadences.insert(
+                def.info.id.0,
+                (def.info.cadence.visible, def.info.cadence.focused),
+            );
         }
         let instances = build_instances(&registry, loaded, &caps, None);
         let view_warnings = view_warnings(loaded, &instances);
@@ -158,6 +177,11 @@ impl Shell {
             theme_locked: false,
             config_theme: loaded.config.theme.clone(),
             cadences,
+            source_options: loaded.config.sources.clone(),
+            restart_only: (loaded.config.mouse, loaded.config.color.clone()),
+            resumed_at: None,
+            journal_ended: None,
+            watch_theme_files: None,
             grid: loaded.grid,
             pages: loaded.pages.clone(),
             page: 0,
@@ -206,6 +230,15 @@ impl Shell {
 
     pub fn set_theme_ref(&mut self, r: impl Into<String>) {
         self.theme_ref = r.into();
+        self.theme_ref_moved();
+    }
+
+    /// The reload target changed: the watcher follows it (a `.toml` theme
+    /// and its sibling; nothing for a built-in).
+    fn theme_ref_moved(&mut self) {
+        if let Some(tx) = &self.watch_theme_files {
+            let _ = tx.send(crate::watch::theme_files(&self.theme_ref));
+        }
     }
 
     pub fn theme(&self) -> &Theme {
@@ -216,6 +249,7 @@ impl Shell {
     /// theme name, and cleared anyway so a same-named edited file redraws.
     pub fn swap_theme(&mut self, theme: Theme) {
         for w in theme.warnings.clone() {
+            tracing::warn!("theme {}: {w}", theme.name);
             self.toast(Severity::Warn, w);
         }
         self.theme = theme;
@@ -249,7 +283,7 @@ impl Shell {
         self.view_warnings = view_warnings(loaded, &self.instances);
         self.grid = loaded.grid;
         self.pages = loaded.pages.clone();
-        self.fps = loaded.config.fps.clamp(1, 60);
+        self.fps = loaded.config.fps; // as at start; `set_fps` is the CLI's clamp
         self.unfocused_fps = loaded.config.perf.unfocused_fps;
         if self.page >= self.pages.len() {
             self.page = 0;
@@ -309,10 +343,28 @@ impl Shell {
                 {
                     self.toast(Severity::Warn, w.clone());
                 }
+                // What a reload cannot apply says so, instead of a toast that
+                // claims success over a no-op (review).
+                if loaded.config.sources != self.source_options {
+                    self.toast(
+                        Severity::Warn,
+                        "[sources.*] changed — sources are configured at start; restart to apply",
+                    );
+                    self.source_options = loaded.config.sources.clone();
+                }
+                let restart_only = (loaded.config.mouse, loaded.config.color.clone());
+                if restart_only != self.restart_only {
+                    self.toast(
+                        Severity::Warn,
+                        "`mouse` / `color` changed — restart to apply",
+                    );
+                    self.restart_only = restart_only;
+                }
                 let theme_changed = loaded.config.theme != self.config_theme;
                 self.config_theme = loaded.config.theme.clone();
                 if !self.theme_locked && theme_changed {
                     self.theme_ref = loaded.config.theme.clone();
+                    self.theme_ref_moved();
                     self.reload_theme();
                 }
             }
@@ -332,7 +384,10 @@ impl Shell {
                 self.swap_theme(t);
                 self.toast(Severity::Info, format!("theme reloaded: {name}"));
             }
-            Err(e) => self.toast(Severity::Warn, format!("kept the old theme — {e}")),
+            Err(e) => {
+                tracing::warn!("theme reload: {e}");
+                self.toast(Severity::Warn, format!("kept the old theme — {e}"));
+            }
         }
     }
 
@@ -342,7 +397,22 @@ impl Shell {
         match kind {
             ReloadKind::Theme => self.reload_theme(),
             ReloadKind::Config | ReloadKind::Layout => match crate::config::read_texts() {
-                Ok((c, l)) => self.reload_from_texts(kind, &c, &l),
+                Ok((c, l)) => {
+                    self.reload_from_texts(kind, &c, &l);
+                    // A file that is gone reloads as the embedded default —
+                    // say that, not "reloaded" (review).
+                    let paths = crate::config::watched_paths();
+                    let (file, idx) = match kind {
+                        ReloadKind::Layout => ("layout.toml", 1),
+                        _ => ("config.toml", 0),
+                    };
+                    if paths.get(idx).is_some_and(|p| !p.exists()) {
+                        self.toast(
+                            Severity::Warn,
+                            format!("{file} removed — the embedded default is in effect"),
+                        );
+                    }
+                }
                 Err(e) => self.toast(Severity::Warn, format!("kept the old config — {e}")),
             },
         }
@@ -415,6 +485,13 @@ impl Shell {
         if let ControlMsg::Reload(r) = &c {
             self.handle_reload(r.kind);
             return;
+        }
+        if let ControlMsg::Status(id, st) = &c
+            && *id == gridwatch_store::JOURNAL
+            && st.state == gridwatch_store::SourceState::Stopped
+            && self.journal_ended.is_none()
+        {
+            self.journal_ended = Some(Instant::now());
         }
         if let ControlMsg::Status(id, st) = &c
             && st.state == gridwatch_store::SourceState::Unavailable
@@ -840,7 +917,15 @@ impl Shell {
             } else {
                 self.theme.severity(t.severity)
             };
-            let text = format!(" {glyph} {} ", t.text);
+            let mut text = format!(" {glyph} {} ", t.text);
+            let max = usize::from(body.width.saturating_sub(2));
+            let n = text.chars().count();
+            if n > max && max > 4 {
+                // Keep the tail: `file:line:col` leads, the reason ends it,
+                // and the reason is what the user needs (review).
+                let keep: String = text.chars().skip(n - (max - 2)).collect();
+                text = format!(" …{keep}");
+            }
             let w = text.chars().count() as u16;
             let y = body.y + body.height.saturating_sub(2 + i as u16);
             let x = body.x + body.width.saturating_sub(w + 1);
@@ -1160,7 +1245,21 @@ impl Shell {
         // in the cache (the tile itself is fine; its age is not).
         if let Some(age) = self.stale_age(m) {
             overlay::dim(inner, &self.theme, buf);
-            overlay::stale_badge(age.as_secs(), inner, &self.theme, buf);
+            // On the frame's top border when there is one (the shell owns
+            // the chrome), so the tile's own top-right value survives
+            // (review: it clobbered `16.7G/91.0G`); on the inner row when
+            // the tile is borderless.
+            let row = if chrome == Chrome::Themed && cell.outer.height > 0 && cell.outer.width > 2 {
+                Rect {
+                    x: cell.outer.x + 1,
+                    y: cell.outer.y,
+                    width: cell.outer.width - 2,
+                    height: 1,
+                }
+            } else {
+                inner
+            };
+            overlay::stale_badge(age.as_secs(), row, &self.theme, buf);
         }
         if fallback {
             // After the blit so it survives (§4.6): the pinned view does not fit.
@@ -1179,21 +1278,57 @@ impl Shell {
         if self.paused {
             return None;
         }
-        let now = self.clock.now();
+        let mut now = self.clock.now();
+        if let Some(ended) = self.journal_ended {
+            // The journal drove the virtual clock and has stopped: the
+            // dashboard is frozen, and its age is real time since then.
+            now = Ts(now.0 + ended.elapsed().as_nanos() as u64);
+        }
         let mut worst: Option<Duration> = None;
         for src in m.sources {
             let Some(last) = self.store.last_sample(*src) else {
                 continue;
             };
-            let Some(cadence) = self.cadences.get(src.0) else {
+            // A source that is not `Ok` says why on the sources tile and in
+            // the tile itself (3a); a badge over a `Degraded` backoff would
+            // only repeat it. A source parked by a pause or a lost focus
+            // has not had its turn yet.
+            if self.store.status(*src).state != gridwatch_store::SourceState::Ok
+                || self.resumed_at.is_some_and(|r| last < r)
+            {
+                continue;
+            }
+            let Some(cadence) = self.cadence_of(src.0) else {
                 continue;
             };
             let age = now.since(last);
-            if age > *cadence * STALE_CADENCES && worst.is_none_or(|w| age > w) {
+            if age > cadence * STALE_CADENCES && worst.is_none_or(|w| age > w) {
                 worst = Some(age);
             }
         }
         worst
+    }
+
+    /// The cadence a source runs at (D53): `[sources.<id>] refresh_ms` /
+    /// `interval_ms` when configured (never below the source's focused
+    /// cadence, its fastest), the pins source's live `pins.info.interval_ms`
+    /// (`+`/`-` change it), else the registry's visible cadence.
+    fn cadence_of(&self, id: &str) -> Option<Duration> {
+        let (visible, focused) = *self.cadences.get(id)?;
+        let configured = self
+            .source_options
+            .get(id)
+            .and_then(|t| t.get("refresh_ms").or_else(|| t.get("interval_ms")))
+            .and_then(|v| v.as_integer())
+            .map(|ms| Duration::from_millis(ms.max(0) as u64).max(focused));
+        let live = (id == gridwatch_store::keys::pins::SOURCE.0)
+            .then(|| {
+                self.store
+                    .record(&gridwatch_store::keys::pins::INFO)
+                    .map(|(_, i)| Duration::from_millis(u64::from(i.interval_ms)))
+            })
+            .flatten();
+        Some(live.or(configured).unwrap_or(visible))
     }
 
     fn disable_instance(&mut self, key: &str) {
@@ -1208,6 +1343,7 @@ impl Shell {
         match ev {
             InputEvent::FocusGained => {
                 self.terminal_focused = true;
+                self.resumed_at = Some(self.clock.now());
                 true
             }
             InputEvent::FocusLost => {
@@ -1360,7 +1496,11 @@ impl Shell {
                 match load_builtin(next, self.theme.mode) {
                     Ok(t) => {
                         self.theme_ref = next.to_string();
+                        self.theme_ref_moved();
                         self.swap_theme(t);
+                        // Dense mode hides the tab bar, the one place the
+                        // name is shown (review): say it.
+                        self.toast(Severity::Info, format!("theme: {next}"));
                     }
                     Err(e) => self.toast(Severity::Warn, format!("theme: {e}")),
                 }
@@ -1372,6 +1512,9 @@ impl Shell {
             }
             KeyCode::Char(' ') => {
                 self.paused = !self.paused;
+                if !self.paused {
+                    self.resumed_at = Some(self.clock.now());
+                }
                 self.update_demand();
                 self.toast(
                     Severity::Info,
@@ -1652,11 +1795,22 @@ fn view_warnings(loaded: &Loaded, instances: &BTreeMap<String, Instance>) -> Vec
     let mut out = Vec::new();
     for page in &loaded.pages {
         for p in &page.place {
-            let Some(view) = &p.view else { continue };
             let key = match &p.target {
                 PlaceTarget::Id(id) => id.clone(),
                 PlaceTarget::Kind(k) => format!("kind:{k}"),
             };
+            // An id no [[components]] entry defines draws as a chip (§6);
+            // a reload that introduces one should say so, like `view` does.
+            if let PlaceTarget::Id(id) = &p.target
+                && !instances.contains_key(&key)
+            {
+                out.push(format!(
+                    "page '{}': id \"{id}\" is not in config.toml — drawn as a chip",
+                    page.name
+                ));
+                continue;
+            }
+            let Some(view) = &p.view else { continue };
             let Some(component) = instances.get(&key).and_then(|i| i.component.as_ref()) else {
                 continue;
             };

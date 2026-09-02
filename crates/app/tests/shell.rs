@@ -968,3 +968,116 @@ fn a_missing_required_capability_chips_reason_and_fix() {
     let text = page_text(&mut ok, 250, 70);
     assert!(!text.contains("needs procfs"), "{text}");
 }
+
+/// Review (arc 3b): the staleness threshold follows the cadence a source is
+/// configured to run at, never below its focused cadence; the badge sits on
+/// the frame's top border, so the tile's own top-right value survives; a
+/// source that is not `Ok` is not badged (its status says why already).
+#[test]
+fn stale_threshold_follows_the_configured_cadence() {
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    gridwatch_sources::builtin_sources(&mut reg);
+    let cfg = format!(
+        "{}\n[sources.gpu]\nrefresh_ms = 4000\n",
+        config::DEFAULT_CONFIG
+    );
+    let loaded = config::load_texts(&cfg, config::DEFAULT_LAYOUT).unwrap();
+    let theme = load_builtin("mono", ColorMode::Mono).unwrap();
+    let mut sh = Shell::new(
+        reg,
+        &loaded,
+        theme,
+        probe::probe(),
+        0,
+        Clock::new_virtual(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        false,
+    );
+    gridwatch_app::feed_synth(&mut sh, 42, 40);
+    // 4 s past the last sample: gpu (4 s → 12 s threshold) is fresh, pins
+    // (0.5 s → 1.5 s) is stale, cpu (1.5 s → 4.5 s) not yet.
+    sh.set_clock(Ts(64_000_000_000));
+    let text = page_text(&mut sh, 250, 70);
+    assert_eq!(text.matches("stale 4s").count(), 1, "{text}");
+    // The badge is on the border row (row 1 of the pins tile's frame), and
+    // no data row lost its right end: the pins tile's top-right value.
+    let frame = shot_frame(&mut sh, 250, 70);
+    let row_of_badge = (0..70u16)
+        .find(|y| {
+            let line: String = (0..250u16)
+                .map(|x| frame.cell((x, *y)).unwrap().symbol().to_string())
+                .collect();
+            line.contains("STALE 4s")
+        })
+        .expect("badge row");
+    let line: String = (0..250u16)
+        .map(|x| frame.cell((x, row_of_badge)).unwrap().symbol().to_string())
+        .collect();
+    assert!(
+        line.contains("━") || line.contains("─"),
+        "not a border row: {line}"
+    );
+    // A source that is Degraded is not badged, whatever its age.
+    sh.apply_control(ControlMsg::Status(
+        SourceId("pins"),
+        SourceStatus {
+            state: SourceState::Degraded,
+            reason: Some("waiting for telemetry (GPU idle?)".into()),
+            hint: None,
+            since: Ts(1),
+            last_sample: None,
+            dropped: 0,
+            restarts: 0,
+        },
+    ));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(!text.contains("stale"), "{text}");
+}
+
+/// Review (arc 3b): under `--replay` the journal drives the virtual clock and
+/// stops with it, so a finished replay counted no age at all; the badge now
+/// counts real time from the journal's `Stopped`.
+#[test]
+fn a_finished_replay_goes_stale_in_real_time() {
+    let mut sh = shell_with_sources(probe::probe());
+    sh.set_clock(Ts(60_000_000_000));
+    assert!(!page_text(&mut sh, 250, 70).contains("stale"));
+    sh.apply_control(ControlMsg::Status(
+        gridwatch_store::JOURNAL,
+        SourceStatus {
+            state: SourceState::Stopped,
+            reason: Some("end of journal".into()),
+            hint: None,
+            since: Ts(60_000_000_000),
+            last_sample: None,
+            dropped: 0,
+            restarts: 0,
+        },
+    ));
+    std::thread::sleep(std::time::Duration::from_millis(1700));
+    let text = page_text(&mut sh, 250, 70);
+    // gpu and pins (1.5 s thresholds) are stale after 1.7 s of real time.
+    assert_eq!(text.matches("stale 1s").count(), 2, "{text}");
+}
+
+/// Review (arc 3b): resuming from a pause does not flash STALE while the
+/// parked sources wait for their next grid tick.
+#[test]
+fn resuming_from_pause_does_not_flash_stale() {
+    let mut sh = shell_with_sources(probe::probe());
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char(' '))));
+    sh.set_clock(Ts(80_000_000_000));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char(' '))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(!text.contains("stale"), "{text}");
+    // A sample stamped after the resume restores the rule for its source.
+    let mut gpu = gridwatch_store::demo::GpuSynth::new(42);
+    sh.store.apply(&Msg::Batch(
+        gpu.tick_at(Ts(85_000_000_000), gridwatch_store::Detail::Meters),
+    ));
+    sh.set_clock(Ts(90_000_000_000));
+    let text = page_text(&mut sh, 250, 70);
+    assert_eq!(text.matches("stale 5s").count(), 1, "{text}");
+}

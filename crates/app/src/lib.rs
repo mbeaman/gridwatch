@@ -52,18 +52,30 @@ pub fn load_theme_by_name(name: &str, mode: gridwatch_ui::ColorMode) -> Result<T
         return load_builtin(name, mode).map_err(|e| e.to_string());
     }
     let path = Path::new(name);
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{name}: {e}"))?;
-    let file = load_theme_file(&text).map_err(|e| format!("{name}: {e}"))?;
+    // Errors name the file, not the path: a toast has one row (review).
+    let short = short_name(path);
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{short}: {e}"))?;
+    let file = load_theme_file(&text).map_err(|e| format!("{short}:{e}"))?;
     let parent = match &file.meta.inherits {
         None => None,
         Some(p) => Some(resolve_parent(path, p)?),
     };
-    build_theme(&file, parent.as_ref(), mode).map_err(|e| format!("{name}: {e}"))
+    build_theme(&file, parent.as_ref(), mode).map_err(|e| format!("{short}: {e}"))
 }
 
+fn short_name(p: &Path) -> String {
+    p.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| p.display().to_string())
+}
+
+/// The parent a theme file names: a built-in (flattened, so any built-in can
+/// be inherited) or a sibling `<name>[.toml]`. A sibling that inherits a
+/// built-in is flattened the same way; a sibling that inherits a *file* is a
+/// chain (D52: one level of files).
 fn resolve_parent(child: &Path, parent: &str) -> Result<gridwatch_ui::theme::ThemeFile, String> {
-    if let Some(text) = gridwatch_ui::theme::builtin(parent) {
-        return load_theme_file(text).map_err(|e| format!("built-in {parent}: {e}"));
+    if gridwatch_ui::theme::builtin(parent).is_some() {
+        return gridwatch_ui::theme::builtin_file(parent).map_err(|e| e.to_string());
     }
     let dir = child.parent().unwrap_or_else(|| Path::new("."));
     let candidate = if parent.ends_with(".toml") {
@@ -71,14 +83,22 @@ fn resolve_parent(child: &Path, parent: &str) -> Result<gridwatch_ui::theme::The
     } else {
         dir.join(format!("{parent}.toml"))
     };
+    let short = short_name(&candidate);
     let text = std::fs::read_to_string(&candidate).map_err(|e| {
         format!(
-            "{}: inherits '{parent}' — not a built-in and {} cannot be read: {e}",
-            child.display(),
-            candidate.display()
+            "{}: inherits '{parent}' — not a built-in, and {short} next to it cannot be read: {e}",
+            short_name(child),
         )
     })?;
-    load_theme_file(&text).map_err(|e| format!("{}: {e}", candidate.display()))
+    let mut file = load_theme_file(&text).map_err(|e| format!("{short}:{e}"))?;
+    if let Some(grand) = file.meta.inherits.clone()
+        && gridwatch_ui::theme::builtin(&grand).is_some()
+    {
+        let g = gridwatch_ui::theme::builtin_file(&grand).map_err(|e| e.to_string())?;
+        file = gridwatch_ui::theme::merge(&file, &g);
+        file.meta.inherits = None;
+    }
+    Ok(file)
 }
 
 /// Full assembly for the live terminal (§5): config → theme → sources →
@@ -225,7 +245,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     // theme file (when the theme is a file) once per second; the shell
     // re-parses on `ControlMsg::Reload`. Not under `--replay`, whose frames
     // must be reproducible from the journal alone.
-    let _watch = (opts.replay.is_none()).then(|| {
+    let watch = (opts.replay.is_none()).then(|| {
         let mut files: Vec<watch::Watched> = config::watched_paths()
             .into_iter()
             .enumerate()
@@ -241,6 +261,9 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
         files.extend(watch::theme_files(&theme_name));
         watch::spawn(files, ch.control.clone())
     });
+    if let Some(w) = &watch {
+        shell.watch_theme_files = Some(w.theme_files_sender());
+    }
     shell.bytes_counter = Some(bytes);
     if let Some(path) = &opts.record {
         let size = term.size().map(|s| (s.width, s.height)).unwrap_or((0, 0));
@@ -608,18 +631,17 @@ pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
     ];
     lines.extend(loaded.warnings.iter().map(|w| format!("warning: {w}")));
     let name = theme.unwrap_or(&loaded.config.theme);
-    match load_theme_by_name(name, gridwatch_ui::ColorMode::TrueColor) {
-        Ok(t) => {
-            lines.push(format!("theme: {name} ({}, {:?})", t.name, t.class));
-            lines.extend(t.warnings.iter().map(|w| format!("warning: {w}")));
-            lines.push("contrast (WCAG 2.1):".into());
-            lines.extend(t.contrast_report().iter().map(|r| format!("  {r}")));
-            let kinds: Vec<&str> = t.overridden_kinds().collect();
-            if !kinds.is_empty() {
-                lines.push(format!("component overrides: {}", kinds.join(", ")));
-            }
-        }
-        Err(e) => lines.push(format!("theme: {name} — error: {e}")),
+    // A theme that does not load is a failed check (exit 1), as `run` would
+    // fail on it — a check that prints "error" and exits 0 is no check.
+    let t = load_theme_by_name(name, gridwatch_ui::ColorMode::TrueColor)
+        .map_err(|e| format!("theme {name}: {e}"))?;
+    lines.push(format!("theme: {name} ({}, {:?})", t.name, t.class));
+    lines.extend(t.warnings.iter().map(|w| format!("warning: {w}")));
+    lines.push("contrast (WCAG 2.1):".into());
+    lines.extend(t.contrast_report().iter().map(|r| format!("  {r}")));
+    let kinds: Vec<&str> = t.overridden_kinds().collect();
+    if !kinds.is_empty() {
+        lines.push(format!("component overrides: {}", kinds.join(", ")));
     }
     Ok(lines)
 }

@@ -7,12 +7,11 @@
 //! skips one change whose bytes hash to it (the slot is spec'd in §9 and
 //! unused until arc 4).
 
-use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, SystemTime};
 
 use gridwatch_store::{ControlMsg, Reload, ReloadKind};
@@ -46,9 +45,17 @@ pub fn content_hash(bytes: &[u8]) -> u64 {
 /// The watcher's poll period (§9: once per second — P5 counts it as 1 wake/s).
 pub const PERIOD: Duration = Duration::from_secs(1);
 
+/// The ignore slots, one per `ReloadKind`, as atomics (§11: no lock is ever
+/// taken on the render thread, which is where edit mode will register a
+/// save). `0` is "empty"; a hash that happens to be 0 is nudged to 1.
+type IgnoreSlots = Arc<[AtomicU64; 3]>;
+
 pub struct WatchHandle {
     stop: Arc<AtomicBool>,
-    ignore: Arc<Mutex<BTreeMap<u8, u64>>>,
+    ignore: IgnoreSlots,
+    /// Replaces the watched theme files (`kind == Theme`) — the theme the
+    /// shell reloads moves with `t` and with a `config.toml` edit.
+    theme_files: Sender<Vec<Watched>>,
     join: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -64,10 +71,13 @@ impl WatchHandle {
     /// Register a save's content hash: the next change to a file of `kind`
     /// whose bytes hash to it is not reported (edit mode's own write).
     pub fn ignore_next(&self, kind: ReloadKind, hash: u64) {
-        self.ignore
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(kind_key(kind), hash);
+        self.ignore[usize::from(kind_key(kind))].store(hash.max(1), Ordering::Release);
+    }
+
+    /// A sender the shell keeps: send the new theme file list whenever the
+    /// reload target changes (`watch::theme_files(theme_ref)`).
+    pub fn theme_files_sender(&self) -> Sender<Vec<Watched>> {
+        self.theme_files.clone()
     }
 
     pub fn stop(mut self) {
@@ -111,7 +121,8 @@ pub fn judge(
 /// later changes report.
 pub fn spawn(files: Vec<Watched>, control: Sender<ControlMsg>) -> WatchHandle {
     let stop = Arc::new(AtomicBool::new(false));
-    let ignore: Arc<Mutex<BTreeMap<u8, u64>>> = Arc::new(Mutex::new(BTreeMap::new()));
+    let ignore: IgnoreSlots = Arc::new([AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)]);
+    let (theme_tx, theme_rx): (Sender<Vec<Watched>>, Receiver<Vec<Watched>>) = channel();
     let stop_t = stop.clone();
     let ignore_t = ignore.clone();
     let join = std::thread::Builder::new()
@@ -131,23 +142,28 @@ pub fn spawn(files: Vec<Watched>, control: Sender<ControlMsg>) -> WatchHandle {
                     }
                     std::thread::sleep(PERIOD / 4);
                 }
+                // The theme moved (`t`, a config edit): swap the Theme-kind
+                // entries, stamped now so the new file's state is the baseline.
+                while let Ok(new) = theme_rx.try_recv() {
+                    stamps.retain(|(w, _)| w.kind != ReloadKind::Theme);
+                    stamps.extend(new.into_iter().map(|w| {
+                        let s = stamp(&w.path);
+                        (w, s)
+                    }));
+                }
                 for (w, prev) in stamps.iter_mut() {
                     let now = stamp(&w.path);
-                    let key = kind_key(w.kind);
-                    let pending = ignore_t
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .get(&key)
-                        .copied();
+                    let slot = &ignore_t[usize::from(kind_key(w.kind))];
+                    let pending = match slot.load(Ordering::Acquire) {
+                        0 => None,
+                        h => Some(h),
+                    };
                     let (report, consumed) = judge(*prev, now, pending, || {
-                        std::fs::read(&w.path).ok().map(|b| content_hash(&b))
+                        std::fs::read(&w.path).ok().map(|b| content_hash(&b).max(1))
                     });
                     *prev = now;
                     if consumed {
-                        ignore_t
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .remove(&key);
+                        slot.store(0, Ordering::Release);
                     }
                     if report
                         && control
@@ -163,6 +179,7 @@ pub fn spawn(files: Vec<Watched>, control: Sender<ControlMsg>) -> WatchHandle {
     WatchHandle {
         stop,
         ignore,
+        theme_files: theme_tx,
         join: Some(join),
     }
 }

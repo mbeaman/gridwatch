@@ -193,19 +193,14 @@ pub fn doctor_lines(caps: &CapSet, live: &[LiveProbe]) -> Vec<String> {
     for c in gridwatch_store::ALL_CAPABILITIES {
         let (ok_why, missing_why, fix) = explain(*c);
         let probed = live.iter().find(|(cap, _, _)| cap == c);
-        let (ok, reason) = match probed {
-            Some((_, ok, what)) => (*ok, what.as_str()),
-            None => (
-                caps.has(*c),
-                if caps.has(*c) { ok_why } else { missing_why },
-            ),
+        // A live row says what it saw *and* the fix for that (the source
+        // knows why `detect_bus` failed); the static fix is for static rows.
+        let (ok, tail) = match probed {
+            Some((_, ok, what)) => (*ok, what.clone()),
+            None if caps.has(*c) => (true, ok_why.to_string()),
+            None => (false, format!("{missing_why} · fix: {fix}")),
         };
         let mark = if ok { "✓" } else { "✗" };
-        let tail = if ok {
-            reason.to_string()
-        } else {
-            format!("{reason} · fix: {fix}")
-        };
         out.push(format!("{mark} {:<16}{tail}", format!("{c:?}")));
     }
     out
@@ -248,5 +243,16 @@ mod tests {
         let row = lines.iter().find(|l| l.contains("AstralExporter")).unwrap();
         assert!(row.starts_with("✓"), "{row}");
         assert!(row.contains("answers at"), "{row}");
+        // A failed live probe keeps its own words; the static fix is not
+        // appended on top (the doctor said "GPU idle" and "usermod" at once).
+        let live = vec![(
+            Capability::I2cNvidia,
+            false,
+            "waiting for telemetry (GPU idle?) — retried every 10 s".to_string(),
+        )];
+        let lines = doctor_lines(&CapSet::empty(), &live);
+        let row = lines.iter().find(|l| l.contains("I2cNvidia")).unwrap();
+        assert!(row.starts_with("✗"), "{row}");
+        assert!(!row.contains("usermod"), "{row}");
     }
 }

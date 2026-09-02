@@ -1,7 +1,7 @@
 # gridwatch default config.toml (§9). Copied to ~/.config/gridwatch/config.toml
 # by `gridwatch config default`.
 schema = 1
-theme = "retrowave"           # modern | retrowave | mono | <file>
+theme = "retrowave"           # retrowave | modern | mono | terminal | phosphor-green | <file.toml>
 fps = 30
 fps_max = 60
 color = "auto"                # auto | always | never | 16 | 256 | truecolor
