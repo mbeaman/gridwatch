@@ -521,6 +521,27 @@ impl Theme {
         self.colors[r.index()]
     }
 
+    /// True when this theme has no colour to give: the render mode is
+    /// `Mono`, or every accent and severity resolves to the same colour as
+    /// the plain text (the `mono` theme paints everything `default`). A
+    /// picture then has to be drawn as luminance, not as colour pairs.
+    pub fn monochrome(&self) -> bool {
+        if self.mode == ColorMode::Mono {
+            return true;
+        }
+        let text = self.color(Role::Text);
+        [
+            Role::AccentPrimary,
+            Role::AccentSecondary,
+            Role::AccentTertiary,
+            Role::Ok,
+            Role::Warn,
+            Role::Crit,
+        ]
+        .iter()
+        .all(|r| self.color(*r) == text)
+    }
+
     pub fn style(&self, r: Role) -> Style {
         Style::new().fg(self.color(r))
     }

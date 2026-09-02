@@ -5,9 +5,11 @@
 //! `View::Custom { paint, .. }` and never names a colour itself.
 //!
 //! Colour modes: TrueColor uses the pixels as they are; 256- and 16-colour
-//! terminals quantise through ratatui's indexed palette; a `mono` theme
-//! (one hue) draws luminance as the glyph tier's block shades so the cover
-//! still reads as an image.
+//! terminals quantise through the theme's own palettes; a theme with no
+//! colour to give — `--color never`, or a palette like `mono` whose accents
+//! and severities are all the text colour — draws luminance as the glyph
+//! tier's block shades, so a cover still reads as an image in a theme that
+//! promised no colour (review).
 
 use gridwatch_store::keys::media::Art;
 use ratatui_core::buffer::Buffer;
@@ -68,7 +70,7 @@ pub fn paint(art: &Art, area: Rect, theme: &Theme, buf: &mut Buffer) {
             let Some(cell) = buf.cell_mut((area.x + cx, area.y + cy)) else {
                 continue;
             };
-            if theme.mode == ColorMode::Mono {
+            if theme.monochrome() {
                 // One hue: luminance becomes a shade glyph.
                 let l = (luma(top) + luma(bottom)) / 2.0;
                 let i = ((l * shades.len() as f32).round() as usize).min(shades.len() - 1);
@@ -167,15 +169,26 @@ mod tests {
                 cell.fg
             );
         }
-        let th = load_builtin("mono", ColorMode::Mono).unwrap();
-        let mut buf = Buffer::empty(Rect::new(0, 0, 8, 4));
-        paint(&a, Rect::new(0, 0, 8, 4), &th, &mut buf);
-        let syms: Vec<&str> = (0..8).map(|x| buf.cell((x, 1)).unwrap().symbol()).collect();
+        // The `mono` theme has no colour to give even in a truecolor
+        // terminal, so the cover is shaded either way (review).
+        for mode in [ColorMode::Mono, ColorMode::TrueColor] {
+            let th = load_builtin("mono", mode).unwrap();
+            assert!(th.monochrome(), "{mode:?}");
+            let mut buf = Buffer::empty(Rect::new(0, 0, 8, 4));
+            paint(&a, Rect::new(0, 0, 8, 4), &th, &mut buf);
+            let syms: Vec<&str> = (0..8).map(|x| buf.cell((x, 1)).unwrap().symbol()).collect();
+            assert!(
+                syms.iter().any(|s| *s != syms[0]),
+                "luminance varies: {syms:?}"
+            );
+            assert!(!syms.contains(&"▀"), "a mono theme shades, not halfblocks");
+        }
         assert!(
-            syms.iter().any(|s| *s != syms[0]),
-            "luminance varies: {syms:?}"
+            !load_builtin("modern", ColorMode::TrueColor)
+                .unwrap()
+                .monochrome(),
+            "a colourful theme is not monochrome"
         );
-        assert!(!syms.contains(&"▀"), "mono draws shades, not halfblocks");
     }
 
     #[test]
