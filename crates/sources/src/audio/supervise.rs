@@ -170,6 +170,11 @@ mod tests {
         p.decide(Level::Hidden, true, t(6_000));
         assert_eq!(p.decide(Level::Hidden, true, t(15_000)), Action::Keep);
         assert_eq!(p.decide(Level::Hidden, true, t(16_000)), Action::Kill);
+        // The source maps `Paused` onto `Hidden` before asking (review):
+        // nothing is published and the child falls under the same timer.
+        let mut q = Policy::default();
+        assert_eq!(q.decide(Level::Hidden, true, t(0)), Action::Keep);
+        assert_eq!(q.decide(Level::Hidden, true, t(10_000)), Action::Kill);
     }
 
     #[test]

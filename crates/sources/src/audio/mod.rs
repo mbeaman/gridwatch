@@ -48,6 +48,12 @@ pub const FPS_MAX: u64 = 60;
 /// How long an unavailable source waits before re-probing for the binary
 /// and the socket.
 pub const REPROBE: Duration = Duration::from_secs(10);
+/// A picker's `enumerate = true` arms the 2 s `pw-dump` poll for this long;
+/// the picker re-arms it while open, a page switch lets it lapse.
+pub const ENUMERATE_FOR: Duration = Duration::from_secs(10);
+/// `audio.sink` follows a default-sink change under `auto`: `pw-dump`
+/// (≈ 10 ms) this often while visible and no picker is open.
+pub const SINK_RECHECK: Duration = Duration::from_secs(5);
 
 pub use gridwatch_store::keys::audio::SetSink;
 
@@ -83,6 +89,14 @@ impl Options {
         let float = |k: &str| {
             t.get(k)
                 .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
+                .filter(|f| {
+                    if f.is_finite() {
+                        true
+                    } else {
+                        tracing::warn!("[sources.audio] {k} is not a finite number; default kept");
+                        false
+                    }
+                })
         };
         if let Some(v) = t.get("sink") {
             o.target = match v {
@@ -201,19 +215,30 @@ struct Capture {
 impl Capture {
     fn spawn(args: &CaptureArgs, epoch: Instant) -> std::io::Result<Capture> {
         let mut child = capture::spawn(args)?;
-        let stdout = child.stdout.take().expect("piped stdout");
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::other("pw-record: no stdout pipe"));
+        };
         let stderr = child.stderr.take();
         let (mut prod, cons) =
             rtrb::RingBuffer::<f32>::new(capture::RING_FRAMES * capture::CHANNELS);
         let pulse = Pulse::new(epoch);
         let p2 = Arc::clone(&pulse);
-        let io = std::thread::Builder::new()
+        let io = match std::thread::Builder::new()
             .name("gw-audio-io".into())
             .spawn(move || {
                 if let Err(e) = capture::pump(stdout, &mut prod, &p2) {
                     tracing::warn!("pw-record stdout: {e}");
                 }
-            })?;
+            }) {
+            Ok(h) => h,
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e);
+            }
+        };
         let err = stderr.and_then(|e| {
             std::thread::Builder::new()
                 .name("gw-audio-err".into())
@@ -241,8 +266,13 @@ impl Capture {
     fn exited(&mut self) -> bool {
         !self.pulse.alive.load(Ordering::Acquire) || matches!(self.child.try_wait(), Ok(Some(_)))
     }
+}
 
-    fn kill(mut self) {
+/// Dropping the capture kills and reaps the child and joins its threads —
+/// on every path out of `run`, a panic included (review: an orphaned
+/// `pw-record` would keep the sink's monitor open forever).
+impl Drop for Capture {
+    fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
         if let Some(h) = self.io.take() {
@@ -335,9 +365,11 @@ struct Publisher {
     dsp: Dsp,
     chans: [Channel; 2],
     silence: Silence,
-    fps: u64,
     /// Samples drained since the last publish, per channel.
     drained: [Vec<f32>; 2],
+    /// The channel the next popped sample belongs to — carried across
+    /// drains (review: restarting at 0 swapped L/R after an odd pop).
+    ch: usize,
 }
 
 impl Publisher {
@@ -350,8 +382,8 @@ impl Publisher {
             dsp,
             chans: [Channel::new(keep), Channel::new(keep)],
             silence: Silence::default(),
-            fps: o.fps,
             drained: [Vec::new(), Vec::new()],
+            ch: 0,
         }
     }
 
@@ -366,15 +398,15 @@ impl Publisher {
         let keep = self.keep();
         self.drained[0].clear();
         self.drained[1].clear();
-        let mut ch = 0;
         let mut frames = 0;
         while let Ok(v) = ring.pop() {
+            let ch = self.ch;
             self.chans[ch].push(v, keep);
             self.drained[ch].push(v);
             if ch == 1 {
                 frames += 1;
             }
-            ch ^= 1;
+            self.ch ^= 1;
         }
         frames
     }
@@ -465,17 +497,33 @@ impl Source for AudioSource {
     }
 
     fn run(mut self: Box<Self>, cx: SourceCtx) {
-        status(&cx, SourceState::Starting, None, None);
         let epoch = Instant::now();
         let mut policy = Policy::default();
         let mut publisher = Publisher::new(&self.options);
         let mut capture: Option<Capture> = None;
-        let mut enumerate = false;
-        let mut last_enumerate: Option<Instant> = None;
+        // Enumeration for the picker: armed by `SetOption("enumerate", true)`,
+        // expiring on its own (a page switch drops the picker without a
+        // message) and turned off by a `SetSink`.
+        let mut enumerate_until: Option<Instant> = None;
+        let mut last_dump: Option<Instant> = None;
         let mut dump: Option<sink::Dump> = None;
-        let mut sink_published = false;
+        let mut published_sink: Option<AudioSink> = None;
+        let mut dropped_seen = 0u64;
         let mut available = false;
         let mut degraded_reason: Option<String> = None;
+        let mut ok_sent = false;
+        // Statuses go out on transitions only (a re-sent status re-stamps
+        // `since`, and a dead child would otherwise spam the channel).
+        let mut last_status: Option<(SourceState, String)> = None;
+        let mut set_status =
+            |cx: &SourceCtx, state: SourceState, reason: &str, hint: Option<&str>| {
+                let key = (state, reason.to_string());
+                if last_status.as_ref() != Some(&key) {
+                    last_status = Some(key);
+                    status(cx, state, Some(reason), hint);
+                }
+            };
+        set_status(&cx, SourceState::Starting, "starting", None);
         loop {
             if cx.stopped() {
                 break;
@@ -490,18 +538,23 @@ impl Source for AudioSource {
                         "fps" => {
                             if let Some(n) = v.as_integer() {
                                 self.options.fps = clamp_fps(n);
-                                publisher.fps = self.options.fps;
                             }
                         }
                         "enumerate" => {
-                            enumerate = v.as_bool().unwrap_or(false);
-                            if enumerate {
-                                last_enumerate = None;
-                            }
+                            enumerate_until = v
+                                .as_bool()
+                                .unwrap_or(false)
+                                .then(|| Instant::now() + ENUMERATE_FOR);
+                            last_dump = None;
                         }
                         "sink" => {
-                            if let Some(s) = v.as_str() {
-                                self.options.target = Target::parse(s);
+                            let target = match &v {
+                                toml::Value::Integer(n) => Some(Target::Serial((*n).max(0) as u32)),
+                                toml::Value::String(s) => Some(Target::parse(s)),
+                                _ => None,
+                            };
+                            if let Some(t) = target {
+                                self.options.target = t;
                                 restart = true;
                             }
                         }
@@ -512,6 +565,7 @@ impl Source for AudioSource {
                         match any.downcast::<SetSink>() {
                             Ok(s) => {
                                 self.options.target = Target::parse(&s.0);
+                                enumerate_until = None;
                                 restart = true;
                             }
                             Err(_) => tracing::debug!("[sources.audio] unknown Domain control"),
@@ -523,29 +577,33 @@ impl Source for AudioSource {
                 break;
             }
             if restart {
-                if let Some(c) = capture.take() {
-                    c.kill();
-                }
+                capture = None; // Drop kills and reaps the child.
                 policy.on_killed();
-                sink_published = false;
+                published_sink = None;
+                ok_sent = false;
             }
             let now = Instant::now();
             let level = cx.demand.level();
+            // Paused (`space`) publishes nothing, like Hidden; the child is
+            // kept under the same 10 s timer (§11: pause stops emission at
+            // the source).
+            let parked = matches!(level, Level::Hidden | Level::Paused);
+            let policy_level = if parked { Level::Hidden } else { level };
 
             // Availability: the binary and the socket, re-probed while absent.
             if !available {
                 if !capture::on_path("pw-record") {
-                    status(
+                    set_status(
                         &cx,
                         SourceState::Unavailable,
-                        Some("pw-record not found"),
+                        "pw-record not found",
                         Some("install pipewire-bin"),
                     );
                 } else if !capture::socket_present() {
-                    status(
+                    set_status(
                         &cx,
                         SourceState::Unavailable,
-                        Some("no PipeWire socket"),
+                        "no PipeWire socket",
                         Some("is pipewire.service running? ($XDG_RUNTIME_DIR/pipewire-0)"),
                     );
                 } else {
@@ -565,9 +623,8 @@ impl Source for AudioSource {
                 && c.exited()
             {
                 let age = c.started.elapsed();
-                if let Some(c) = capture.take() {
-                    c.kill();
-                }
+                capture = None;
+                ok_sent = false;
                 if let Action::RespawnAt(at) = policy.on_exit(now) {
                     let reason = format!(
                         "pw-record exited after {:.1} s; retry in {} ms",
@@ -578,28 +635,29 @@ impl Source for AudioSource {
                     degraded_reason = Some(reason);
                 }
             }
-            match policy.decide(level, running, now) {
+            match policy.decide(policy_level, running, now) {
                 Action::Spawn => {
                     let args = CaptureArgs {
                         target: self.options.target.clone(),
                         latency: self.options.latency,
-                        low_latency: self.options.low_latency && level != Level::Hidden,
+                        low_latency: self.options.low_latency && !parked,
                     };
                     match Capture::spawn(&args, epoch) {
                         Ok(c) => {
                             capture = Some(c);
                             degraded_reason = None;
-                            status(&cx, SourceState::Ok, Some("pw-record"), None);
                             // The sink Record for this generation.
                             if dump.is_none() {
                                 dump = sink::enumerate().ok();
+                                last_dump = Some(now);
                             }
                             let rec = dump
                                 .as_ref()
                                 .and_then(|d| d.resolve(&self.options.target).cloned())
                                 .unwrap_or_else(|| sink_fallback(&self.options.target));
                             cx.emit(cx.clock.now(), vec![sink_sample(&rec)]);
-                            sink_published = true;
+                            published_sink = Some(rec);
+                            dropped_seen = cx.dropped();
                         }
                         Err(e) => {
                             let reason = format!("pw-record failed to start: {e}");
@@ -610,45 +668,75 @@ impl Source for AudioSource {
                     }
                 }
                 Action::Kill => {
-                    if let Some(c) = capture.take() {
+                    if capture.take().is_some() {
                         tracing::info!("pw-record stopped: hidden for 10 s");
-                        c.kill();
                     }
+                    ok_sent = false;
                 }
                 Action::Keep | Action::RespawnAt(_) => {}
             }
+            // `Ok` once the child has stayed up half a second (a bad target
+            // under `dont-fallback` exits within milliseconds).
+            if !ok_sent
+                && let Some(c) = capture.as_ref()
+                && c.started.elapsed() >= Duration::from_millis(500)
+            {
+                ok_sent = true;
+                set_status(&cx, SourceState::Ok, "pw-record", None);
+            }
             if let Some(r) = degraded_reason.as_deref()
                 && capture.is_none()
-                && level != Level::Hidden
+                && !parked
             {
-                status(&cx, SourceState::Degraded, Some(r), None);
+                set_status(&cx, SourceState::Degraded, r, None);
             }
 
-            // Hidden: nothing to publish; park a second at a time.
-            if level == Level::Hidden {
+            // Hidden or paused: nothing to publish; park a second at a time
+            // (the ring keeps filling; it holds a second).
+            if parked {
                 if !cx.sleep_until(cx.next_deadline(Duration::from_secs(1))) {
                     break;
                 }
                 continue;
             }
 
-            // Enumeration for the picker / the sink name.
-            if enumerate
-                && last_enumerate
-                    .is_none_or(|t| now.saturating_duration_since(t) >= sink::ENUMERATE_EVERY)
-            {
-                last_enumerate = Some(now);
+            // The sink list: every 2 s while a picker asked (for up to
+            // ENUMERATE_FOR), else every SINK_RECHECK so `audio.sink`
+            // follows a default-sink change under `auto`.
+            let enumerating = enumerate_until.is_some_and(|t| now < t);
+            if !enumerating {
+                enumerate_until = None;
+            }
+            let every = if enumerating {
+                sink::ENUMERATE_EVERY
+            } else {
+                SINK_RECHECK
+            };
+            if last_dump.is_none_or(|t| now.saturating_duration_since(t) >= every) {
+                last_dump = Some(now);
                 if let Ok(d) = sink::enumerate() {
                     let at = cx.clock.now();
-                    let mut samples = vec![Sample {
-                        id: audio::SINKS.id.clone(),
-                        datum: Datum::Record(Arc::new(d.record())),
-                    }];
-                    if !sink_published && let Some(s) = d.resolve(&self.options.target) {
-                        samples.push(sink_sample(s));
-                        sink_published = true;
+                    let mut samples = Vec::with_capacity(2);
+                    if enumerating {
+                        samples.push(Sample {
+                            id: audio::SINKS.id.clone(),
+                            datum: Datum::Record(Arc::new(d.record())),
+                        });
                     }
-                    cx.emit(at, samples);
+                    let resolved = d
+                        .resolve(&self.options.target)
+                        .cloned()
+                        .unwrap_or_else(|| sink_fallback(&self.options.target));
+                    // Re-publish on a change, or when a drop may have lost it.
+                    let lost = cx.dropped() != dropped_seen;
+                    if capture.is_some() && (published_sink.as_ref() != Some(&resolved) || lost) {
+                        samples.push(sink_sample(&resolved));
+                        published_sink = Some(resolved);
+                        dropped_seen = cx.dropped();
+                    }
+                    if !samples.is_empty() {
+                        cx.emit(at, samples);
+                    }
                     dump = Some(d);
                 }
             }
@@ -683,9 +771,7 @@ impl Source for AudioSource {
                 break;
             }
         }
-        if let Some(c) = capture.take() {
-            c.kill();
-        }
+        // `capture` drops here: the child is killed and reaped.
     }
 }
 
@@ -839,6 +925,6 @@ fps = 200"#,
             c.pulse.age(Instant::now()),
             !c.exited()
         );
-        c.kill();
+        drop(c);
     }
 }

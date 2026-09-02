@@ -12,8 +12,9 @@ use std::time::Instant;
 
 pub const RATE: u32 = 48_000;
 pub const CHANNELS: usize = 2;
-/// Ring capacity in frames per channel (≈ 170 ms at 48 kHz).
-pub const RING_FRAMES: usize = 8192;
+/// Ring capacity in frames per channel: one second at 48 kHz (384 KB), so
+/// the 500 ms silence cadence never overflows it (review).
+pub const RING_FRAMES: usize = 48_000;
 /// The `--latency` used under `low_latency` (never below the running quantum
 /// by default — the option is explicit).
 pub const LOW_LATENCY: u32 = 256;
@@ -196,14 +197,24 @@ pub fn pump<R: Read>(
         }
         let whole = bytes.len() / 4 * 4;
         let before = total;
+        // Whole frames only: a dropped single sample would swap L and R
+        // for the rest of the run (review). A full ring drops the newest
+        // frames.
         let (chunks, _) = bytes[..whole].as_chunks::<4>();
-        for c in chunks {
-            let v = f32::from_le_bytes(*c);
-            if ring.push(v).is_ok() {
-                total += 1;
+        for frame in chunks.chunks_exact(CHANNELS) {
+            if ring.slots() < CHANNELS {
+                continue;
+            }
+            for c in frame {
+                if ring.push(f32::from_le_bytes(*c)).is_ok() {
+                    total += 1;
+                }
             }
         }
-        carry.extend_from_slice(&bytes[whole..]);
+        // Keep a dangling sample (an odd count) with the byte remainder so
+        // the next read starts on a frame boundary.
+        let used = whole / 4 / CHANNELS * CHANNELS * 4;
+        carry.extend_from_slice(&bytes[used..]);
         if total > before {
             pulse
                 .frames
@@ -292,6 +303,14 @@ mod tests {
         while let Ok(v) = cons.pop() {
             got.push(v);
         }
-        assert_eq!(got, [0.0, 1.0, 2.0, 3.0]);
+        assert_eq!(got, [0.0, 1.0, 2.0, 3.0], "two whole frames");
+        // An odd ring (5 slots) still never splits a frame.
+        let (mut prod, mut cons) = rtrb::RingBuffer::<f32>::new(5);
+        pump(&bytes[..], &mut prod, &pulse).unwrap();
+        let mut n = 0;
+        while cons.pop().is_ok() {
+            n += 1;
+        }
+        assert_eq!(n, 4);
     }
 }
