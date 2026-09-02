@@ -84,11 +84,16 @@ impl Bars {
     pub fn set_preset(&mut self, p: Preset) {
         if p != self.preset {
             self.preset = p;
+            // Keep what is on screen; re-arm the cap (review: a zero
+            // velocity would have held a Winamp cap up forever).
             for b in &mut self.bars {
                 *b = Bar {
                     out: b.out,
                     peak: b.peak,
-                    ..Bar::default()
+                    v: WINAMP_PEAK_V0,
+                    hold: WINAMP_PEAK_HOLD_FRAMES,
+                    from: b.out,
+                    smooth: b.out,
                 };
             }
         }
@@ -117,6 +122,7 @@ impl Bars {
                     } else if b.hold < WINAMP_PEAK_HOLD_FRAMES {
                         b.hold += frames;
                     } else {
+                        b.v = b.v.max(WINAMP_PEAK_V0);
                         b.peak = (b.peak - b.v * frames).max(b.out);
                         b.v *= WINAMP_PEAK_ACCEL.powf(frames);
                     }
@@ -339,6 +345,16 @@ mod tests {
         assert_eq!(b.bars.len(), 2);
         b.set_preset(Preset::Cava);
         assert_eq!(b.heights(), [0.5, 0.5]);
+        // cava → winamp with a cap up: it still falls to rest (review).
+        let mut c = Bars::new(Preset::Cava, 1);
+        for _ in 0..60 {
+            c.step(&[0.8], 1.0 / 30.0);
+        }
+        c.set_preset(Preset::Winamp);
+        for _ in 0..600 {
+            c.step(&[0.0], 1.0 / 30.0);
+        }
+        assert!(!c.moving(), "{:?}", c.peaks());
         assert_eq!(Preset::Winamp.next(), Preset::Cava);
         assert_eq!(Preset::Cava.next().name(), "winamp");
     }

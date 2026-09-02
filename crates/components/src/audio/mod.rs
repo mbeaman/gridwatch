@@ -47,21 +47,23 @@ pub static MANIFEST: Manifest = Manifest {
     optional_sources: &[],
     chrome: Chrome::Themed,
     keys: &[
+        // Terse: the captured key bar must fit 80 columns with all four
+        // (review: `s sink` fell off at 120).
         KeyHint {
             key: "m",
-            does: "cycle bars → scope → both",
+            does: "mode",
         },
         KeyHint {
             key: "g",
-            does: "cycle the preset (winamp, cava)",
+            does: "preset",
         },
         KeyHint {
             key: "[ ]",
-            does: "narrow / widen the frequency window",
+            does: "window",
         },
         KeyHint {
             key: "s",
-            does: "pick the sink (↑/↓ Enter, Esc)",
+            does: "sink",
         },
     ],
     example_options: "options = { preset = \"cava\", mode = \"both\" }",
@@ -101,7 +103,11 @@ static TIERS: &[Tier] = &[
     Tier {
         name: "full",
         min: Size::new(100, 24),
-        adds: &["spectrum + scope + VU", "LUFS", "preset and sink chips"],
+        adds: &[
+            "spectrum + scope + VU",
+            "preset and sink chips",
+            "LUFS with audio-lufs",
+        ],
         zoom_only: true,
     },
 ];
@@ -189,6 +195,10 @@ impl Default for Options {
 }
 
 pub const OPTION_NAMES: &[&str] = &["preset", "bars", "mode", "fps"];
+
+/// No sample for this long and the input counts as silence (a dead child,
+/// a finished replay) — comfortably above the 500 ms silence cadence.
+pub const STALL_AFTER: std::time::Duration = std::time::Duration::from_millis(1_500);
 
 /// The display window over the 64 bands, in band indices (`[`/`]`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -441,16 +451,16 @@ impl Component for Audio {
                 p.selected = p.selected.min(p.sinks.len().saturating_sub(1));
             }
         }
-        let had_data = self.seen.is_some();
+        // A source that stopped publishing (pw-record died, a replay ended)
+        // is silent input: the bars decay instead of animating a still
+        // picture at 30 fps (review).
+        let stalled = at.is_some_and(|t| cx.now.since(t) > STALL_AFTER);
+        let quiet = self.silent || stalled;
         let mut moving = false;
         for ch in 0..2 {
-            let input = if self.silent {
-                [0.0; BANDS]
-            } else {
-                self.bands[ch]
-            };
+            let input = if quiet { [0.0; BANDS] } else { self.bands[ch] };
             self.bars[ch].step(&input, dt);
-            let (rms, peak) = if self.silent {
+            let (rms, peak) = if quiet {
                 (audio::FLOOR_DB, audio::FLOOR_DB)
             } else {
                 (
@@ -467,9 +477,11 @@ impl Component for Audio {
             self.vu[ch].step(rms, peak, dt);
             moving |= self.bars[ch].moving() || self.vu[ch].moving();
         }
+        // Animate while anything on screen is still moving; one more frame
+        // after it settles so the resting picture is drawn.
         let was = self.moving;
-        self.moving = had_data && !self.silent || moving;
-        if self.moving || was {
+        self.moving = moving;
+        if moving || was {
             Redraw::Yes
         } else {
             Redraw::No
@@ -546,7 +558,9 @@ impl Component for Audio {
             TIER_MINI => &["L"],
             TIER_SCOPE => &["scope"],
             TIER_SPECTRUM => &["Hz"],
-            _ => &["LUFS"],
+            // `LUFS` only appears with the `audio-lufs` feature's values;
+            // the preset chip is always there.
+            _ => &["preset"],
         }
     }
 

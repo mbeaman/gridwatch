@@ -73,62 +73,103 @@ fn status_line(cx: &RenderCx<'_>) -> Option<Line> {
     }
 }
 
-fn gauge(label: &'static str, level: f32, text: String) -> View {
-    View::Gauge {
-        label: Cow::Borrowed(label),
-        value: level,
-        gradient: GradientId::Audio,
-        text: Some(Cow::Owned(text)),
-    }
-}
-
 /// The stereo VU pair: `L` and `R` gauges with the RMS and the held peak.
-fn vu_pair(a: &Audio, wide: bool) -> Vec<(Constraint, View)> {
+fn vu_pair(a: &Audio, width: u16) -> Vec<(Constraint, View)> {
     let has = a.sink().is_some() || !a.silent();
+    let wide = width >= 24;
     let mut out = Vec::with_capacity(2);
     for (ch, label) in [(0usize, "L"), (1, "R")] {
         let v = &a.vu[ch];
-        let text = if !has && v.rms_db <= FLOOR_DB {
+        // The gauge needs `label + bar + text` to fit: below 12 cells the
+        // text is the bare number (review: `−8 dB` left no room for the
+        // bar at 8 wide), below 9 there is none.
+        let text = if width < 9 {
+            String::new()
+        } else if !has && v.rms_db <= FLOOR_DB {
             "—".to_string()
         } else if wide {
             format!("{} · pk {}", db_text(v.rms_db), db_text(v.peak_db))
+        } else if width < 12 {
+            db_text(v.rms_db).replace(" dB", "")
         } else {
             db_text(v.rms_db)
         };
-        out.push((Constraint::Len(1), gauge(label, v.level(), text)));
+        out.push((
+            Constraint::Len(1),
+            View::Gauge {
+                label: Cow::Borrowed(label),
+                value: v.level(),
+                gradient: GradientId::Audio,
+                text: (!text.is_empty()).then_some(Cow::Owned(text)),
+            },
+        ));
     }
     out
 }
 
-fn header(a: &Audio, cx: &RenderCx<'_>, levels: bool) -> Line {
+/// The header: the sink's short name, ` · silent`, the levels — every
+/// suffix budgeted before the name is truncated so the last word on the row
+/// (a tier's signature, the levels) never falls off the edge (review).
+fn header(a: &Audio, cx: &RenderCx<'_>, levels: bool, tail: &'static str) -> Line {
     if let Some(l) = status_line(cx) {
         return l;
     }
     let w = usize::from(cx.inner.width);
-    let mut line: Line = vec![Span::bold(Role::Title, sink_short(a, w.min(28)))];
-    if a.silent() && a.sink().is_some() {
+    let silent = a.silent() && a.sink().is_some();
+    let levels_text = (levels && a.sink().is_some()).then(|| {
+        format!(
+            "  L {} · R {}",
+            db_text(a.vu[0].rms_db),
+            db_text(a.vu[1].rms_db)
+        )
+    });
+    let mut budget = w;
+    let tail_w = tail.chars().count();
+    budget = budget.saturating_sub(tail_w);
+    let silent_w = if silent { " · silent".len() } else { 0 };
+    let levels_w = levels_text.as_ref().map(|t| t.chars().count()).unwrap_or(0);
+    // Drop the levels first, then the silence note, before the name goes
+    // below eight cells.
+    let show_levels = levels_w > 0 && budget.saturating_sub(silent_w + levels_w) >= 8;
+    let show_silent = silent && budget.saturating_sub(silent_w) >= 8;
+    let name_max = budget
+        .saturating_sub(if show_silent { silent_w } else { 0 })
+        .saturating_sub(if show_levels { levels_w } else { 0 })
+        .clamp(1, 28);
+    // No sink Record yet: "waiting" while the source is starting or alive
+    // (the demo's first 1.5 s), "no audio" once it has said it cannot.
+    let name = if a.sink().is_none() {
+        match cx.store.status(audio::SOURCE).state {
+            SourceState::Ok => Cow::Borrowed("waiting for audio"),
+            _ => Cow::Borrowed("no audio"),
+        }
+    } else {
+        sink_short(a, name_max)
+    };
+    let mut line: Line = vec![Span::bold(Role::Title, name)];
+    if show_silent {
         line.push(Span::new(Role::TextMuted, " · silent"));
     }
-    if levels && w >= 40 && a.sink().is_some() {
-        line.push(Span::new(
-            Role::TextMuted,
-            format!(
-                "  L {} · R {}",
-                db_text(a.vu[0].rms_db),
-                db_text(a.vu[1].rms_db)
-            ),
-        ));
+    if show_levels && let Some(t) = levels_text {
+        line.push(Span::new(Role::TextMuted, t));
+    }
+    if !tail.is_empty() {
+        line.push(Span::new(Role::TextMuted, tail));
     }
     line
 }
 
 fn vu_tier(a: &Audio, cx: &RenderCx<'_>) -> View {
-    let wide = cx.inner.width >= 24;
     let mut children = Vec::with_capacity(3);
-    if cx.inner.height >= 3 {
-        children.push((Constraint::Len(1), View::Text(vec![header(a, cx, false)])));
+    // The sink's short name when ≥ 12 wide (§8); narrower, the rows are
+    // the two gauges alone.
+    if cx.inner.height >= 3 && cx.inner.width >= 12 {
+        children.push((
+            Constraint::Len(1),
+            View::Text(vec![header(a, cx, false, "")]),
+        ));
     }
-    children.extend(vu_pair(a, wide));
+    children.extend(vu_pair(a, cx.inner.width));
     View::Stack {
         dir: Dir::V,
         children,
@@ -151,7 +192,7 @@ fn mini(a: &Audio, cx: &RenderCx<'_>) -> View {
             peaks: None,
         },
     )];
-    let pair = vu_pair(a, cx.inner.width >= 24);
+    let pair = vu_pair(a, cx.inner.width);
     children.extend(pair.into_iter().take(vu_rows));
     View::Stack {
         dir: Dir::V,
@@ -160,8 +201,7 @@ fn mini(a: &Audio, cx: &RenderCx<'_>) -> View {
 }
 
 fn scope_tier(a: &Audio, cx: &RenderCx<'_>) -> View {
-    let mut line = header(a, cx, false);
-    line.push(Span::new(Role::TextMuted, " · scope"));
+    let line = header(a, cx, false, " · scope");
     let mut children = vec![
         (Constraint::Len(1), View::Text(vec![line])),
         (
@@ -169,7 +209,7 @@ fn scope_tier(a: &Audio, cx: &RenderCx<'_>) -> View {
             super::scope::chart(&a.scope, cx.inner.width),
         ),
     ];
-    children.extend(vu_pair(a, cx.inner.width >= 24));
+    children.extend(vu_pair(a, cx.inner.width));
     View::Stack {
         dir: Dir::V,
         children,
@@ -210,6 +250,13 @@ pub fn mirrored(a: &Audio, width: u16) -> (Vec<f32>, Vec<f32>) {
     if thick && values.len() > w {
         values.truncate(w);
         peaks.truncate(w);
+    }
+    // Centre the mirror axis (review: the trailing gap left the bars
+    // hugging the left edge).
+    let pad = w.saturating_sub(values.len().min(w)) / 2;
+    if pad > 0 {
+        values.splice(0..0, std::iter::repeat_n(0.0, pad));
+        peaks.splice(0..0, std::iter::repeat_n(0.0, pad));
     }
     (values, peaks)
 }
@@ -260,13 +307,23 @@ fn spectrum(a: &Audio, cx: &RenderCx<'_>, in_full: bool) -> View {
     };
     let mut children = Vec::with_capacity(4);
     if !in_full {
-        children.push((Constraint::Len(1), View::Text(vec![header(a, cx, true)])));
+        children.push((
+            Constraint::Len(1),
+            View::Text(vec![header(a, cx, true, "")]),
+        ));
     }
     children.push((Constraint::Fill(1), body));
-    children.push((
-        Constraint::Len(1),
-        View::Text(vec![axis(a, cx.inner.width)]),
-    ));
+    // The Hz axis belongs to the bars; under the scope alone the bottom row
+    // reads as time (review).
+    let bottom = if a.mode() == Mode::Scope {
+        vec![Span::new(
+            Role::TextMuted,
+            format!("scope · {} samples · m for the bars", a.scope.len().max(1)),
+        )]
+    } else {
+        axis(a, cx.inner.width)
+    };
+    children.push((Constraint::Len(1), View::Text(vec![bottom])));
     View::Stack {
         dir: Dir::V,
         children,
@@ -280,12 +337,21 @@ fn full(a: &Audio, cx: &RenderCx<'_>) -> View {
             .map(|(_, v)| format!("{v:.1}").replace('-', "−"))
             .unwrap_or_else(|| "—".into())
     };
-    let chips: Line = vec![
-        Span::new(Role::TextMuted, "LUFS "),
-        Span::new(Role::Text, lufs(&audio::LUFS_M)),
-        Span::new(Role::TextMuted, " M / "),
-        Span::new(Role::Text, lufs(&audio::LUFS_S)),
-        Span::new(Role::TextMuted, " S   ·   preset "),
+    // The LUFS chip only when a value exists (feature `audio-lufs`): a
+    // permanent `—` advertised a meter the build lacks (review).
+    let has_lufs = cx.store.last(&audio::LUFS_M).is_some();
+    let mut chips: Line = Vec::with_capacity(12);
+    if has_lufs {
+        chips.extend([
+            Span::new(Role::TextMuted, "LUFS "),
+            Span::new(Role::Text, lufs(&audio::LUFS_M)),
+            Span::new(Role::TextMuted, " M / "),
+            Span::new(Role::Text, lufs(&audio::LUFS_S)),
+            Span::new(Role::TextMuted, " S   ·   "),
+        ]);
+    }
+    chips.extend([
+        Span::new(Role::TextMuted, "preset "),
         Span::new(Role::AccentSecondary, a.preset().name()),
         Span::new(Role::TextMuted, "   ·   mode "),
         Span::new(Role::AccentSecondary, a.mode().name()),
@@ -303,16 +369,19 @@ fn full(a: &Audio, cx: &RenderCx<'_>) -> View {
                 })
                 .unwrap_or_default(),
         ),
-    ];
+    ]);
     let mut children = vec![
-        (Constraint::Len(1), View::Text(vec![header(a, cx, true)])),
+        (
+            Constraint::Len(1),
+            View::Text(vec![header(a, cx, true, "")]),
+        ),
         (Constraint::Fill(3), spectrum(a, cx, true)),
         (
             Constraint::Fill(1),
             super::scope::chart(&a.scope, cx.inner.width),
         ),
     ];
-    children.extend(vu_pair(a, true));
+    children.extend(vu_pair(a, cx.inner.width));
     children.push((Constraint::Len(1), View::Text(vec![chips])));
     View::Stack {
         dir: Dir::V,
@@ -322,23 +391,29 @@ fn full(a: &Audio, cx: &RenderCx<'_>) -> View {
 
 /// The sink picker: `SINK · STATE · DEFAULT`, the selection highlighted.
 fn picker(p: &super::Picker, cx: &RenderCx<'_>) -> View {
-    let columns = vec![
-        Column {
-            title: "sink".into(),
-            width: ColWidth::Elastic,
-            right: false,
-        },
-        Column {
+    // The name is the column that must survive: below 28 cells the
+    // `default` column goes, below 19 the `state` column too (review).
+    let w = cx.inner.width;
+    let mut columns = vec![Column {
+        title: "sink".into(),
+        width: ColWidth::Elastic,
+        right: false,
+    }];
+    if w >= 19 {
+        columns.push(Column {
             title: "state".into(),
             width: ColWidth::Fixed(9),
             right: false,
-        },
-        Column {
+        });
+    }
+    if w >= 28 {
+        columns.push(Column {
             title: "default".into(),
             width: ColWidth::Fixed(7),
             right: false,
-        },
-    ];
+        });
+    }
+    let ncols = columns.len();
     let rows: Vec<Vec<Line>> = p
         .sinks
         .iter()
@@ -348,21 +423,24 @@ fn picker(p: &super::Picker, cx: &RenderCx<'_>) -> View {
             } else {
                 format!("{} ({})", s.description, s.name)
             };
-            vec![
-                vec![Span::new(Role::Text, name)],
-                vec![Span::new(
+            let mut row = vec![vec![Span::new(Role::Text, name)]];
+            if ncols >= 2 {
+                row.push(vec![Span::new(
                     if s.state == "running" {
                         Role::Ok
                     } else {
                         Role::TextMuted
                     },
                     s.state.clone(),
-                )],
-                vec![Span::new(
+                )]);
+            }
+            if ncols >= 3 {
+                row.push(vec![Span::new(
                     Role::AccentPrimary,
                     if s.is_default { "✓" } else { "" },
-                )],
-            ]
+                )]);
+            }
+            row
         })
         .collect();
     let hint: Line = vec![Span::new(
@@ -373,7 +451,6 @@ fn picker(p: &super::Picker, cx: &RenderCx<'_>) -> View {
             "pick a sink — ↑/↓ move · Enter choose · Esc closes"
         },
     )];
-    let _ = cx;
     View::Stack {
         dir: Dir::V,
         children: vec![

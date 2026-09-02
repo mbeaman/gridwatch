@@ -258,15 +258,20 @@ fn spectrum_bars_are_mirrored_and_thick() {
     let (values, peaks) = gridwatch_components::audio::mirrored_for_test(&a, 80);
     assert_eq!(values.len(), peaks.len());
     assert!(values.len() <= 80);
+    // ⌊(80+1)/3⌋ = 27 bars → 13 per side, 78 cells, centred with one cell
+    // of padding on the left.
+    let n = 26; // bars actually drawn (13 per channel)
+    let pad = (80 - n * 3) / 2;
+    assert_eq!(pad, 1);
+    assert_eq!(values[0], 0.0, "left pad");
     // Thick: value pairs then a zero gap.
-    assert_eq!(values[0], values[1]);
-    assert_eq!(values[2], 0.0);
+    assert_eq!(values[pad], values[pad + 1]);
+    assert_eq!(values[pad + 2], 0.0);
     // Mirrored: the two centre bars are both channels' lowest band.
-    let n = values.len() / 3; // bars
     let (l, _) = a.resampled(0, n / 2);
     let (r, _) = a.resampled(1, n / 2);
-    let centre_left = values[(n / 2 - 1) * 3];
-    let centre_right = values[(n / 2) * 3];
+    let centre_left = values[pad + (n / 2 - 1) * 3];
+    let centre_right = values[pad + (n / 2) * 3];
     assert_eq!(centre_left, l[0]);
     assert_eq!(centre_right, r[0]);
     assert_eq!(resample_max(&[0.1, 0.9], 1), [0.9]);

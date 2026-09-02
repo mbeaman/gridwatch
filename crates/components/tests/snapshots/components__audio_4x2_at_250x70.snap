@@ -20,9 +20,10 @@ view:
         - bars:
             gradient: Audio
             labels: ~
-            n: 78
+            n: 79
             peaks: true
             values:
+              - 0
               - 0.2942398488521576
               - 0.2942398488521576
               - 0
