@@ -67,3 +67,13 @@
 | `pins.read_ms` | Scalar | Milliseconds | `pins` | wall ms of the last telemetry read (P14 evidence) |
 | `pins.info` | Record | None | `pins` | mode (i2c/exporter), bus, pci, model, access path, interval and the astral-watch thresholds/policy in force; once per generation and on change |
 | `pins.state` | Record | None | `pins` | telemetry health, miss count, the lifecycle's active conditions and the exporter's own flags; every sample |
+| `audio.bands` | Vector | Ratio | `audio` | 64 log-spaced band heights 0..1 per channel {0\|1} (display resolution, not spectral); the component resamples |
+| `audio.scope` | Vector | Ratio | `audio` | the latest 512 mono samples in −1..1 (the oscilloscope) |
+| `audio.rms_db` | Scalar | Ratio | `audio` | RMS over 300 ms per channel {ch}, dBFS (−100 = silence) |
+| `audio.peak_db` | Scalar | Ratio | `audio` | sample peak per channel {ch} with a 1.5 s hold, dBFS |
+| `audio.lufs_m` | Scalar | Ratio | `audio` | EBU R128 momentary loudness, LUFS (feature audio-lufs) |
+| `audio.lufs_s` | Scalar | Ratio | `audio` | EBU R128 short-term loudness, LUFS (feature audio-lufs) |
+| `audio.dsp_ms` | Scalar | Milliseconds | `audio` | wall ms of the last DSP pass (P16 evidence) |
+| `audio.sink` | Record | None | `audio` | the captured sink: node.name, description, object.serial, state, default flag, rate, channels; once per generation and on change |
+| `audio.sinks` | Record | None | `audio` | every Audio/Sink pw-dump lists, while the picker enumerates |
+| `audio.level` | Record | None | `audio` | the silence rule's state (silent, since); the DSP publishes at 2 Hz while silent |
