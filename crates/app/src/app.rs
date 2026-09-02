@@ -795,6 +795,10 @@ impl Shell {
         match &self.ambient {
             // The rain runs at its own (governed) fps, not the config's.
             Some(a) if self.ambient_active() => u16::from(a.fps()),
+            // An event effect gets the full rate for its ≤ 600 ms; the
+            // alert pulse alone is drawn at PULSE_FPS (P1 during an alert).
+            _ if self.effects.running_event() => self.fps,
+            _ if self.effects.running() => crate::effects::PULSE_FPS,
             _ => self.fps,
         }
     }
@@ -929,7 +933,10 @@ impl Shell {
         if let Some(text) = self.banner_text()
             && area.height > min_h
         {
-            let pulse_on = (self.clock.now().0 / 1_000_000_000).is_multiple_of(2);
+            // The heartbeat reverse, unless the theme declares an alert
+            // effect (D54 seam 6: then the tachyonfx pulse is the pulse).
+            let pulse_on = self.theme.effects.alert.is_none()
+                && (self.clock.now().0 / 1_000_000_000).is_multiple_of(2);
             overlay::banner(
                 &text,
                 pulse_on,

@@ -192,9 +192,7 @@ impl Ambient {
     /// `V`: every content cell lit now.
     pub fn relight_all(&mut self) {
         let f = self.frame;
-        for v in &mut self.lit_at {
-            *v = f;
-        }
+        self.lit_at.fill(f);
         self.sweeping = false;
     }
 

@@ -13,6 +13,10 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use tachyonfx::{Duration as FxDuration, Effect, EffectRenderer, Interpolation, Motion, fx};
 
+/// The frame rate the repeating alert pulse is drawn at when nothing else
+/// animates (P1 while a banner is up).
+pub const PULSE_FPS: u16 = 8;
+
 /// Which hook fired (the shell's events).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hook {
@@ -100,6 +104,15 @@ impl Effects {
 
     pub fn is_running(&self, hook: Hook) -> bool {
         self.running.iter().any(|r| r.hook == hook)
+    }
+
+    /// An *event* effect (startup, theme swap, focus) is mid-flight: those
+    /// deserve the full fps for their ≤ 600 ms. The alert pulse alone does
+    /// not — it repeats for as long as the banner is up, and the shell runs
+    /// it at `PULSE_FPS` so an active alert costs a fraction of P1 (review
+    /// measurement: 30 fps for the pulse was 2.65 % of a core).
+    pub fn running_event(&self) -> bool {
+        self.running.iter().any(|r| r.hook != Hook::Alert)
     }
 
     /// Process every running effect over the buffer for the time since the
