@@ -44,6 +44,7 @@ fn shell(clock: Clock) -> Shell {
         0,
         clock,
         BTreeMap::new(),
+        BTreeMap::new(),
         false,
     );
     sh.store.ensure_source(JOURNAL);
@@ -197,4 +198,69 @@ fn what_the_loop_records_replays_to_the_same_store() {
     assert_eq!(store.last(&cpu::TOTAL_PCT), sh.store.last(&cpu::TOTAL_PCT));
     assert!(store.record(&cpu::PROC_TABLE).is_some(), "tables on");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Arc 3a (brief seam 7): the `synth-overload` fixture carries the scripted
+/// lifecycle as `al` lines — `pins/overload` raised at ≈ 21.5 s and resolved
+/// at 50 s — and a replayed frame shows the banner on **page 2** while it is
+/// active and not after; two replays stay byte-identical with alerts in the
+/// stream.
+#[test]
+fn the_overload_fixture_raises_the_banner_on_page_two_at_the_scripted_instant() {
+    use gridwatch_store::Transition;
+    let path = fixture("synth-overload.jsonl");
+    let replay = gridwatch_store::Replay::load(&path).expect("fixture loads");
+    let raised: Vec<Ts> = replay
+        .entries
+        .iter()
+        .filter_map(|(t, m)| match m {
+            gridwatch_store::Msg::Control(gridwatch_store::ControlMsg::Alert(a))
+                if a.id.0.as_ref() == "pins/overload" && a.transition == Transition::Raised =>
+            {
+                Some(*t)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(raised.len(), 1, "one raise: {raised:?}");
+    let t = raised[0].as_secs_f64();
+    assert!(
+        (21.0..=23.5).contains(&t),
+        "raised at {t:.1} s, expected ≈ 21.5 s (+ one 500 ms tick)"
+    );
+    // The ansi dump styles every cell; strip the SGR sequences so the text
+    // reads as the user saw it.
+    fn plain(ansi: &str) -> String {
+        let mut out = String::with_capacity(ansi.len());
+        let mut rest = ansi;
+        while let Some(i) = rest.find('\x1b') {
+            out.push_str(&rest[..i]);
+            match rest[i..].find('m') {
+                Some(j) => rest = &rest[i + j + 1..],
+                None => break,
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+    let frame = |at: f64| {
+        plain(
+            &gridwatch_app::shot_replay(registry(), &path, at, 250, 70, "mono", 2, "ansi").unwrap(),
+        )
+    };
+    let during = frame(30.0);
+    assert!(
+        during.contains("ALERT: OVERLOAD"),
+        "banner on page 2 at 30 s:\n{during}"
+    );
+    let before = frame(10.0);
+    assert!(!before.contains("ALERT: OVERLOAD"), "no banner at 10 s");
+    let after = frame(58.0);
+    assert!(
+        !after.contains("ALERT: OVERLOAD"),
+        "resolved by 58 s:\n{after}"
+    );
+    let (a, _, _) = replay_once(&path, 250, 70);
+    let (b, _, _) = replay_once(&path, 250, 70);
+    assert_eq!(a, b, "alerts in the stream keep the replay deterministic");
 }

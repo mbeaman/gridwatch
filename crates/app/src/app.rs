@@ -7,14 +7,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use gridwatch_store::{
-    CapSet, Clock, ControlMsg, Detail, Inbox, InputEvent, KeyCode, Level, Msg, Recorder, Severity,
-    SourceId, Store, Ts,
+    CapSet, Clock, Control, ControlMsg, Detail, Inbox, InputEvent, KeyCode, Level, Msg, Recorder,
+    Severity, SourceId, Store, Ts,
 };
 use gridwatch_ui::component::{BuildCx, Chrome, Command, Component, Outcome, Size, pick_tier};
 use gridwatch_ui::layout::{
     Cell, Direction, Page, PlaceTarget, SolveMode, Solved, derive_mode, focus_dir, hit, solve,
 };
 use gridwatch_ui::theme::{Role, Theme, TitleStyle, load_builtin};
+use gridwatch_ui::view::Span as RSpanText;
 use gridwatch_ui::{Registry, overlay};
 use ratatui::Terminal;
 use ratatui::backend::Backend;
@@ -40,8 +41,14 @@ struct Instance {
 struct Toast {
     text: String,
     severity: Severity,
+    /// A `Resolved` transition: drawn in `Role::Ok` with a tick.
+    resolved: bool,
     expires_at: Instant,
 }
+
+/// Per-source `Control` senders (D50 §6): `Command::Source(id, ctl)` lands
+/// here; empty in headless shots and tests.
+pub type Controls = BTreeMap<&'static str, Arc<dyn Fn(Control) + Send + Sync>>;
 
 #[derive(Clone, PartialEq)]
 struct CacheKey {
@@ -66,6 +73,10 @@ pub struct Shell {
     caps: CapSet,
     tz_offset_s: i32,
     demands: BTreeMap<&'static str, Arc<gridwatch_store::Demand>>,
+    controls: Controls,
+    /// Alert ids acknowledged with `a`; a new `Raised` un-acks (§4.4).
+    acked: std::collections::BTreeSet<gridwatch_store::AlertId>,
+    alerts_overlay: bool,
     focus: Option<usize>,
     captured: bool,
     zoom: Option<usize>,
@@ -108,6 +119,7 @@ impl Shell {
         tz_offset_s: i32,
         clock: Clock,
         demands: BTreeMap<&'static str, Arc<gridwatch_store::Demand>>,
+        controls: Controls,
         stats_on: bool,
     ) -> Shell {
         let mut store = Store::default();
@@ -191,6 +203,9 @@ impl Shell {
             caps,
             tz_offset_s,
             demands,
+            controls,
+            acked: std::collections::BTreeSet::new(),
+            alerts_overlay: false,
             focus: Some(0),
             captured: false,
             zoom: None,
@@ -295,7 +310,30 @@ impl Shell {
         }
         let events = self.store.apply(&Msg::Control(c));
         for ev in events {
-            self.toast(ev.severity, format!("{}: {}", ev.id.0, ev.title));
+            match ev.transition {
+                gridwatch_store::Transition::Raised => {
+                    // A new raise brings an acknowledged banner back.
+                    self.acked.remove(&ev.id);
+                    self.toast(
+                        ev.severity,
+                        gridwatch_components::alerts::headline(&ev.title, &ev.detail),
+                    );
+                }
+                gridwatch_store::Transition::Repeated => {
+                    self.toast(
+                        ev.severity,
+                        gridwatch_components::alerts::headline(&ev.title, &ev.detail),
+                    );
+                }
+                gridwatch_store::Transition::Resolved => {
+                    self.toasts.push(Toast {
+                        text: format!("{} {}", ev.title, ev.detail),
+                        severity: Severity::Info,
+                        resolved: true,
+                        expires_at: Instant::now() + TOAST_TTL,
+                    });
+                }
+            }
         }
     }
 
@@ -317,8 +355,43 @@ impl Shell {
         self.toasts.push(Toast {
             text: text.into(),
             severity,
+            resolved: false,
             expires_at: Instant::now() + TOAST_TTL,
         });
+    }
+
+    /// The banner's text: every active, unacknowledged `Crit` alert's title
+    /// joined with ` + ` (tui.rs's `draw_alarm`); `None` when clear or acked.
+    pub fn banner_text(&self) -> Option<String> {
+        let titles: Vec<String> = self
+            .store
+            .alerts()
+            .active()
+            .filter(|(id, a)| a.severity == Severity::Crit && !self.acked.contains(id))
+            .map(|(_, a)| a.title.to_string())
+            .collect();
+        if titles.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "⚠ ALERT: {} ⚠  ·  a to acknowledge",
+                titles.join(" + ")
+            ))
+        }
+    }
+
+    /// Warn-only active alerts (an advisory imbalance) get a chip in the key
+    /// bar, never the banner.
+    fn warn_count(&self) -> usize {
+        self.store
+            .alerts()
+            .active()
+            .filter(|(_, a)| a.severity == Severity::Warn)
+            .count()
+    }
+
+    pub fn alerts_overlay_open(&self) -> bool {
+        self.alerts_overlay
     }
 
     fn instance_key(&self, target: &PlaceTarget) -> String {
@@ -541,8 +614,31 @@ impl Shell {
             );
         }
 
+        // The alert banner (§4.4): one row under the tab bar on every page
+        // while a Crit alert is active and unacknowledged, pulsing on the
+        // even seconds of the store clock — no SLOW_BLINK, one row per second.
+        let mut top = u16::from(show_tabs);
+        // Never at the cost of the only tile: below one tile plus a row the
+        // banner yields (the lattice found a 15×7 body reduced to a frame).
+        if let Some(text) = self.banner_text()
+            && area.height > min_h
+        {
+            let pulse_on = (self.clock.now().0 / 1_000_000_000).is_multiple_of(2);
+            overlay::banner(
+                &text,
+                pulse_on,
+                Rect {
+                    x: area.x,
+                    y: area.y + top,
+                    width: area.width,
+                    height: 1,
+                },
+                &self.theme,
+                buf,
+            );
+            top += 1;
+        }
         // Body.
-        let top = u16::from(show_tabs);
         let body = Rect {
             x: area.x,
             y: area.y + top,
@@ -573,12 +669,36 @@ impl Shell {
         self.update_demand();
 
         // Status bar.
-        let hints = if self.captured {
-            "Esc release · component keys active".to_string()
+        let mut hints = if self.captured {
+            // §10: the captured component's keys replace the status bar.
+            let keys = self
+                .focus
+                .and_then(|f| self.pages[self.page].place.get(f))
+                .map(|pl| self.instance_key(&pl.target))
+                .and_then(|k| self.instances.get(&k))
+                .and_then(|i| i.component.as_ref())
+                .map(|c| {
+                    c.manifest()
+                        .keys
+                        .iter()
+                        .map(|k| format!("{} {}", k.key, k.does))
+                        .collect::<Vec<_>>()
+                        .join(" · ")
+                })
+                .unwrap_or_default();
+            if keys.is_empty() {
+                "Esc release · component keys active".to_string()
+            } else {
+                format!("Esc release · {keys}")
+            }
         } else {
-            "q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · space pause · S shot · F12 hud"
+            "q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · space pause · a ack · A alerts · S shot · F12 hud"
                 .to_string()
         };
+        let warns = self.warn_count();
+        if warns > 0 {
+            hints = format!("▲ {warns} advisory · {hints}");
+        }
         let status = Rect {
             x: area.x,
             y: area.y + area.height - 1,
@@ -591,10 +711,20 @@ impl Shell {
         ))
         .render(status, buf);
 
-        // Overlays.
+        // Overlays. Toasts yield on a body too small to share (the lattice
+        // found them covering the only tile at 15×7).
         self.toasts.retain(|t| t.expires_at > Instant::now());
-        for (i, t) in self.toasts.iter().enumerate() {
-            let (style, glyph) = self.theme.severity(t.severity);
+        let toast_rows = if body.height >= 6 {
+            self.toasts.len()
+        } else {
+            0
+        };
+        for (i, t) in self.toasts.iter().take(toast_rows).enumerate() {
+            let (style, glyph) = if t.resolved {
+                (self.theme.style(Role::Ok).add_modifier(Modifier::BOLD), "✓")
+            } else {
+                self.theme.severity(t.severity)
+            };
             let text = format!(" {glyph} {} ", t.text);
             let w = text.chars().count() as u16;
             let y = body.y + body.height.saturating_sub(2 + i as u16);
@@ -612,6 +742,8 @@ impl Shell {
                     ("d", "dense mode"),
                     ("t", "cycle theme"),
                     ("space", "pause sources"),
+                    ("a", "acknowledge the alert banner"),
+                    ("A", "alerts: active list and log"),
                     ("S", "screenshot to state dir"),
                     ("F12", "stats HUD"),
                 ],
@@ -619,6 +751,19 @@ impl Shell {
                 &self.theme,
                 buf,
             );
+        }
+        if self.alerts_overlay {
+            let now = self.clock.now();
+            let mut lines =
+                gridwatch_components::alerts::active_lines(&self.store, now, body.width);
+            lines.push(vec![RSpanText::bold(Role::TextMuted, "log")]);
+            let rows = usize::from(body.height.saturating_sub(lines.len() as u16 + 6));
+            lines.extend(gridwatch_components::alerts::log_lines(
+                &self.store,
+                0,
+                rows,
+            ));
+            overlay::panel("alerts  ·  Esc to close", &lines, body, &self.theme, buf);
         }
         if self.hud {
             let bytes = self
@@ -1020,6 +1165,10 @@ impl Shell {
                 true
             }
             KeyCode::Esc => {
+                if self.alerts_overlay {
+                    self.alerts_overlay = false;
+                    return true;
+                }
                 self.zoom = None;
                 self.help = false;
                 true
@@ -1081,8 +1230,24 @@ impl Shell {
                 ));
                 true
             }
-            KeyCode::Char('a') | KeyCode::Char('A') => {
-                self.toast(Severity::Info, "alerts overlay arrives in arc 3");
+            KeyCode::Char('a') => {
+                // Every active alert (§4.4), not only the Crit ones the banner shows.
+                let ids: Vec<gridwatch_store::AlertId> = self
+                    .store
+                    .alerts()
+                    .active()
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                if ids.is_empty() {
+                    self.toast(Severity::Info, "no active alert to acknowledge");
+                }
+                for id in ids {
+                    self.execute(Command::Ack(id));
+                }
+                true
+            }
+            KeyCode::Char('A') => {
+                self.alerts_overlay = !self.alerts_overlay;
                 true
             }
             KeyCode::Char('V') | KeyCode::Char('L') => {
@@ -1197,6 +1362,16 @@ impl Shell {
                 None => self.toast(
                     Severity::Info,
                     "no journal open — start with `gridwatch run --record FILE`",
+                ),
+            },
+            Command::Ack(id) => {
+                self.acked.insert(id);
+            }
+            Command::Source(id, ctl) => match self.controls.get(id.0) {
+                Some(send) => send(ctl),
+                None => self.toast(
+                    Severity::Info,
+                    format!("{id}: no live source to control (demo, replay or shot)"),
                 ),
             },
             other => self.toast(Severity::Info, format!("{other:?} arrives in a later arc")),
@@ -1446,17 +1621,29 @@ pub fn shot_frame(shell: &mut Shell, w: u16, h: u16) -> Buffer {
 pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
     let mut synth = gridwatch_store::demo::CpuSynth::new(seed);
     let mut gpu = gridwatch_store::demo::GpuSynth::new(seed);
+    let mut pins = gridwatch_store::demo::PinsSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let b = synth.tick_at(at, Detail::Table);
         shell.store.apply(&Msg::Batch(b));
-        // Both synths, as `--demo` runs both sources (arc 2b).
+        // Every synth, as `--demo` runs every source (arcs 2b, 3a); the pins
+        // synth's scripted alert events go through `apply_control` so the
+        // banner and the toasts see them exactly as the frame loop would.
         let b = gpu.tick_at(at, Detail::Table);
         shell.store.apply(&Msg::Batch(b));
+        let tick = pins.tick_at(at);
+        shell.store.apply(&Msg::Batch(tick.batch));
+        // Straight into the store: a headless shot must not carry 8 s toasts
+        // (the banner and the alerts tile read the store; toasts are the
+        // frame loop's, exercised by the shell tests through `apply_control`).
+        for a in tick.alerts {
+            shell.store.apply(&Msg::Control(ControlMsg::Alert(a)));
+        }
         if i == 0 {
             for src in [
                 gridwatch_store::keys::cpu::SOURCE,
                 gridwatch_store::keys::gpu::SOURCE,
+                gridwatch_store::keys::pins::SOURCE,
             ] {
                 shell.store.apply(&Msg::Control(ControlMsg::Status(
                     src,

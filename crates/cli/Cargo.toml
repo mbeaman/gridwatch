@@ -23,6 +23,7 @@ color-eyre.workspace = true
 [features]
 # One feature per source/component pair (WORKSPACE.md §15, D47 seam 5). CI's
 # matrix checks none, each alone, and all.
-default = ["cpu", "gpu"]
+default = ["cpu", "gpu", "pins"]
 cpu = ["gridwatch-app/cpu"]
 gpu = ["gridwatch-app/gpu"]
+pins = ["gridwatch-app/pins"]

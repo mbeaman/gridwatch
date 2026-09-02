@@ -24,6 +24,7 @@ libc.workspace = true
 
 [features]
 # Forwarded to the bin (WORKSPACE.md §15, D47 seam 5).
-default = ["cpu", "gpu"]
+default = ["cpu", "gpu", "pins"]
 cpu = ["gridwatch-sources/cpu", "gridwatch-components/htop"]
 gpu = ["gridwatch-sources/gpu", "gridwatch-components/gpu"]
+pins = ["gridwatch-sources/pins", "gridwatch-components/pins"]

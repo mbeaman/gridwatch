@@ -359,6 +359,61 @@ fn demo_draws_the_process_table() {
     );
 }
 
+/// C.10 (arc 3a) — `--demo` draws the pins tile, and at 250×70 the scripted
+/// overload raises the red banner after ≈ 22 s; `A` opens the alerts overlay.
+#[test]
+fn demo_raises_the_pins_banner_and_a_opens_the_overlay() {
+    if skip("demo_raises_the_pins_banner_and_a_opens_the_overlay") {
+        return;
+    }
+    let mut s = Session::start("banner", 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(4), |t| t.contains("balance"));
+    assert!(seen.is_some(), "no pins tile; screen: {:?}", s.screen());
+    let seen = s.wait_for(Duration::from_secs(30), |t| t.contains("ALERT: OVERLOAD"));
+    assert!(
+        seen.is_some(),
+        "no banner by 30 s; screen: {:?}",
+        s.screen()
+    );
+    // The typescript keeps every frame, so "the banner is gone" cannot be
+    // read from it; the shell test covers `a`. Here: `A` opens the overlay.
+    s.keys("A");
+    let overlay = s.wait_for(Duration::from_secs(3), |t| t.contains("Esc to close"));
+    assert!(
+        overlay.is_some(),
+        "no alerts overlay after `A`; screen: {:?}",
+        s.screen()
+    );
+    s.keys("\x1b");
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    let bad: Vec<&str> = log.lines().filter(|l| l.contains("ERROR")).collect();
+    assert!(bad.is_empty(), "errors in the log: {bad:?}");
+}
+
+/// C.11 (arc 3a) — `--replay fixtures/journals/synth-overload.jsonl --speed 10`
+/// reaches the banner: the alert lines replay through the control channel.
+#[test]
+fn replay_of_the_overload_fixture_raises_the_banner() {
+    if skip("replay_of_the_overload_fixture_raises_the_banner") {
+        return;
+    }
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/journals/synth-overload.jsonl");
+    let args = format!("run --replay {} --speed 10", fixture.display());
+    let mut s = Session::start("overload", 70, 250, &args);
+    let seen = s.wait_for(Duration::from_secs(8), |t| t.contains("ALERT: OVERLOAD"));
+    assert!(
+        seen.is_some(),
+        "no banner from the fixture; screen: {:?}",
+        s.screen()
+    );
+    s.keys("q");
+    let (code, _, _) = s.finish();
+    assert_eq!(code, 0);
+}
+
 /// C.7 (arc 2a) — `--replay FILE --speed 0` reaches a frame from the
 /// recorded fixture, and the journal source reports the end of the file.
 #[test]

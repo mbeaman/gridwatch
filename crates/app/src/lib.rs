@@ -97,6 +97,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     // started, and nothing downstream can tell the difference.
     let mut handles = Vec::new();
     let mut demands = BTreeMap::new();
+    let mut controls: app::Controls = BTreeMap::new();
     if let Some(path) = &opts.replay {
         if !path.exists() {
             return Err(format!("--replay {}: no such file", path.display()));
@@ -137,6 +138,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
             };
             let handle = spawn_source(def.info.id, mk, ch.clone(), clock.clone(), ctx_options);
             demands.insert(def.info.id.0, handle.demand.clone());
+            controls.insert(def.info.id.0, std::sync::Arc::new(handle.controller()));
             handles.push(handle);
         }
     }
@@ -177,7 +179,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
         .map(|d| d.info.id.0.to_string())
         .collect();
     let mut shell = Shell::new(
-        registry, &loaded, theme, caps, tz, clock, demands, opts.stats,
+        registry, &loaded, theme, caps, tz, clock, demands, controls, opts.stats,
     );
     // Config warnings are otherwise only in the log the user cannot see from
     // inside the alternate screen (§4.6: an unknown `view` name is a warning).
@@ -262,6 +264,7 @@ fn headless_shell(registry: Registry, theme_name: &str, page: usize) -> Result<S
         0,
         clock,
         demands,
+        BTreeMap::new(),
         false,
     );
     shell.set_page(page.saturating_sub(1));

@@ -28,6 +28,7 @@ fn shell() -> Shell {
         0,
         Clock::new_virtual(),
         BTreeMap::new(),
+        BTreeMap::new(),
         false,
     )
 }
@@ -134,6 +135,10 @@ fn page_text(sh: &mut Shell, w: u16, h: u16) -> String {
 
 /// `page` is 1-based, like the CLI's `--page`.
 fn shell_with(layout: &str, page: usize) -> Shell {
+    shell_with_ticks(layout, page, 40)
+}
+
+fn shell_with_ticks(layout: &str, page: usize, ticks: usize) -> Shell {
     let mut reg = Registry::default();
     gridwatch_components::builtin_components(&mut reg);
     let loaded = config::load_texts(config::DEFAULT_CONFIG, layout).unwrap();
@@ -146,10 +151,11 @@ fn shell_with(layout: &str, page: usize) -> Shell {
         0,
         Clock::new_virtual(),
         BTreeMap::new(),
+        BTreeMap::new(),
         false,
     );
     sh.set_page(page.saturating_sub(1));
-    gridwatch_app::feed_synth(&mut sh, 42, 40);
+    gridwatch_app::feed_synth(&mut sh, 42, ticks);
     sh
 }
 
@@ -287,6 +293,109 @@ fn shipped_placements_pick_the_expected_gpu_tiers() {
     assert!(
         !zoomed.contains("ccd0"),
         "zoom shows one tile, not the cpu tile too"
+    );
+}
+
+/// Arc 3a acceptance (brief seam 5): the synth's scripted overload puts the
+/// red banner on **every page**, `a` acknowledges it, a new `Raised` brings
+/// it back, a Warn-only state shows no banner, and the banner pulses on the
+/// even seconds — one row changes between two frames a second apart.
+#[test]
+fn the_alert_banner_is_on_every_page_and_acknowledges() {
+    use gridwatch_store::{AlertEvent, AlertId, Severity, Transition};
+    // 20 synth ticks = 30 s: the overload raised at 21.5 s and is active
+    // (it resolves at 50 s, which 40 ticks would already have passed).
+    let mut sh = shell_with_ticks(config::DEFAULT_LAYOUT, 1, 20);
+    let big = page_text(&mut sh, 250, 70);
+    assert!(big.contains("⚠ alert: overload ⚠"), "page 1 banner: {big}");
+    assert!(big.contains("a to acknowledge"));
+    sh.set_page(1);
+    let audio = page_text(&mut sh, 250, 70);
+    assert!(
+        audio.contains("⚠ alert: overload ⚠"),
+        "page 2 banner: {audio}"
+    );
+    // The pulse: even second reversed, odd second plain — the row changes.
+    sh.set_clock(Ts(60_000_000_000));
+    let even = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    sh.set_clock(Ts(61_000_000_000));
+    let odd_frame = shot_frame(&mut sh, 250, 70);
+    let odd = gridwatch_ui::dump::cells(&odd_frame);
+    assert_ne!(even, odd, "the banner must pulse between seconds");
+    // Exactly one row (the banner) differs between the two frames.
+    sh.set_clock(Ts(60_000_000_000));
+    let even_frame = shot_frame(&mut sh, 250, 70);
+    let differing = (0..70u16)
+        .filter(|y| (0..250u16).any(|x| even_frame.cell((x, *y)) != odd_frame.cell((x, *y))))
+        .count();
+    assert_eq!(differing, 1, "the pulse changes one row, not the page");
+    // `a` acknowledges: the banner leaves, the body grows back by one row.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('a'))));
+    let acked = page_text(&mut sh, 250, 70);
+    assert!(!acked.contains("⚠ alert"), "acked: {acked}");
+    // A new Raised un-acks.
+    sh.apply_control(ControlMsg::Alert(AlertEvent {
+        id: AlertId::new("pins/overload"),
+        source: SourceId("pins"),
+        severity: Severity::Crit,
+        transition: Transition::Raised,
+        title: "OVERLOAD".into(),
+        detail: "OVERLOAD pins 1+2 >9.2A".into(),
+        at: Ts(62_000_000_000),
+    }));
+    let back = page_text(&mut sh, 250, 70);
+    assert!(back.contains("⚠ alert: overload ⚠"), "re-raised: {back}");
+    // Resolved: the banner leaves and a green toast says so.
+    sh.apply_control(ControlMsg::Alert(AlertEvent {
+        id: AlertId::new("pins/overload"),
+        source: SourceId("pins"),
+        severity: Severity::Crit,
+        transition: Transition::Resolved,
+        title: "OVERLOAD".into(),
+        detail: "clear after 40s".into(),
+        at: Ts(63_000_000_000),
+    }));
+    let clear = page_text(&mut sh, 250, 70);
+    assert!(!clear.contains("⚠ alert"), "{clear}");
+    assert!(clear.contains("✓ overload clear after 40s"), "{clear}");
+    // Warn-only: a chip in the key bar, no banner.
+    sh.apply_control(ControlMsg::Alert(AlertEvent {
+        id: AlertId::new("pins/imbalance_advisory"),
+        source: SourceId("pins"),
+        severity: Severity::Warn,
+        transition: Transition::Raised,
+        title: "IMBALANCE (ADVISORY)".into(),
+        detail: "IMBALANCE(advisory) hi/lo=1.54".into(),
+        at: Ts(64_000_000_000),
+    }));
+    let warn = page_text(&mut sh, 250, 70);
+    assert!(!warn.contains("⚠ alert"), "{warn}");
+    assert!(warn.contains("▲ 1 advisory"), "{warn}");
+    // `A` opens the alerts overlay with the active list and the log; Esc closes.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('A'))));
+    let overlay = page_text(&mut sh, 250, 70);
+    assert!(overlay.contains("alerts  ·  esc to close"), "{overlay}");
+    assert!(overlay.contains("resolved overload"), "{overlay}");
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
+    assert!(!page_text(&mut sh, 250, 70).contains("esc to close"));
+}
+
+/// `Command::Source` without a live source (demo, shot, tests) toasts instead
+/// of vanishing; `Command::Ack` hides exactly the acknowledged id.
+#[test]
+fn source_commands_without_a_live_source_are_explained() {
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    // Focus the pins tile (third placement) and capture, then press `+`.
+    for _ in 0..2 {
+        sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Tab)));
+    }
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Enter)));
+    // `-` = slower: 500 → 600 ms is a real command (`+` at the floor is not).
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('-'))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        text.contains("no live source to control"),
+        "the toast explains the missing control: {text}"
     );
 }
 
@@ -568,6 +677,7 @@ fn shell_with_theme(layout: &str, page: usize, theme: &str) -> Shell {
         probe::probe(),
         0,
         Clock::new_virtual(),
+        BTreeMap::new(),
         BTreeMap::new(),
         false,
     );
