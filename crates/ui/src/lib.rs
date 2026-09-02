@@ -5,6 +5,7 @@
 
 pub mod component;
 pub mod dump;
+pub mod halfblock;
 pub mod layout;
 pub mod overlay;
 pub mod renderer;
