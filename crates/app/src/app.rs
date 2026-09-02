@@ -221,6 +221,11 @@ impl Shell {
         }
     }
 
+    /// The solve mode the last frame was drawn in (§6, with hysteresis).
+    pub fn mode(&self) -> SolveMode {
+        self.mode
+    }
+
     /// Config warnings that need the registry to detect (§4.6): a placement
     /// naming a tier the component does not have.
     pub fn view_warnings(&self) -> &[String] {
@@ -231,6 +236,25 @@ impl Shell {
     /// user cannot see is not a warning.
     pub fn warn_toast(&mut self, text: impl Into<String>) {
         self.toast(Severity::Warn, text);
+    }
+
+    /// Apply one control message and surface what the user should know (§11,
+    /// D46): alerts toast by severity, and a source *entering* `Unavailable`
+    /// toasts once with its reason — the `sources` tile shows the state, but a
+    /// transition the user would otherwise only find in the log is a failure
+    /// nobody saw.
+    pub fn apply_control(&mut self, c: ControlMsg) {
+        if let ControlMsg::Status(id, st) = &c
+            && st.state == gridwatch_store::SourceState::Unavailable
+            && self.store.status(*id).state != gridwatch_store::SourceState::Unavailable
+        {
+            let reason = st.reason.as_deref().unwrap_or("no reason given");
+            self.toast(Severity::Warn, format!("{id} unavailable: {reason}"));
+        }
+        let events = self.store.apply(&Msg::Control(c));
+        for ev in events {
+            self.toast(ev.severity, format!("{}: {}", ev.id.0, ev.title));
+        }
     }
 
     pub fn set_fps(&mut self, fps: u16) {
@@ -399,7 +423,14 @@ impl Shell {
         }
         // §6's too-small notice: the overlay existed but nothing called it, so
         // an undersized terminal showed a blank screen and no reason for it.
-        let (min_w, min_h) = (20u16, CHROME_ROWS + 1);
+        // Derived from what one tile needs, not a constant: the grid's minimum
+        // inner unit plus its border, plus the two chrome rows. Below this the
+        // body cannot hold a single tile, so the frame would be chrome around
+        // nothing — which the D46 lattice lint found at 20×3.
+        let (min_w, min_h) = (
+            self.grid.min_unit_inner.w + 2,
+            self.grid.min_unit_inner.h + 2 + CHROME_ROWS,
+        );
         if area.height < min_h || area.width < min_w {
             overlay::too_small(
                 area.width,
@@ -1170,10 +1201,7 @@ where
         }
         // Control: never dropped, drained before data (§4.2).
         while let Ok(c) = inbox.control.try_recv() {
-            let events = shell.store.apply(&Msg::Control(c));
-            for ev in events {
-                shell.toast(ev.severity, format!("{}: {}", ev.id.0, ev.title));
-            }
+            shell.apply_control(c);
             dirty = true;
         }
         // Data: at most ~3 ms per frame (§5).

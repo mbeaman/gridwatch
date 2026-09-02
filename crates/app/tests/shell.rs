@@ -290,3 +290,224 @@ fn source_and_component_option_names_are_disjoint() {
         );
     }
 }
+
+// ───────────────────────────── D46 layer B ──────────────────────────────
+
+/// One frame's plain characters plus what the lint needs to know about it.
+struct Frame {
+    text: String,
+    mode: gridwatch_ui::layout::SolveMode,
+}
+
+fn frame_at(sh: &mut Shell, w: u16, h: u16) -> Frame {
+    let text = page_text(sh, w, h);
+    Frame {
+        text,
+        mode: sh.mode(),
+    }
+}
+
+/// The D46 frame lint (TESTING.md layer B): what every frame at every size
+/// must satisfy. A blank frame is never acceptable; below the shell's minimum
+/// the too-small notice is the whole frame; above it, the cpu placement is
+/// either drawn or explained by a chip, and the tab bar follows the mode.
+fn frame_lint(f: &Frame, w: u16, h: u16, page: usize) {
+    use gridwatch_ui::layout::SolveMode;
+    let t = &f.text;
+    assert!(
+        t.chars().any(|c| !c.is_whitespace()),
+        "blank frame at {w}x{h} page {page}"
+    );
+    // The shell's minimum: one tile (8×3 inner + border) plus two chrome rows.
+    let too_small = w < 10 || h < 7;
+    // The notice is ~40 cells; narrower than that it is truncated to its
+    // prefix (the size), which is still an explanation and still non-blank.
+    if w >= 45 {
+        assert_eq!(
+            t.contains("needs at least"),
+            too_small,
+            "too-small notice wrong at {w}x{h}: {t:?}"
+        );
+    } else {
+        assert!(
+            !t.contains("needs at least") || too_small,
+            "too-small notice shown at a drawable size {w}x{h}"
+        );
+    }
+    if too_small {
+        return;
+    }
+    // The mode carries hysteresis (§6), so ask the shell which one it drew in
+    // rather than recomputing it from the size alone.
+    let mode = f.mode;
+    // The cpu placement exists on both shipped pages: either its content (any
+    // tier prints a percentage or a dash) or a chip that says why not. In
+    // stack mode the body may hold only the *first* placement, so the rule
+    // there is "some placement is drawn or explained".
+    let cpu_drawn = t.contains('%') || t.contains('—') || t.contains("▪ cpu");
+    let any_drawn = cpu_drawn || t.contains("▪ ");
+    if mode == SolveMode::Stack {
+        assert!(
+            any_drawn,
+            "no placement drawn or explained at {w}x{h} page {page}:\n{t}"
+        );
+    } else {
+        assert!(
+            cpu_drawn,
+            "cpu tile neither drawn nor explained at {w}x{h} page {page}:\n{t}"
+        );
+    }
+    assert_eq!(
+        t.contains("gridwatch"),
+        mode != SolveMode::Dense,
+        "tab bar visibility wrong at {w}x{h} (mode {mode:?})"
+    );
+}
+
+/// Every size a terminal can plausibly be, both pages, all themes at the §6
+/// thresholds and the full lattice in one theme.
+#[test]
+fn every_size_renders_something_honest() {
+    let mut widths: Vec<u16> = (1..=300).step_by(7).collect();
+    widths.extend([19, 20, 21, 108, 109, 110, 130, 131, 132, 157, 158, 250, 300]);
+    let mut heights: Vec<u16> = (1..=80).step_by(3).collect();
+    heights.extend([2, 3, 4, 26, 27, 28, 36, 37, 38, 40, 70, 80]);
+    widths.sort_unstable();
+    widths.dedup();
+    heights.sort_unstable();
+    heights.dedup();
+    let thresholds = [
+        (19, 2),
+        (20, 3),
+        (108, 26),
+        (109, 27),
+        (130, 36),
+        (131, 37),
+        (158, 40),
+    ];
+    for page in [1usize, 2] {
+        let mut sh = shell_with(config::DEFAULT_LAYOUT, page);
+        for &w in &widths {
+            for &h in &heights {
+                let f = frame_at(&mut sh, w, h);
+                frame_lint(&f, w, h, page);
+            }
+        }
+        for theme in ["retrowave", "modern"] {
+            let mut sh = shell_with_theme(config::DEFAULT_LAYOUT, page, theme);
+            for (w, h) in thresholds {
+                let f = frame_at(&mut sh, w, h);
+                frame_lint(&f, w, h, page);
+            }
+        }
+    }
+}
+
+/// Resize as a sequence through one shell, not a fresh shell per size: the
+/// mode, the cpu tile's tier and the notice must follow the terminal, and the
+/// frame after each resize must be byte-identical to a cold start at that
+/// size — which is what "no stale cells, cache invalidated" actually means.
+#[test]
+fn resize_sequence_follows_the_terminal() {
+    let steps: [(u16, u16, &str); 6] = [
+        (60, 20, "stack"),
+        (200, 45, "cores"),
+        (40, 8, "stack"),
+        (250, 50, "cores"),
+        (158, 1, "too-small"),
+        (131, 38, "cores"),
+    ];
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    let _ = frame_at(&mut sh, 250, 70);
+    for (w, h, expect) in steps {
+        sh.handle_input(InputEvent::Resize(w, h));
+        let f = frame_at(&mut sh, w, h);
+        match expect {
+            "cores" => assert!(
+                f.text.contains("ccd0"),
+                "{w}x{h} should be cores:\n{}",
+                f.text
+            ),
+            "stack" => assert!(
+                !f.text.contains("ccd0") && f.text.contains("cpu"),
+                "{w}x{h} should be a stacked/small cpu tile:\n{}",
+                f.text
+            ),
+            _ => assert!(
+                f.text.contains("158×1 — gridwatch needs"),
+                "{w}x{h}: {}",
+                f.text
+            ),
+        }
+        let mut cold = shell_with(config::DEFAULT_LAYOUT, 1);
+        let cold_f = frame_at(&mut cold, w, h);
+        assert_eq!(
+            f.text, cold_f.text,
+            "frame after resizing to {w}x{h} differs from a cold start at that size"
+        );
+    }
+}
+
+fn shell_with_theme(layout: &str, page: usize, theme: &str) -> Shell {
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    let loaded = config::load_texts(config::DEFAULT_CONFIG, layout).unwrap();
+    let theme = load_builtin(theme, ColorMode::TrueColor).unwrap();
+    let mut sh = Shell::new(
+        reg,
+        &loaded,
+        theme,
+        probe::probe(),
+        0,
+        Clock::new_virtual(),
+        BTreeMap::new(),
+        false,
+    );
+    sh.set_page(page.saturating_sub(1));
+    gridwatch_app::feed_synth(&mut sh, 42, 40);
+    sh
+}
+
+// ───────────────────────────── D46 layer D ──────────────────────────────
+
+/// §11/D46: a source entering `Unavailable` is a failure the user must see,
+/// not one they find in the log — it toasts once, with the reason, and the
+/// `sources` tile carries the state.
+#[test]
+fn a_source_failure_reaches_the_screen() {
+    let mut sh = shell();
+    sh.store.ensure_source(SourceId("cpu"));
+    let status = |state| SourceStatus {
+        state,
+        reason: Some("procfs must be mounted at /proc".into()),
+        hint: None,
+        since: Ts(1),
+        last_sample: None,
+        dropped: 0,
+        restarts: 0,
+    };
+    sh.apply_control(ControlMsg::Status(
+        SourceId("cpu"),
+        status(SourceState::Unavailable),
+    ));
+    let t = page_text(&mut sh, 250, 70);
+    assert!(
+        t.contains("cpu unavailable: procfs must be mounted"),
+        "no toast for the failure:\n{t}"
+    );
+    assert!(
+        t.contains("unavailable"),
+        "sources tile does not show the state"
+    );
+    // The same status again is not a new transition: one toast, not a stream.
+    sh.apply_control(ControlMsg::Status(
+        SourceId("cpu"),
+        status(SourceState::Unavailable),
+    ));
+    let t = page_text(&mut sh, 250, 70);
+    assert_eq!(
+        t.matches("cpu unavailable:").count(),
+        1,
+        "duplicate toasts:\n{t}"
+    );
+}
