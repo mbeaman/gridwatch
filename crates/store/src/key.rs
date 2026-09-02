@@ -172,6 +172,7 @@ pub static CATALOGUE: &[&[KeyMeta]] = &[
     crate::keys::cpu::METAS,
     crate::keys::gpu::METAS,
     crate::keys::pins::METAS,
+    crate::keys::audio::METAS,
 ];
 
 /// Intern a journal/config name onto the static catalogue; unknown names are

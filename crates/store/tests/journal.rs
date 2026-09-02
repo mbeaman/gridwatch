@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gridwatch_store::journal::{Entry, JOURNAL, encode, encode_at};
-use gridwatch_store::keys::{cpu, gpu, pins, sys};
+use gridwatch_store::keys::{audio, cpu, gpu, pins, sys};
 use gridwatch_store::*;
 
 fn exemplar(name: &str) -> Option<Arc<dyn RecordValue>> {
@@ -29,6 +29,14 @@ fn exemplar(name: &str) -> Option<Arc<dyn RecordValue>> {
         "gpu.info" => Arc::new(gridwatch_store::demo::GpuSynth::info_exemplar()),
         "gpu.procs" => Arc::new(demo::gpu_procs(3, 3)),
         "pins.info" => Arc::new(demo::pins_info()),
+        "audio.sink" => Arc::new(demo::audio_sink()),
+        "audio.sinks" => Arc::new(audio::AudioSinks {
+            sinks: vec![demo::audio_sink()],
+        }),
+        "audio.level" => Arc::new(audio::AudioLevel {
+            silent: true,
+            since: Ts(1_500_000_000),
+        }),
         "pins.state" => Arc::new(pins::PinsState {
             telemetry_lost: false,
             misses: 0,
@@ -214,16 +222,16 @@ fn tables_off_omits_only_the_process_tables() {
 #[test]
 fn unknown_names_are_skipped_once_and_unknown_sources_fail() {
     let text = r#"{"v":1,"wall_epoch":1,"host":"t","size":[80,24],"sources":["cpu","audio"]}
-{"t":1,"b":{"src":"cpu","s":[["audio.bands{0}",[0.1,0.2]],["cpu.total_pct",4.0]]}}
-{"t":2,"b":{"src":"cpu","s":[["audio.bands{0}",[0.3]],["cpu.total_pct","not a number"]]}}
+{"t":1,"b":{"src":"cpu","s":[["future.bands{0}",[0.1,0.2]],["cpu.total_pct",4.0]]}}
+{"t":2,"b":{"src":"cpu","s":[["future.bands{0}",[0.3]],["cpu.total_pct","not a number"]]}}
 "#;
     let r = Replay::parse(text).unwrap();
     assert_eq!(r.header.as_ref().unwrap().sources, vec!["cpu", "audio"]);
     assert_eq!(r.entries.len(), 2);
-    // `audio.bands` has no catalogue row → unknown (once); `cpu.total_pct`
+    // `future.bands` has no catalogue row → unknown (once); `cpu.total_pct`
     // is a known key with a datum this build cannot revive → undecodable,
     // and never reported as unknown.
-    let expected: BTreeSet<String> = ["audio.bands{0}"].into_iter().map(String::from).collect();
+    let expected: BTreeSet<String> = ["future.bands{0}"].into_iter().map(String::from).collect();
     assert_eq!(r.unknown, expected, "one entry per skipped name");
     let mut dec = Decoder::default();
     for line in text.lines().skip(1) {
