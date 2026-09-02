@@ -243,6 +243,9 @@ pub struct Loaded {
     pub config: ConfigFile,
     pub grid: GridSpec,
     pub pages: Vec<Page>,
+    /// The `[[rules]]` that parsed (arc 7b); the ones that did not are in
+    /// `warnings` and `config check` prints them as errors.
+    pub rules: Vec<gridwatch_store::rules::Rule>,
     pub warnings: Vec<String>,
     pub config_path: Option<PathBuf>,
     pub layout_path: Option<PathBuf>,
@@ -334,9 +337,12 @@ fn load_from(
     if !config.record.is_empty() {
         warnings.push("[record] arrives in arc 2 — ignored for now".into());
     }
-    if !config.rules.is_empty() {
-        warnings.push("[[rules]] arrive in arc 7 — ignored for now".into());
-    }
+    // `[[rules]]` are parsed here so a bad rule is a warning at load and an
+    // error in `config check` — never a surprise at the first sample.
+    let (rules, rule_errors) = gridwatch_store::rules::parse_all(&config.rules, &|k| {
+        gridwatch_store::key::lookup(k).is_some()
+    });
+    warnings.extend(rule_errors.iter().map(|e| e.to_string()));
     if config.schema != 1 || layout.schema != 1 {
         return Err(ConfigError("unsupported schema (expected 1)".into()));
     }
@@ -444,6 +450,7 @@ fn load_from(
         config,
         grid,
         pages,
+        rules,
         warnings,
         config_path,
         layout_path,

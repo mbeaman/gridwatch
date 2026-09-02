@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "gridwatch config.toml (\u00a79)",
+  "title": "gridwatch config.toml (§9)",
   "type": "object",
   "required": [
     "schema"
@@ -100,11 +100,78 @@
       }
     },
     "rules": {
-      "type": "array"
+      "type": "array",
+      "description": "Alert rules (§9, arc 7b): each turns one metric into an alert with two holds.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "key",
+          "op"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The alert's title, and the first half of its id."
+          },
+          "key": {
+            "type": "string",
+            "description": "A metric name, optionally with a label glob: sensor.temp_c{nvme*:Composite}."
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "==",
+              "!=",
+              "gt",
+              "ge",
+              "lt",
+              "le",
+              "eq",
+              "ne",
+              "absent"
+            ]
+          },
+          "value": {
+            "description": "A number, or the name of another metric read at the same label.",
+            "type": [
+              "number",
+              "string"
+            ]
+          },
+          "for_s": {
+            "type": "number",
+            "minimum": 0,
+            "description": "How long the condition must hold before it raises; for `absent`, how long the key may be missing."
+          },
+          "clear_s": {
+            "type": "number",
+            "minimum": 0,
+            "description": "How long it must stop holding before it resolves (defaults to for_s)."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warn",
+              "crit"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "{key} {label} {value} {threshold} {op} are substituted."
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "record": {
       "type": "object",
-      "description": "Recording config \u2014 parsed and ignored until arc 2 (\u00a79)."
+      "description": "Recording config — parsed and ignored until arc 2 (§9)."
     }
   },
   "additionalProperties": false

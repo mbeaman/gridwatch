@@ -995,3 +995,52 @@ fn demo_net_keys_show_all_and_sort() {
     assert_eq!(code, 0);
     assert!(!log.contains("ERROR"), "{log}");
 }
+
+/// C.25 (arc 7b) — a `[[rules]]` entry written into the sandbox reloads and
+/// fires against the demo data: the banner appears, `a` acknowledges it,
+/// and `config check` lists the rule in the words the engine uses.
+#[test]
+fn a_config_rule_fires_against_the_demo_data() {
+    if skip("a_config_rule_fires_against_the_demo_data") {
+        return;
+    }
+    let mut s = Session::start("rules", 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(4), |t| t.contains("retrowave"));
+    assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+    let dir = s.sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    // The demo GPU runs hot enough that "over 20°C" is certain, and a
+    // one-second hold keeps the test short.
+    let cfg = format!(
+        "{}\n[[rules]]\nname = \"demo gpu rule\"\nkey = \"gpu.temp_c\"\nop = \">\"\nvalue = 20\nfor_s = 1\nseverity = \"warn\"\nmessage = \"the demo gpu is at {{value}}\"\n",
+        gridwatch_app::config::DEFAULT_CONFIG
+    );
+    std::fs::write(dir.join("config.toml"), cfg).unwrap();
+    let seen = s.wait_for(Duration::from_secs(6), |t| t.contains("demo gpu rule"));
+    assert!(
+        seen.is_some(),
+        "the rule did not raise a banner; screen: {:?}",
+        s.screen()
+    );
+    // `a` acknowledges it, as it would any alert.
+    s.keys("a");
+    std::thread::sleep(Duration::from_millis(500));
+
+    // `config check` says what will fire, not just how many. It runs while
+    // the session is alive: the sandbox deletes itself on `finish`.
+    let out = std::process::Command::new(bin())
+        .args(["config", "check"])
+        .env("XDG_CONFIG_HOME", s.sandbox.root.join("config"))
+        .env("XDG_STATE_HOME", s.sandbox.root.join("state"))
+        .output()
+        .expect("config check runs");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("rules: 1"), "{text}");
+    assert!(text.contains("gpu.temp_c > 20"), "{text}");
+    assert!(text.contains("Warn"), "{text}");
+
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}

@@ -1981,3 +1981,84 @@ fn the_cache_re_renders_only_the_animated_tile() {
         );
     }
 }
+
+/// Arc 7b: a `[[rules]]` alert reaches the banner, the toast and `a` the
+/// same way a source's own alert does — the shell has no special case for
+/// it, which is the point of raising inside `Store::apply`.
+#[test]
+fn a_config_rule_raises_a_banner_and_a_acknowledges_it() {
+    let mut sh = shell();
+    sh.set_clock(Ts(60_000_000_000));
+    let rules = gridwatch_store::rules::parse_all(
+        &[toml::from_str(
+            r#"name = "gpu hot"
+key = "gpu.temp_c"
+op = ">"
+value = 84
+for_s = 2
+clear_s = 2
+severity = "crit"
+message = "the gpu is at {value}°C""#,
+        )
+        .unwrap()],
+        &|k| gridwatch_store::key::lookup(k).is_some(),
+    );
+    assert!(rules.1.is_empty(), "{:?}", rules.1);
+    sh.store
+        .set_rules(gridwatch_store::rules::Rules::new(rules.0));
+
+    let hot = |t: u64, v: f64| {
+        Msg::Batch(gridwatch_store::Batch {
+            source: gridwatch_store::SourceId("gpu"),
+            at: Ts(t * 1_000_000_000),
+            samples: vec![gridwatch_store::Sample {
+                id: gridwatch_store::keys::gpu::TEMP_C.idx(0).id,
+                datum: gridwatch_store::Datum::Scalar(v),
+            }],
+        })
+    };
+    for t in [60, 61] {
+        let ev = sh.store.apply(&hot(t, 91.0));
+        sh.route_alerts(ev);
+    }
+    let text = page_text(&mut sh, 250, 70);
+    assert!(!text.contains("gpu hot"), "raised inside the hold: {text}");
+    let ev = sh.store.apply(&hot(62, 91.0));
+    assert_eq!(ev.len(), 1);
+    sh.route_alerts(ev);
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("gpu hot"), "no banner: {text}");
+    assert!(text.contains("91.0"), "the message is not rendered: {text}");
+    // `a` acknowledges it like any other alert.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('a'))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        !text.contains("gpu hot") || text.contains("acked") || text.contains("ack"),
+        "the banner survived the acknowledgement: {text}"
+    );
+    // Cooling resolves it, and the alerts tile lets it go.
+    let ev = sh.store.apply(&hot(63, 50.0));
+    sh.route_alerts(ev);
+    let ev = sh.store.apply(&hot(66, 50.0));
+    assert_eq!(ev.len(), 1);
+    assert_eq!(ev[0].transition, gridwatch_store::Transition::Resolved);
+    sh.route_alerts(ev);
+    assert_eq!(sh.store.alerts().active().count(), 0);
+}
+
+/// A store with no rules is untouched by any of this: the rules cost
+/// nothing when nobody wrote one (the default config ships them commented).
+#[test]
+fn the_shipped_config_has_no_active_rules() {
+    let loaded = config::load_embedded().unwrap();
+    assert!(
+        loaded.rules.is_empty(),
+        "the examples ship commented out: {:?}",
+        loaded.rules
+    );
+    assert!(
+        loaded.warnings.iter().all(|w| !w.contains("[[rules]]")),
+        "{:?}",
+        loaded.warnings
+    );
+}

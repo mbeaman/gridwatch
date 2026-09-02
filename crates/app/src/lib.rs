@@ -641,6 +641,38 @@ pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
         ),
     ];
     lines.extend(loaded.warnings.iter().map(|w| format!("warning: {w}")));
+    // The rules that parsed, in the words the engine will use (arc 7b): a
+    // check that only counted them would not tell anyone what will fire.
+    if !loaded.rules.is_empty() {
+        lines.push(format!("rules: {}", loaded.rules.len()));
+        for r in &loaded.rules {
+            let rhs = match &r.rhs {
+                gridwatch_store::rules::Rhs::Value(v) => format!("{v}"),
+                gridwatch_store::rules::Rhs::Key(k) => k.clone(),
+            };
+            let label = if r.label == "*" {
+                String::new()
+            } else {
+                format!("{{{}}}", r.label)
+            };
+            // `absent` has no right-hand side to print.
+            let cmp = if r.op == gridwatch_store::rules::Op::Absent {
+                "absent".to_string()
+            } else {
+                format!("{} {rhs}", r.op.symbol())
+            };
+            lines.push(format!(
+                "  {} — {}{} {} for {:.0}s, clears after {:.0}s ({:?})",
+                r.name,
+                r.key,
+                label,
+                cmp,
+                r.for_s.as_secs_f64(),
+                r.clear_s.as_secs_f64(),
+                r.severity,
+            ));
+        }
+    }
     let name = theme.unwrap_or(&loaded.config.theme);
     // A theme that does not load is a failed check (exit 1), as `run` would
     // fail on it — a check that prints "error" and exits 0 is no check.

@@ -51,3 +51,57 @@ kind = "winamp"
 [[components]]
 id = "temps"
 kind = "sensors"
+
+# ---------------------------------------------------------------------------
+# Alert rules (§9, arc 7b). Each `[[rules]]` entry watches one metric and
+# raises through the same path a source's own alert takes: the banner, the
+# alerts tile, `a` to acknowledge, `A` for the panel.
+#
+#   key       a metric name from `gridwatch keys`, optionally with a label
+#             glob in braces — `sensor.temp_c{nvme*:Composite}` is one rule
+#             for every drive, and raises one alert per drive.
+#   op        > >= < <= == != , or `absent` (the key stopped arriving).
+#   value     a number, or another metric read at the same label — a drive
+#             compared against its own `sensor.crit_c` needs no hard-coding.
+#   for_s     how long it must hold before raising (`absent`: how long the
+#             key may be missing). clear_s defaults to for_s.
+#   message   {key} {label} {value} {threshold} {op} are substituted.
+#
+# `gridwatch config check` parses these and names any that are wrong; a rule
+# that does not parse is skipped, never guessed at. The examples below are
+# torch's, commented out — uncomment what you want.
+#
+# [[rules]]
+# name = "gpu hot"
+# key = "gpu.temp_c"
+# op = ">"
+# value = 84
+# for_s = 30
+# clear_s = 60
+# severity = "warn"
+# message = "the gpu has been at {value}°C for half a minute"
+#
+# [[rules]]
+# name = "drive over its own limit"
+# key = "sensor.temp_c{nvme*:Composite}"
+# op = ">="
+# value = "sensor.crit_c"
+# for_s = 10
+# severity = "crit"
+#
+# [[rules]]
+# name = "link down"
+# key = "net.rx_bps{eno1}"
+# op = "absent"
+# for_s = 15
+# severity = "warn"
+# message = "eno1 has published nothing for fifteen seconds"
+#
+# [[rules]]
+# name = "swap in use"
+# key = "swap.used_b"
+# op = ">"
+# value = 1073741824
+# for_s = 60
+# severity = "info"
+# message = "swap is {value} bytes — something is over memory"

@@ -207,6 +207,7 @@ impl Shell {
                 (def.info.cadence.visible, def.info.cadence.focused),
             );
         }
+        store.set_rules(gridwatch_store::rules::Rules::new(loaded.rules.clone()));
         let instances = build_instances(&registry, loaded, &caps, None);
         let view_warnings = view_warnings(loaded, &instances);
         let theme_ref = theme.name.clone();
@@ -405,6 +406,8 @@ impl Shell {
         self.view_warnings = view_warnings(loaded, &self.instances);
         self.grid = loaded.grid;
         self.pages = loaded.pages.clone();
+        self.store
+            .set_rules(gridwatch_store::rules::Rules::new(loaded.rules.clone()));
         self.fps = loaded.config.fps; // as at start; `set_fps` is the CLI's clamp
         self.fps_max = loaded.config.fps_max;
         self.unfocused_fps = loaded.config.perf.unfocused_fps;
@@ -634,6 +637,14 @@ impl Shell {
             self.toast(Severity::Warn, format!("{id} unavailable: {reason}"));
         }
         let events = self.store.apply(&Msg::Control(c));
+        self.route_alerts(events);
+    }
+
+    /// Toast and un-acknowledge whatever the store just raised. A source's
+    /// `Alert` control message and a `[[rules]]` alert (arc 7b, raised
+    /// inside `apply` over a batch) take exactly this path, so the banner,
+    /// the alerts tile and `a` need no special case for either.
+    pub fn route_alerts(&mut self, events: impl IntoIterator<Item = gridwatch_store::AlertEvent>) {
         for ev in events {
             match ev.transition {
                 gridwatch_store::Transition::Raised => {
@@ -660,6 +671,16 @@ impl Shell {
                 }
             }
         }
+    }
+
+    /// One frame's worth of `absent` rules (arc 7b): the store's own clock
+    /// cannot notice a key that stopped arriving, so the shell asks.
+    pub fn tick_rules(&mut self) {
+        if self.store.rules().is_empty() {
+            return;
+        }
+        let events = self.store.tick_rules(self.now());
+        self.route_alerts(events);
     }
 
     pub fn set_fps(&mut self, fps: u16) {
@@ -3216,11 +3237,15 @@ where
             let msg = Msg::Batch(b);
             let Msg::Batch(b) = &msg else { unreachable!() };
             shell.tee(b.at, &msg);
-            shell.store.apply(&msg);
+            let events = shell.store.apply(&msg);
+            if !events.is_empty() {
+                shell.route_alerts(events);
+            }
             if t0.elapsed() > Duration::from_millis(3) {
                 break;
             }
         }
+        shell.tick_rules();
         if shell.quit {
             // Finish the drain before leaving: the 3 ms cap above exists to
             // keep frames short, not to lose data, and a recorder attached to
