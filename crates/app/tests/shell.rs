@@ -1599,12 +1599,15 @@ fn pause_freezes_and_v_and_l_light_the_page() {
     assert!(text.contains("sources"), "{text}");
     // L: locked — after many frames the page still reads.
     sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('L'))));
+    // The toast is checked at once: it expires on the wall clock, and 200
+    // rain frames take longer than its life on a slow runner.
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("everything lit"), "{text}");
     for _ in 0..200 {
         let _ = shot_frame(&mut sh, 250, 70);
     }
     let text = page_text(&mut sh, 250, 70);
     assert!(text.contains("gpu") && text.contains("sources"), "{text}");
-    assert!(text.contains("everything lit"), "{text}");
 }
 
 /// A quiet theme has no layer: `V`/`L` explain themselves; `--no-effects`
