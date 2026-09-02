@@ -1623,3 +1623,184 @@ fn quiet_themes_and_no_effects_have_no_rain() {
     let text = page_text(&mut off, 250, 70);
     assert!(text.contains("gpu") && text.contains("balance"), "{text}");
 }
+
+// ───────────────────── arc 4b review: the confirmed findings ─────────────────────
+
+/// Every frame of a sweep cycle keeps the focused tile, the alerting tile,
+/// the banner, the tab bar and the key bar as the mold (readability floor);
+/// two matrix shells fed the same inputs are byte-identical frame for frame
+/// (the effects tick on the run clock, not wall time).
+#[test]
+fn matrix_pins_hold_every_frame_and_two_shells_agree() {
+    let mut a = matrix_shell();
+    let mut b = matrix_shell();
+    // Warm both, then compare 60 frames.
+    for _ in 0..3 {
+        let _ = shot_frame(&mut a, 250, 70);
+        let _ = shot_frame(&mut b, 250, 70);
+    }
+    for _ in 0..60 {
+        let fa = shot_frame(&mut a, 250, 70);
+        let fb = shot_frame(&mut b, 250, 70);
+        assert_eq!(fa, fb, "two matrix shells diverged");
+    }
+    // A whole sweep cycle: the pinned surfaces never carry a rain glyph.
+    let cycle = 24 * 23;
+    for _ in 0..cycle {
+        let frame = shot_frame(&mut a, 250, 70);
+        let row = |y: u16| -> String {
+            (0..250u16)
+                .map(|x| frame.cell((x, y)).unwrap().symbol().to_string())
+                .collect()
+        };
+        assert!(row(0).contains("gridwatch"), "tab bar rained: {}", row(0));
+        assert!(
+            row(1).contains("ALERT: OVERLOAD"),
+            "banner rained: {}",
+            row(1)
+        );
+        assert!(row(69).contains("q quit"), "key bar rained: {}", row(69));
+        // The focused (cpu) tile's title and the alerting pins tile's title
+        // (matrix upper-cases titles).
+        assert!(
+            row(2).to_lowercase().contains("cpu"),
+            "focused tile rained: {}",
+            row(2)
+        );
+        let pins_title: String = (37..40u16)
+            .map(|y| row(y).to_lowercase())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            pins_title.contains("pins"),
+            "alerting tile rained: {pins_title}"
+        );
+    }
+}
+
+/// Paused (and unfocused) the rain stands still but the UI still draws: the
+/// `paused` toast shows at once, a page change shows in the tab bar, and a
+/// new Crit banner raised while frozen reaches the screen.
+#[test]
+fn frozen_matrix_still_shows_toasts_pages_and_new_alerts() {
+    use gridwatch_store::{AlertEvent, AlertId, Severity, Transition};
+    let mut sh = matrix_shell();
+    for _ in 0..5 {
+        let _ = shot_frame(&mut sh, 250, 70);
+    }
+    // Ack the demo overload so the banner is down, then freeze.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('a'))));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char(' '))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        text.contains("paused"),
+        "no pause toast while frozen: {text}"
+    );
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('2'))));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        text.contains(" 2 audio ") && text.contains("winamp"),
+        "{text}"
+    );
+    sh.apply_control(ControlMsg::Alert(AlertEvent {
+        id: AlertId::new("pins/disconnected"),
+        source: SourceId("pins"),
+        severity: Severity::Crit,
+        transition: Transition::Raised,
+        title: "DISCONNECT".into(),
+        detail: "pin 3 open".into(),
+        at: Ts(40_000_000_000),
+    }));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        text.contains("⚠ alert: disconnect ⚠"),
+        "banner hidden while frozen: {text}"
+    );
+    // Frozen frames are stable.
+    let a = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    let b = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    assert_eq!(a, b);
+}
+
+/// A resize under matrix re-prints the page within a few frames instead of
+/// waiting for the next 20 s sweep.
+#[test]
+fn resize_under_matrix_relights_the_page() {
+    let mut sh = matrix_shell();
+    for _ in 0..50 {
+        let _ = shot_frame(&mut sh, 250, 70);
+    }
+    sh.handle_input(InputEvent::Resize(200, 60));
+    let mut lit = 0;
+    for _ in 0..24 * 4 {
+        let frame = shot_frame(&mut sh, 200, 60);
+        let t: String = (0..200u16)
+            .map(|x| frame.cell((x, 3)).unwrap().symbol().to_string())
+            .collect();
+        if t.contains("CPU") || t.contains("cpu") {
+            lit += 1;
+        }
+    }
+    assert!(lit > 0, "the page stayed dark after the resize");
+}
+
+/// The lock keeps the rain out of every tile; the flourish art never touches
+/// a tile at either real size.
+#[test]
+fn lock_keeps_rain_in_gutters_and_flourishes_stay_in_holes() {
+    let mut sh = matrix_shell();
+    for _ in 0..5 {
+        let _ = shot_frame(&mut sh, 250, 70);
+    }
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('L'))));
+    for _ in 0..100 {
+        let frame = shot_frame(&mut sh, 250, 70);
+        // The cpu tile occupies x 0..125, y 1..36: no rain glyph inside.
+        let inside = (0..125u16)
+            .flat_map(|x| (1..36u16).map(move |y| (x, y)))
+            .filter(|&(x, y)| {
+                frame.cell((x, y)).is_some_and(|c| {
+                    c.symbol()
+                        .chars()
+                        .any(|ch| ('\u{FF66}'..='\u{FF9D}').contains(&ch))
+                })
+            })
+            .count();
+        assert_eq!(inside, 0, "rain inside a locked tile");
+    }
+    // Flourishes: a layout with a 4x2 hole and a 2x1 hole under retrowave.
+    let layout = "schema = 1\n[grid]\ncolumns = 12\nrows = 6\n[[pages]]\nname = \"Holes\"\nhotkey = \"1\"\nplace = [\n  { id = \"cpu\", at = [0, 0], size = [6, 3] },\n  { id = \"gpu\", at = [6, 0], size = [6, 3] },\n  { id = \"pins\", at = [0, 3], size = [4, 2] },\n  { kind = \"clock\", at = [10, 5], size = [2, 1] },\n]\n";
+    for (w, h) in [(250u16, 70u16), (131, 37)] {
+        let mut sh = shell_with_theme(layout, 1, "retrowave");
+        let with = shot_frame(&mut sh, w, h);
+        // The tiles' outer rects from the same solver the shell uses (body =
+        // the frame minus the tab bar and key bar): no art glyph inside any.
+        let body = ratatui::layout::Rect::new(0, 1, w, h - 2);
+        let spec = gridwatch_ui::layout::GridSpec::default();
+        let mode = gridwatch_ui::layout::SolveMode::Configured;
+        let mut inside = 0;
+        for (at, size) in [
+            ((0u8, 0u8), (6u8, 3u8)),
+            ((6, 0), (6, 3)),
+            ((0, 3), (4, 2)),
+            ((10, 5), (2, 1)),
+        ] {
+            let r = gridwatch_ui::layout::unit_rect(&spec, body, mode, at, size).unwrap();
+            for y in r.y..r.y + r.height {
+                for x in r.x..r.x + r.width {
+                    if with.cell((x, y)).unwrap().symbol() == "╱" {
+                        inside += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(inside, 0, "floor lines inside a tile at {w}x{h}");
+        // And the art is there, in the hole.
+        let hole = gridwatch_ui::layout::unit_rect(&spec, body, mode, (4, 3), (6, 2)).unwrap();
+        let art = (hole.y..hole.y + hole.height)
+            .flat_map(|y| (hole.x..hole.x + hole.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| matches!(with.cell((x, y)).unwrap().symbol(), "╱" | "█" | "▀" | "─"))
+            .count();
+        assert!(art > 0, "no flourish in the hole at {w}x{h}");
+    }
+}

@@ -46,6 +46,18 @@ impl FrameStats {
     pub fn p95_us(&self) -> u64 {
         self.percentile(0.95)
     }
+
+    /// p95 over the last `n` frames (the governor's 2 s window, S4).
+    pub fn p95_recent_us(&self, n: usize) -> u64 {
+        let start = self.samples_us.len().saturating_sub(n.max(1));
+        let mut v: Vec<u64> = self.samples_us[start..].to_vec();
+        if v.is_empty() {
+            return 0;
+        }
+        v.sort_unstable();
+        let i = ((v.len() - 1) as f64 * 0.95).round() as usize;
+        v[i]
+    }
 }
 
 impl FrameStats {

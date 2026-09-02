@@ -36,7 +36,20 @@ pub fn empty_runs(spec: &GridSpec, page: &Page) -> Vec<((u8, u8), (u8, u8))> {
             _ => runs.push(((x, y), (1, 1))),
         }
     }
-    runs
+    // A hole several units tall is one rect (review: an N×2 hole drew two
+    // stacked suns): a run merges onto the one directly above with the same
+    // span.
+    let mut merged: Vec<((u8, u8), (u8, u8))> = Vec::new();
+    for ((x, y), (w, h)) in runs {
+        match merged
+            .iter_mut()
+            .find(|((mx, my), (mw, mh))| *mx == x && *mw == w && *my + *mh == y)
+        {
+            Some((_, (_, mh))) => *mh += h,
+            None => merged.push(((x, y), (w, h))),
+        }
+    }
+    merged
 }
 
 /// Draw the theme's flourishes into the page's empty runs (nothing in stack
@@ -50,7 +63,10 @@ pub fn draw(
     buf: &mut Buffer,
 ) {
     let f = &theme.flourish;
-    if (!f.grid_floor && !f.sun) || mode == SolveMode::Stack {
+    // Stack mode has no units; dense mode has no gutters, so the floor lines
+    // would abut tile borders (review) — flourishes are a configured-mode
+    // decoration.
+    if (!f.grid_floor && !f.sun) || mode != SolveMode::Configured {
         return;
     }
     for (at, size) in empty_runs(spec, page) {
@@ -181,7 +197,8 @@ mod tests {
         let runs = empty_runs(&spec, &page_with_hole());
         assert_eq!(
             runs,
-            vec![((8, 3), (4, 1)), ((8, 4), (4, 1)), ((8, 5), (4, 1))]
+            vec![((8, 3), (4, 3))],
+            "one rect, not three stacked runs"
         );
         let full = Page {
             place: vec![Placement {

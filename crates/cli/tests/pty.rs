@@ -715,12 +715,22 @@ fn no_effects_runs_plain() {
     if skip("no_effects_runs_plain") {
         return;
     }
-    let mut s = Session::start("noeffects", 70, 250, "run --demo --no-effects");
+    let stats =
+        std::env::temp_dir().join(format!("gridwatch-noeffects-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&stats);
+    let args = format!("run --demo --no-effects --stats-log {}", stats.display());
+    let mut s = Session::start("noeffects", 70, 250, &args);
     let seen = s.wait_for(Duration::from_secs(3), |t| t.contains("CCD0"));
     assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+    std::thread::sleep(Duration::from_millis(1500));
     s.keys("q");
     let (code, _, log) = s.finish();
     assert_eq!(code, 0);
     assert!(!log.contains("effects off"), "{log}");
     assert!(!log.contains("ERROR"), "{log}");
+    // No animation-caused frame at all: the first frame was the full page.
+    let text = std::fs::read_to_string(&stats).unwrap_or_default();
+    let last = text.lines().last().unwrap_or("");
+    assert!(last.contains("\"redraw_anim\":0"), "{last}");
+    let _ = std::fs::remove_file(&stats);
 }

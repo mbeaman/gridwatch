@@ -5,13 +5,15 @@
 //! watchdog when their cost exceeds `[effects] budget_ms` on average.
 //! `Effect` is `!Send`; everything here lives on the render thread.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gridwatch_ui::theme::{EffectHooks, EffectSpec, Role, Theme};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
-use tachyonfx::{Duration as FxDuration, Effect, EffectRenderer, Interpolation, Motion, fx};
+use tachyonfx::{
+    CellFilter, Duration as FxDuration, Effect, EffectRenderer, Interpolation, Motion, fx,
+};
 
 /// The frame rate the repeating alert pulse is drawn at when nothing else
 /// animates (P1 while a banner is up).
@@ -37,7 +39,9 @@ pub struct Effects {
     enabled: bool,
     budget_ms: u32,
     running: Vec<Running>,
-    last_tick: Option<Instant>,
+    /// The run clock at the last paint (`Ts` as a `Duration`): virtual under
+    /// replay and in tests, so two replays tick their effects identically.
+    last_tick: Option<Duration>,
     /// Paint cost per frame, the last 60 frames (≈ 2 s at 30 fps).
     costs_us: Vec<u64>,
     tripped: bool,
@@ -95,7 +99,17 @@ impl Effects {
             return;
         };
         self.cancel(hook);
+        if self.running.is_empty() {
+            // The first tick after an idle gap must be zero, not the gap
+            // (review: a 200 ms fade fired after a 1 s idle finished inside
+            // its first tick and never showed).
+            self.last_tick = None;
+        }
         self.running.push(Running { hook, effect, area });
+    }
+
+    pub fn cancel_all(&mut self) {
+        self.running.clear();
     }
 
     pub fn cancel(&mut self, hook: Hook) {
@@ -117,23 +131,30 @@ impl Effects {
 
     /// Process every running effect over the buffer for the time since the
     /// last paint; drop the finished ones; run the watchdog.
-    pub fn paint(&mut self, buf: &mut Buffer, now: Instant) {
+    pub fn paint(&mut self, buf: &mut Buffer, now: Duration) {
         if self.running.is_empty() {
             self.last_tick = Some(now);
+            self.costs_us.push(0); // the HUD's cost column reads "nothing ran"
+            if self.costs_us.len() > 60 {
+                self.costs_us.remove(0);
+            }
             return;
         }
         let t0 = Instant::now();
         let elapsed = self
             .last_tick
-            .map(|t| now.saturating_duration_since(t))
+            .map(|t| now.saturating_sub(t))
             .unwrap_or_default();
         self.last_tick = Some(now);
         let tick = FxDuration::from_millis(elapsed.as_millis().min(u128::from(u32::MAX)) as u32);
+        // An effect whose area left the buffer (a shrink) can never finish:
+        // drop it rather than pin the frame loop at full fps (review).
+        let frame_area = *buf.area();
+        self.running
+            .retain(|r| r.area.intersection(frame_area).area() > 0);
         for r in &mut self.running {
-            let area = r.area.intersection(*buf.area());
-            if area.width > 0 && area.height > 0 {
-                buf.render_effect(&mut r.effect, area, tick);
-            }
+            let area = r.area.intersection(frame_area);
+            buf.render_effect(&mut r.effect, area, tick);
         }
         self.running.retain(|r| !r.effect.done());
         let cost = t0.elapsed().as_micros() as u64;
@@ -207,11 +228,17 @@ pub fn build(
         (_, "hsl_pulse") => {
             let lightness = spec.lightness.unwrap_or(25.0);
             let half = spec.period_ms.unwrap_or(900).max(100) / 2;
-            fx::repeating(fx::ping_pong(fx::hsl_shift(
+            let pulse = fx::repeating(fx::ping_pong(fx::hsl_shift(
                 Some([0.0, 0.0, lightness]),
                 None,
                 (half, Interpolation::SineInOut),
-            )))
+            )));
+            // `target = "crit_fg"` (§9's excerpt): only the Crit-coloured
+            // cells pulse; anything else pulses the whole area.
+            match spec.target.as_deref() {
+                Some("crit_fg") => pulse.with_filter(CellFilter::FgColor(theme.color(Role::Crit))),
+                _ => pulse,
+            }
         }
         _ => return None,
     };
@@ -245,12 +272,15 @@ mod tests {
         let t = load_builtin("retrowave", ColorMode::TrueColor).unwrap();
         let mut fx = Effects::new(true, 4);
         let area = Rect::new(5, 2, 10, 3);
-        let t0 = Instant::now();
+        let t0 = Duration::from_secs(10);
+        // Idle first, then the trigger: the first tick must be zero (review).
+        fx.paint(&mut buffer(), Duration::from_secs(5));
         fx.trigger(Hook::Focus, &t.effects, &t, area, None);
         assert!(fx.running());
         let mut buf = buffer();
         let untouched = buf.cell((0, 0)).unwrap().clone();
         fx.paint(&mut buf, t0);
+        assert!(fx.running(), "the idle gap did not finish the fade");
         fx.paint(&mut buf, t0 + std::time::Duration::from_millis(50));
         assert_eq!(buf.cell((0, 0)).unwrap(), &untouched, "outside the area");
         let inside = buf.cell((5, 2)).unwrap();
@@ -262,6 +292,10 @@ mod tests {
         // 200 ms later the 200 ms focus fade is done.
         fx.paint(&mut buf, t0 + std::time::Duration::from_millis(400));
         assert!(!fx.running(), "a bounded effect ends");
+        // An effect whose area is off the buffer is dropped, not kept forever.
+        fx.trigger(Hook::Focus, &t.effects, &t, Rect::new(50, 50, 10, 3), None);
+        fx.paint(&mut buf, t0 + std::time::Duration::from_millis(450));
+        assert!(!fx.running(), "an off-buffer effect lingered");
         fx.trigger(Hook::Alert, &t.effects, &t, Rect::new(0, 0, 40, 1), None);
         for i in 0..100 {
             fx.paint(
@@ -291,7 +325,7 @@ mod tests {
         fx.costs_us = vec![9_000; 59];
         fx.trigger(Hook::Alert, &t.effects, &t, Rect::new(0, 0, 40, 1), None);
         let mut buf = buffer();
-        fx.paint(&mut buf, Instant::now());
+        fx.paint(&mut buf, Duration::from_secs(1));
         // One more real paint (cheap) keeps the average above 4 ms → tripped.
         assert!(fx.tripped(), "{:?}", fx.notice);
         assert!(
