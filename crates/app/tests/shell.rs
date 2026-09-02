@@ -225,6 +225,71 @@ fn shipped_placements_pick_the_expected_htop_tiers() {
     );
 }
 
+/// Arc 2b acceptance (brief 2b, §8.1): the Overview's gpu tile is `procs` at
+/// 250×70 and in dense mode at 120×40, and the *zoomed* gpu tile shows USER,
+/// CPU, HOST MEM and Command for the game — joined from the cpu source's
+/// scan, which the gpu tile's `demand` raised to `Detail::Table` on its own.
+#[test]
+fn shipped_placements_pick_the_expected_gpu_tiers() {
+    use gridwatch_store::{Mods, MouseButton, MouseEvent, MouseKind};
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    let big = page_text(&mut sh, 250, 70);
+    assert!(
+        big.contains("pcie gen 5@16x") && big.contains("pow"),
+        "6x3 at 250x70 lost nvtop's header: {big}"
+    );
+    assert!(
+        big.contains("gpu mem") && big.contains("both g+c"),
+        "6x3 at 250x70 is not `procs`: {big}"
+    );
+    assert!(
+        big.contains("12.5gib"),
+        "the game's HOST MEM is joined from proc.table"
+    );
+    assert!(big.contains("1:util"), "the chart band's legend");
+
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    let dense = page_text(&mut sh, 120, 40);
+    assert!(
+        dense.contains("gpu mem") && dense.contains("pcie"),
+        "6x3 dense at 120x40 must keep the gpu table (59×19): {dense}"
+    );
+
+    // Zoom the gpu tile (top-right 6x3) with a double click: the `full` tier
+    // adds USER and the Power placeholder, and every joined column is there.
+    let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
+    let _ = page_text(&mut sh, 250, 70);
+    let click = || {
+        InputEvent::Mouse(MouseEvent {
+            kind: MouseKind::Down(MouseButton::Left),
+            x: 180,
+            y: 5,
+            mods: Mods::NONE,
+        })
+    };
+    sh.handle_input(click());
+    let _ = page_text(&mut sh, 250, 70);
+    sh.handle_input(click());
+    let zoomed = page_text(&mut sh, 250, 70);
+    assert!(
+        zoomed.contains("user") && zoomed.contains("host mem") && zoomed.contains("command"),
+        "zoomed gpu tile lacks the joined columns: {zoomed}"
+    );
+    let game = zoomed
+        .lines()
+        .find(|l| l.contains("412345"))
+        .expect("the game's row");
+    assert!(
+        game.contains("mattbeam") && game.contains("12.5gib") && game.contains("/opt/game"),
+        "the game's row: {game}"
+    );
+    assert!(zoomed.contains("power"), "the Power sub-panel placeholder");
+    assert!(
+        !zoomed.contains("ccd0"),
+        "zoom shows one tile, not the cpu tile too"
+    );
+}
+
 /// The laptop layout fixture is the 120×40 case in a file, so a change to the
 /// shipped default cannot silently drop the dense-mode guarantee.
 #[test]

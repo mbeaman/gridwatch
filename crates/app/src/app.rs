@@ -1445,24 +1445,32 @@ pub fn shot_frame(shell: &mut Shell, w: u16, h: u16) -> Buffer {
 /// the Overview's 6x3 tile demands it, so a shot shows the process table.
 pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
     let mut synth = gridwatch_store::demo::CpuSynth::new(seed);
-    let src = gridwatch_store::keys::cpu::SOURCE;
+    let mut gpu = gridwatch_store::demo::GpuSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let b = synth.tick_at(at, Detail::Table);
         shell.store.apply(&Msg::Batch(b));
+        // Both synths, as `--demo` runs both sources (arc 2b).
+        let b = gpu.tick_at(at, Detail::Table);
+        shell.store.apply(&Msg::Batch(b));
         if i == 0 {
-            shell.store.apply(&Msg::Control(ControlMsg::Status(
-                src,
-                gridwatch_store::SourceStatus {
-                    state: gridwatch_store::SourceState::Ok,
-                    reason: Some(std::sync::Arc::from("synthetic (demo)")),
-                    hint: None,
-                    since: at,
-                    last_sample: Some(at),
-                    dropped: 0,
-                    restarts: 0,
-                },
-            )));
+            for src in [
+                gridwatch_store::keys::cpu::SOURCE,
+                gridwatch_store::keys::gpu::SOURCE,
+            ] {
+                shell.store.apply(&Msg::Control(ControlMsg::Status(
+                    src,
+                    gridwatch_store::SourceStatus {
+                        state: gridwatch_store::SourceState::Ok,
+                        reason: Some(std::sync::Arc::from("synthetic (demo)")),
+                        hint: None,
+                        since: at,
+                        last_sample: Some(at),
+                        dropped: 0,
+                        restarts: 0,
+                    },
+                )));
+            }
         }
     }
 }

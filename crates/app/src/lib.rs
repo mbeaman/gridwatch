@@ -154,7 +154,13 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     // and from here a library's `eprintln!` would scribble on the UI (§11).
     let log_path = sys::redirect_stderr();
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        // `warn` everywhere and `info` for gridwatch's own crates unless
+        // RUST_LOG says otherwise (review: the log file was empty by default,
+        // so the `stderr →` line and source failures reached nobody).
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,gridwatch=info")),
+        )
         .with_writer(std::io::stderr)
         // The writer is a file, never a tty: no colour escapes in the log.
         .with_ansi(false)

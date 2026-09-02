@@ -337,8 +337,9 @@ fn quit_restores_the_terminal_and_logs_nothing_bad() {
     assert!(bad.is_empty(), "errors in the log: {bad:?}");
 }
 
-/// C.6 (arc 2a) — `--demo` draws the process table in the 6x3 tile: the
-/// header and the synthetic game row reach the terminal.
+/// C.6 (arc 2a, 2b) — `--demo` draws **both** process tables in the two 6x3
+/// tiles: htop's header and the synthetic game row, and nvtop's `GPU MEM`
+/// column with the game's merged `Both G+C` row.
 #[test]
 fn demo_draws_the_process_table() {
     if skip("demo_draws_the_process_table") {
@@ -346,9 +347,16 @@ fn demo_draws_the_process_table() {
     }
     let s = Session::start("table", 70, 250, "run --demo");
     let seen = s.wait_for(Duration::from_secs(4), |t| {
-        t.contains("Command") && t.contains("/opt/game/bin/game")
+        t.contains("Command")
+            && t.contains("/opt/game/bin/game")
+            && t.contains("GPU MEM")
+            && t.contains("Both G+C")
     });
-    assert!(seen.is_some(), "no process table; screen: {:?}", s.screen());
+    assert!(
+        seen.is_some(),
+        "no process tables; screen: {:?}",
+        s.screen()
+    );
 }
 
 /// C.7 (arc 2a) — `--replay FILE --speed 0` reaches a frame from the
