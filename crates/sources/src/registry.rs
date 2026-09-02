@@ -29,4 +29,10 @@ pub fn builtin_sources(reg: &mut Registry) {
         start: crate::audio::start,
         demo: gridwatch_store::demo::audio_demo,
     });
+    #[cfg(feature = "sensors")]
+    reg.register_source(gridwatch_store::SourceDef {
+        info: gridwatch_store::demo::sensors_info_static(),
+        start: crate::sensors::start,
+        demo: gridwatch_store::demo::sensors_demo,
+    });
 }

@@ -12,6 +12,8 @@ pub mod gpu;
 #[cfg(feature = "pins")]
 pub mod pins;
 pub mod registry;
+#[cfg(feature = "sensors")]
+pub mod sensors;
 pub mod stub;
 pub mod supervisor;
 
@@ -29,5 +31,7 @@ pub fn doctor(exporter: Option<&str>) -> Vec<(gridwatch_store::Capability, bool,
     out.extend(pins::doctor(exporter));
     #[cfg(feature = "audio")]
     out.extend(audio::doctor());
+    #[cfg(feature = "sensors")]
+    out.extend(sensors::doctor());
     out
 }

@@ -34,7 +34,14 @@ pub fn scan_period(level: Level) -> Duration {
 /// The option names `[sources.cpu]` owns (§9). The htop component's view
 /// options must stay disjoint from these — a test in `gridwatch-components`
 /// asserts it, because one name meaning two things is a silent misconfiguration.
-pub const OPTION_NAMES: &[&str] = &["refresh_ms"];
+/// `k10temp = false` hands `sensor.temp_c{k10temp:*}` to the sensors source
+/// (arc 5b, §16); the default follows the build: off with the `sensors`
+/// feature, on without it.
+pub const OPTION_NAMES: &[&str] = &["refresh_ms", "k10temp"];
+
+pub fn k10temp_default() -> bool {
+    !cfg!(feature = "sensors")
+}
 
 /// `[sources.cpu] refresh_ms` (§9): the *visible* cadence. Focused stays at
 /// htop's fast end, hidden at twice the visible period, both clamped so a
@@ -69,8 +76,12 @@ pub struct CpuSource {
 
 impl CpuSource {
     pub fn new(options: &toml::Table) -> CpuSource {
+        let k10temp = options
+            .get("k10temp")
+            .and_then(|v| v.as_bool())
+            .unwrap_or_else(k10temp_default);
         CpuSource {
-            sampler: CpuSampler::new(Roots::default()),
+            sampler: CpuSampler::new(Roots::default()).with_k10temp(k10temp),
             cadence: cadence_from(options),
             next_scan: Ts::ZERO,
         }

@@ -201,7 +201,8 @@ pub fn pump<R: Read>(
         // for the rest of the run (review). A full ring drops the newest
         // frames.
         let (chunks, _) = bytes[..whole].as_chunks::<4>();
-        for frame in chunks.chunks_exact(CHANNELS) {
+        let (frames, _) = chunks.as_chunks::<CHANNELS>();
+        for frame in frames {
             if ring.slots() < CHANNELS {
                 continue;
             }

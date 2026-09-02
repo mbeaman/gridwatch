@@ -142,6 +142,9 @@ pub struct CpuSampler {
     cpus: usize,
     freq_paths: Vec<PathBuf>,
     temps: Vec<sysfs::TempInput>,
+    /// Publish `sensor.temp_c{k10temp:*}` (off when the sensors source
+    /// owns the key — arc 5b, §16).
+    k10temp: bool,
     topology: cpu::CpuTopology,
     topology_sent: bool,
     probed: bool,
@@ -157,6 +160,7 @@ impl CpuSampler {
         let scanner = ProcScanner::new(roots.proc.clone(), roots.passwd.clone());
         CpuSampler {
             roots,
+            k10temp: true,
             prev_total: None,
             prev_cores: Vec::new(),
             cpus: 0,
@@ -189,6 +193,12 @@ impl CpuSampler {
         self
     }
 
+    /// The k10temp handover flag (`[sources.cpu] k10temp`).
+    pub fn with_k10temp(mut self, on: bool) -> CpuSampler {
+        self.k10temp = on;
+        self
+    }
+
     /// One-time sysfs probe: topology, freq paths, k10temp inputs by label.
     fn probe(&mut self, cpus_from_stat: usize) {
         if self.probed {
@@ -200,7 +210,11 @@ impl CpuSampler {
             n => n,
         };
         self.freq_paths = sysfs::freq_paths(&self.roots.sys, self.cpus);
-        self.temps = sysfs::temp_inputs(&self.roots.sys, "k10temp");
+        self.temps = if self.k10temp {
+            sysfs::temp_inputs(&self.roots.sys, "k10temp")
+        } else {
+            Vec::new()
+        };
         let mut topo = sysfs::topology(&self.roots.sys, self.cpus);
         // One Tccd label per die in ascending order — htop's CCD attribution,
         // but over the real `die_id` map instead of its cores-per-CCD guess.
