@@ -734,3 +734,65 @@ fn no_effects_runs_plain() {
     assert!(last.contains("\"redraw_anim\":0"), "{last}");
     let _ = std::fs::remove_file(&stats);
 }
+
+/// C.18 (arc 5a) — `--demo --page 2` draws the audio tile's `Hz` axis and
+/// the bars keep moving: the terminal keeps receiving bar glyphs across
+/// half a second, and the stats log counts animation-caused frames.
+/// `--no-effects` leaves the visualizer animating (it is data, not an effect).
+#[test]
+fn demo_audio_page_animates_the_spectrum() {
+    if skip("demo_audio_page_animates_the_spectrum") {
+        return;
+    }
+    for extra in ["", " --no-effects"] {
+        let stats =
+            std::env::temp_dir().join(format!("gridwatch-audio-{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&stats);
+        let args = format!("run --demo --page 2{extra} --stats-log {}", stats.display());
+        let mut s = Session::start("audio", 70, 250, &args);
+        let seen = s.wait_for(Duration::from_secs(3), |t| t.contains("Hz"));
+        assert!(seen.is_some(), "no Hz axis; screen: {:?}", s.screen());
+        // The synth is silent for 1.5 s, then the song: wait past that.
+        std::thread::sleep(Duration::from_millis(2500));
+        let before = s.raw().len();
+        std::thread::sleep(Duration::from_millis(500));
+        let after = s.raw();
+        let fresh = strip_escapes(&String::from_utf8_lossy(&after[before.min(after.len())..]));
+        assert!(
+            fresh.contains('█') || fresh.contains('▔') || fresh.contains('▄'),
+            "no bar glyphs in the last 500 ms ({} new bytes){extra}: {fresh:?}",
+            after.len() - before
+        );
+        std::thread::sleep(Duration::from_millis(1200));
+        s.keys("q");
+        let (code, _, log) = s.finish();
+        assert_eq!(code, 0);
+        assert!(!log.contains("ERROR"), "{log}");
+        let text = std::fs::read_to_string(&stats).unwrap_or_default();
+        let last = text.lines().last().unwrap_or("");
+        let anim: u64 = last
+            .split("\"redraw_anim\":")
+            .nth(1)
+            .and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next())
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0);
+        assert!(anim > 20, "animation frames{extra}: {last}");
+        let _ = std::fs::remove_file(&stats);
+    }
+}
+
+/// C.19 (arc 5a) — `--demo --fps 60 --page 2` draws and `q` exits 0.
+#[test]
+fn demo_audio_at_sixty_fps_exits_cleanly() {
+    if skip("demo_audio_at_sixty_fps_exits_cleanly") {
+        return;
+    }
+    let mut s = Session::start("audio60", 70, 250, "run --demo --fps 60 --page 2");
+    let seen = s.wait_for(Duration::from_secs(3), |t| t.contains("Hz"));
+    assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+    std::thread::sleep(Duration::from_millis(3000));
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}
