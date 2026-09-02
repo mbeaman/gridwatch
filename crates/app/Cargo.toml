@@ -26,12 +26,13 @@ libc.workspace = true
 
 [features]
 # Forwarded to the bin (WORKSPACE.md §15, D47 seam 5).
-default = ["cpu", "gpu", "pins", "audio"]
+default = ["cpu", "gpu", "pins", "audio", "sensors"]
 cpu = ["gridwatch-sources/cpu", "gridwatch-components/htop"]
 gpu = ["gridwatch-sources/gpu", "gridwatch-components/gpu"]
 pins = ["gridwatch-sources/pins", "gridwatch-components/pins"]
 audio = ["gridwatch-sources/audio", "gridwatch-components/audio"]
 audio-lufs = ["audio", "gridwatch-sources/audio-lufs"]
+sensors = ["gridwatch-sources/sensors", "gridwatch-components/sensors"]
 
 [dev-dependencies]
 proptest.workspace = true

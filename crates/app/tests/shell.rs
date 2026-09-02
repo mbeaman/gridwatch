@@ -919,14 +919,14 @@ fn stale_sources_are_badged_after_three_cadences() {
     let fresh = page_text(&mut sh, 250, 70);
     assert!(!fresh.contains("stale"), "{fresh}");
     // 4 s later: the cpu source (1.5 s visible → 4.5 s) is not stale yet;
-    // the gpu (0.5 s → 1.5 s), pins (0.5 s → 1.5 s) and audio (33 ms, or
-    // 500 ms while silent → 1.5 s; arc 5) are.
+    // the gpu (0.5 s → 1.5 s), pins (0.5 s → 1.5 s), audio (33 ms, or 1 s
+    // while silent → 3 s; arc 5a) and sensors (1 s → 3 s; arc 5b) are.
     sh.set_clock(Ts(64_000_000_000));
     let partly = page_text(&mut sh, 250, 70);
-    assert_eq!(partly.matches("stale 4s").count(), 3, "{partly}");
+    assert_eq!(partly.matches("stale 4s").count(), 4, "{partly}");
     sh.set_clock(Ts(70_000_000_000));
     let all = page_text(&mut sh, 250, 70);
-    assert_eq!(all.matches("stale 10s").count(), 4, "{all}");
+    assert_eq!(all.matches("stale 10s").count(), 5, "{all}");
     // Dimmed: the cpu tile's cells are drawn in the muted role — in mono
     // that is `Reset` either way, so check the badge style instead.
     let frame = shot_frame(&mut sh, 250, 70);
@@ -998,11 +998,11 @@ fn stale_threshold_follows_the_configured_cadence() {
     );
     gridwatch_app::feed_synth(&mut sh, 42, 40);
     // 4 s past the last sample: gpu (4 s → 12 s threshold) is fresh, pins
-    // (0.5 s → 1.5 s) and audio (33 ms → 100 ms) are stale, cpu (1.5 s →
-    // 4.5 s) not yet.
+    // (0.5 s → 1.5 s), audio (1 s while silent → 3 s) and sensors (1 s →
+    // 3 s) are stale, cpu (1.5 s → 4.5 s) not yet.
     sh.set_clock(Ts(64_000_000_000));
     let text = page_text(&mut sh, 250, 70);
-    assert_eq!(text.matches("stale 4s").count(), 2, "{text}");
+    assert_eq!(text.matches("stale 4s").count(), 3, "{text}");
     // The badge is on the border row (row 1 of the pins tile's frame), and
     // no data row lost its right end: the pins tile's top-right value.
     let frame = shot_frame(&mut sh, 250, 70);
@@ -1035,8 +1035,8 @@ fn stale_threshold_follows_the_configured_cadence() {
         },
     ));
     let text = page_text(&mut sh, 250, 70);
-    // Only the audio tile's badge remains (its 33 ms cadence, arc 5).
-    assert_eq!(text.matches("stale").count(), 1, "{text}");
+    // The audio and sensors tiles' badges remain (arc 5).
+    assert_eq!(text.matches("stale").count(), 2, "{text}");
     assert!(
         !text.contains("pins ─stale") && !text.contains("pins ━stale"),
         "{text}"
