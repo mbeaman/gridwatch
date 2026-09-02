@@ -104,7 +104,9 @@ pub fn too_small(
     theme: &Theme,
     buf: &mut Buffer,
 ) {
-    let msg = format!("{term_w}×{term_h} — needs {need_w}×{need_h}; stacking");
+    // Its only caller is the shell's undersized-terminal path, so say what is
+    // actually happening rather than promising a stack that is not coming.
+    let msg = format!("{term_w}×{term_h} — gridwatch needs at least {need_w}×{need_h}");
     let y = area.y + area.height / 2;
     let x = area.x + area.width.saturating_sub(msg.len() as u16) / 2;
     buf.set_stringn(x, y, &msg, area.width as usize, theme.style(Role::Warn));

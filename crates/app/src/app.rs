@@ -397,7 +397,19 @@ impl Shell {
                 }
             }
         }
-        if area.height <= CHROME_ROWS || area.width < 20 {
+        // §6's too-small notice: the overlay existed but nothing called it, so
+        // an undersized terminal showed a blank screen and no reason for it.
+        let (min_w, min_h) = (20u16, CHROME_ROWS + 1);
+        if area.height < min_h || area.width < min_w {
+            overlay::too_small(
+                area.width,
+                area.height,
+                min_w,
+                min_h,
+                area,
+                &self.theme,
+                buf,
+            );
             return;
         }
         // Mode from the terminal size (§6).

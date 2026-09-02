@@ -45,6 +45,17 @@ fn load_theme_by_name(name: &str, mode: gridwatch_ui::ColorMode) -> Result<Theme
 /// Full assembly for the live terminal (§5): config → theme → sources →
 /// input thread → raw mode/alt screen → frame loop → restore.
 pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
+    // Check this first, and *before* stderr is redirected: crossterm's failure
+    // is "No such device or address (os error 6)" into a log file nobody is
+    // looking at, which is indistinguishable from the process doing nothing.
+    if !std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        return Err(
+            "gridwatch needs an interactive terminal — stdout is not a tty. \
+                    Run it in a terminal window, or use `gridwatch shot` for a \
+                    headless frame."
+                .into(),
+        );
+    }
     let loaded = config::load().map_err(|e| e.to_string())?;
     let (mode, force_mono) = config::resolve_color(
         opts.color.as_deref(),
@@ -59,17 +70,6 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
             .unwrap_or_else(|| loaded.config.theme.clone())
     };
     let theme = load_theme_by_name(&theme_name, mode)?;
-    let log_path = sys::redirect_stderr();
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_writer(std::io::stderr)
-        .init();
-    if let Some(p) = &log_path {
-        tracing::info!("stderr → {}", p.display());
-    }
-    for w in theme.warnings.iter().chain(&loaded.warnings) {
-        tracing::warn!("{w}");
-    }
     let caps = probe::probe();
     let tz = sys::tz_offset_s();
     let clock = Clock::real_starting_now();
@@ -102,6 +102,19 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     let mouse = loaded.config.mouse && !opts.no_mouse;
     terminal::install_panic_hook(mouse);
     let (mut term, guard, bytes) = terminal::enter(mouse).map_err(|e| e.to_string())?;
+    // Only now: everything above can still report a failure to the real stderr,
+    // and from here a library's `eprintln!` would scribble on the UI (§11).
+    let log_path = sys::redirect_stderr();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+    if let Some(p) = &log_path {
+        tracing::info!("stderr → {}", p.display());
+    }
+    for w in theme.warnings.iter().chain(&loaded.warnings) {
+        tracing::warn!("{w}");
+    }
 
     let mut shell = Shell::new(
         registry, &loaded, theme, caps, tz, clock, demands, opts.stats,
