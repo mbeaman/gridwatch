@@ -167,7 +167,11 @@ pub struct KeyMeta {
 }
 
 /// The whole vocabulary: one slice per `keys/<domain>.rs`.
-pub static CATALOGUE: &[&[KeyMeta]] = &[crate::keys::sys::METAS, crate::keys::cpu::METAS];
+pub static CATALOGUE: &[&[KeyMeta]] = &[
+    crate::keys::sys::METAS,
+    crate::keys::cpu::METAS,
+    crate::keys::gpu::METAS,
+];
 
 /// Intern a journal/config name onto the static catalogue; unknown names are
 /// skipped by callers with one warning, never leaked.

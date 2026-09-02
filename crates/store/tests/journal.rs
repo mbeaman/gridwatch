@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gridwatch_store::journal::{Entry, JOURNAL, encode, encode_at};
-use gridwatch_store::keys::{cpu, sys};
+use gridwatch_store::keys::{cpu, gpu, sys};
 use gridwatch_store::*;
 
 fn exemplar(name: &str) -> Option<Arc<dyn RecordValue>> {
@@ -23,6 +23,11 @@ fn exemplar(name: &str) -> Option<Arc<dyn RecordValue>> {
         }),
         "cpu.topology" => Arc::new(demo::CpuSynth::topology()),
         "proc.table" => Arc::new(demo::proc_table(3, 3)),
+        "gpu.throttle" => Arc::new(gpu::Throttle {
+            bits: gpu::Throttle::SW_POWER_CAP,
+        }),
+        "gpu.info" => Arc::new(gridwatch_store::demo::GpuSynth::info_exemplar()),
+        "gpu.procs" => Arc::new(demo::gpu_procs(3, 3)),
         _ => return None,
     })
 }
@@ -71,7 +76,7 @@ fn every_catalogued_record_round_trips_through_the_journal() {
             other => panic!("{} came back as {other:?}", meta.name),
         }
     }
-    assert!(seen >= 3, "the catalogue lost its Record keys");
+    assert!(seen >= 6, "the catalogue lost its Record keys");
 }
 
 #[test]

@@ -2,4 +2,5 @@
 //! to their keys, Record types with their journal decoders.
 
 pub mod cpu;
+pub mod gpu;
 pub mod sys;
