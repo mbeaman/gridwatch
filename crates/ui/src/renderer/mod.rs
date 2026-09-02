@@ -279,7 +279,7 @@ fn bars(
             };
             buf.set_string(x, y, ch.to_string(), colour);
         }
-        if let Some(pk) = peaks.and_then(|p| p.get(i)) {
+        if let Some(pk) = peaks.and_then(|p| p.get(i)).filter(|pk| **pk > 0.0) {
             let p8 = (pk.clamp(0.0, 1.0) * f32::from(h) * 8.0).round() as u16;
             let row = (p8 / 8).min(h.saturating_sub(1));
             let y = area.y + h - 1 - row;

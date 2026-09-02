@@ -22,14 +22,21 @@ pub fn demo_store_at(seed: u64, ticks: usize, detail: gridwatch_store::Detail) -
     let mut store = Store::default();
     let mut synth = demo::CpuSynth::new(seed);
     let mut gpu = demo::GpuSynth::new(seed);
+    let mut pins = demo::PinsSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let batch: Batch = synth.tick_at(at, detail);
         store.apply(&Msg::Batch(batch));
-        // The gpu synth on the same ticks (arc 2b): one store, both sources,
-        // as `--demo` runs them.
+        // The gpu and pins synths on the same ticks (arcs 2b, 3a): one store,
+        // every source, as `--demo` runs them. The pins synth's scripted
+        // overload (20–40 s) and its alert events are part of the feed.
         let batch: Batch = gpu.tick_at(at, detail);
         store.apply(&Msg::Batch(batch));
+        let tick = pins.tick_at(at);
+        store.apply(&Msg::Batch(tick.batch));
+        for a in tick.alerts {
+            store.apply(&Msg::Control(gridwatch_store::ControlMsg::Alert(a)));
+        }
     }
     store
 }

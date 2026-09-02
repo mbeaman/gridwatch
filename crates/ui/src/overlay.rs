@@ -163,3 +163,68 @@ fn fill(r: Rect, theme: &Theme, buf: &mut Buffer) {
         }
     }
 }
+
+/// The alert banner row (§4.4, brief arc 3 seam 5): `Role::Crit`, bold, and
+/// reversed on the even seconds so it pulses without `SLOW_BLINK`.
+pub fn banner(text: &str, pulse_on: bool, row: Rect, theme: &Theme, buf: &mut Buffer) {
+    if row.height == 0 || row.width == 0 {
+        return;
+    }
+    let mut style = theme.style(Role::Crit).add_modifier(Modifier::BOLD);
+    if pulse_on {
+        style = style.add_modifier(Modifier::REVERSED);
+    }
+    for x in row.x..row.x + row.width {
+        if let Some(cell) = buf.cell_mut((x, row.y)) {
+            cell.set_char(' ');
+            cell.set_style(style);
+        }
+    }
+    buf.set_stringn(
+        row.x + 1,
+        row.y,
+        text,
+        row.width.saturating_sub(2) as usize,
+        style,
+    );
+}
+
+/// A centred panel of themed lines with a title — the alerts overlay (`A`).
+pub fn panel(
+    title: &str,
+    lines: &[crate::view::Line],
+    area: Rect,
+    theme: &Theme,
+    buf: &mut Buffer,
+) {
+    let w = (area.width * 3 / 4).clamp(20, 100).min(area.width);
+    let h = (lines.len() as u16 + 4)
+        .min(area.height)
+        .max(4.min(area.height));
+    let x = area.x + (area.width - w) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let r = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+    fill(r, theme, buf);
+    buf.set_stringn(
+        x + 2,
+        y + 1,
+        title,
+        (w.saturating_sub(4)) as usize,
+        theme.style(Role::Title).add_modifier(Modifier::BOLD),
+    );
+    let inner = Rect {
+        x: x + 2,
+        y: y + 3,
+        width: w.saturating_sub(4),
+        height: h.saturating_sub(4),
+    };
+    if inner.height > 0 && inner.width > 0 {
+        let view = crate::view::View::Text(lines.to_vec());
+        theme.renderer().render(&view, inner, theme, buf);
+    }
+}
