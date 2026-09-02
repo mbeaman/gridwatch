@@ -23,4 +23,10 @@ pub fn builtin_sources(reg: &mut Registry) {
         start: crate::pins::start,
         demo: gridwatch_store::demo::pins_demo,
     });
+    #[cfg(feature = "audio")]
+    reg.register_source(gridwatch_store::SourceDef {
+        info: gridwatch_store::demo::audio_info(),
+        start: crate::audio::start,
+        demo: gridwatch_store::demo::audio_demo,
+    });
 }

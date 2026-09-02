@@ -13,6 +13,10 @@ gridwatch-ui.workspace = true
 procfs = { workspace = true, optional = true }
 nvml-wrapper = { workspace = true, optional = true }
 astral-watch = { workspace = true, optional = true }
+realfft = { workspace = true, optional = true }
+rtrb = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+ebur128 = { workspace = true, optional = true }
 toml.workspace = true
 tracing.workspace = true
 
@@ -23,3 +27,5 @@ default = ["cpu", "gpu", "pins"]
 cpu = ["dep:procfs"]
 gpu = ["dep:nvml-wrapper"]
 pins = ["dep:astral-watch"]
+audio = ["dep:realfft", "dep:rtrb", "dep:serde_json"]
+audio-lufs = ["audio", "dep:ebur128"]

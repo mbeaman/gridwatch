@@ -3,6 +3,8 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "audio")]
+pub mod audio;
 #[cfg(feature = "cpu")]
 pub mod cpu;
 #[cfg(feature = "gpu")]
@@ -25,5 +27,7 @@ pub fn doctor(exporter: Option<&str>) -> Vec<(gridwatch_store::Capability, bool,
     let mut out = Vec::new();
     #[cfg(feature = "pins")]
     out.extend(pins::doctor(exporter));
+    #[cfg(feature = "audio")]
+    out.extend(audio::doctor());
     out
 }
