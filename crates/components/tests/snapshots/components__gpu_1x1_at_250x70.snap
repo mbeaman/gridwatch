@@ -1,0 +1,49 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(g.as_mut(), &history, &th, size)"
+---
+size: 17x8
+tier: badge
+view:
+  stack:
+    children:
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "GPU "
+              - bold: false
+                role: Text
+                s: 13%
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Ok
+                s: 44°C
+              - bold: false
+                role: TextGhost
+                s: " P0"
+      - - Fill(1)
+        - sparkline:
+            gradient: Load
+            max: 100
+            n: 17
+            series:
+              - 14.058867454528809
+              - 15.150670051574707
+              - 14.788553237915039
+              - 14.78180980682373
+              - 14.4572114944458
+              - 13.971236228942871
+              - 12.973427772521973
+              - 12.70254135131836
+              - 12.341983795166016
+              - 11.63628101348877
+              - 10.97671127319336
+              - 11.405989646911621
+              - 12.476462364196777
+              - 12.468584060668945
+              - 13.17789363861084
+              - 13.90498161315918
+              - 13.920918464660645
+    dir: V

@@ -1,6 +1,6 @@
 ---
 source: crates/components/tests/components.rs
-expression: "view_snapshot(s.as_ref(), &store, &th, size)"
+expression: "view_snapshot(s.as_mut(), &store, &th, size)"
 ---
 size: 38x8
 tier: list
@@ -9,6 +9,15 @@ view:
     - - bold: false
         role: Text
         s: cpu
+      - bold: false
+        role: TextGhost
+        s: " "
+      - bold: false
+        role: Info
+        s: starting
+    - - bold: false
+        role: Text
+        s: gpu
       - bold: false
         role: TextGhost
         s: " "

@@ -1,10 +1,12 @@
-//! Built-in component definitions by feature (§4.6). Arc 1b: htop + clock + sources.
+//! Built-in component definitions by feature (§4.6): htop (1b), gpu (2b), clock, sources.
 
 use gridwatch_ui::Registry;
 
 pub fn builtin_components(reg: &mut Registry) {
     #[cfg(feature = "htop")]
     reg.register_component((crate::htop::DEF)());
+    #[cfg(feature = "gpu")]
+    reg.register_component((crate::gpu::DEF)());
     reg.register_component((crate::clock::DEF)());
     reg.register_component((crate::sources_tile::DEF)());
 }

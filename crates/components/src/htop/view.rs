@@ -693,8 +693,11 @@ fn table(h: &Htop, cx: &RenderCx<'_>) -> View {
     };
     let (sort, desc) = h.sort();
     let table = if h.derived().rows.is_empty() {
+        let replaying = cx.store.sources().any(|s| s.id == gridwatch_store::JOURNAL);
         let text = if cx.store.record(&cpu::PROC_TABLE).is_some() {
             "no processes to show (every row is filtered out)"
+        } else if replaying {
+            "no process table in this journal (--tables off)"
         } else {
             "waiting for the process scan…"
         };

@@ -1,9 +1,11 @@
-//! gridwatch-components: built-in components (§8). Arc 1b ships `htop` beside
-//! `clock` (the template) and the `sources` debugging tile.
+//! gridwatch-components: built-in components (§8). `htop` (arc 1b/2a) and
+//! `gpu` (arc 2b) beside `clock` (the template) and the `sources` debugging tile.
 
 #![forbid(unsafe_code)]
 
 pub mod clock;
+#[cfg(feature = "gpu")]
+pub mod gpu;
 #[cfg(feature = "htop")]
 pub mod htop;
 pub mod registry;

@@ -1,0 +1,62 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(g.as_mut(), &history, &th, size)"
+---
+size: 38x8
+tier: gauges
+view:
+  stack:
+    children:
+      - - Len(1)
+        - gauge:
+            gradient: Load
+            label: "GPU   "
+            text: 13%
+            value: 0.1297207623720169
+      - - Len(1)
+        - gauge:
+            gradient: Mem
+            label: "VRAM  "
+            text: 13.5G/31.8G 42%
+            value: 0.42467227578163147
+      - - Len(1)
+        - gauge:
+            gradient: Mem
+            label: MEMCTL
+            text: 5%
+            value: 0.049462031573057175
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Text
+                s: 2796MHz
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: Text
+                s: 379/600W
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: Ok
+                s: 44°C
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "fan "
+              - bold: false
+                role: Text
+                s: 28%
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: P0
+              - bold: false
+                role: TextGhost
+                s: " no throttling"
+    dir: V

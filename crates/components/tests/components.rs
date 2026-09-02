@@ -19,9 +19,13 @@ fn sources() -> Box<dyn Component> {
     Box::new(gridwatch_components::sources_tile::SourcesTile)
 }
 
+fn gpu() -> Box<dyn Component> {
+    Box::new(gridwatch_components::gpu::Gpu::default())
+}
+
 #[test]
 fn tiers_are_well_formed() {
-    for mk in [clock, sources, htop] {
+    for mk in [clock, sources, htop, gpu] {
         let c = mk();
         assert_tiers_well_formed(c.tiers());
         assert_min_tier_fits(c.tiers(), Size::new(8, 3));
@@ -38,6 +42,7 @@ fn renders_everywhere() {
         assert_renders_everywhere(&|| clock(), &store, &empty, &th);
         assert_renders_everywhere(&|| sources(), &store, &empty, &th);
         assert_renders_everywhere(&|| htop(), &store, &empty, &th);
+        assert_renders_everywhere(&|| gpu(), &store, &empty, &th);
     }
 }
 
@@ -63,6 +68,11 @@ fn view_snapshots_at_real_grid_sizes() {
         insta::assert_yaml_snapshot!(
             format!("htop_{name}"),
             view_snapshot(h.as_mut(), &history, &th, size)
+        );
+        let mut g = gpu();
+        insta::assert_yaml_snapshot!(
+            format!("gpu_{name}"),
+            view_snapshot(g.as_mut(), &history, &th, size)
         );
     }
 }

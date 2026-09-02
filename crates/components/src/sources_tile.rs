@@ -73,6 +73,30 @@ fn note(cx: &RenderCx<'_>, s: &gridwatch_store::SourceOverview<'_>) -> String {
         }
         out.push_str(&format!("scan {ms:.1} ms"));
     }
+    // The gpu source's NVML wall time per second per call class (P11's
+    // evidence, D49): `nvml 0.1+2.3+2.0 ms/s`, fast + slow + procs.
+    if s.id == gridwatch_store::keys::gpu::SOURCE {
+        let class = |name: &str| {
+            let key = gridwatch_store::keys::gpu::NVML_MS.named(&std::sync::Arc::from(name));
+            cx.store.last(&key).map(|(_, v)| v)
+        };
+        if let (Some(fast), Some(slow), Some(procs)) =
+            (class("fast"), class("slow"), class("procs"))
+        {
+            if !out.is_empty() {
+                out.push_str(" · ");
+            }
+            out.push_str(&format!(
+                "nvml {fast:.1}+{slow:.1}+{procs:.1} = {:.1} ms/s",
+                fast + slow + procs
+            ));
+        }
+        if let Some((_, info)) = cx.store.record(&gridwatch_store::keys::gpu::INFO.idx(0))
+            && info.spec_mismatch
+        {
+            out.push_str(" · spec row disagrees with NVML");
+        }
+    }
     out
 }
 

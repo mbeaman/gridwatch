@@ -24,3 +24,4 @@ gpu = []
 [dev-dependencies]
 gridwatch-ui = { workspace = true, features = ["testkit"] }
 insta.workspace = true
+serde_json.workspace = true

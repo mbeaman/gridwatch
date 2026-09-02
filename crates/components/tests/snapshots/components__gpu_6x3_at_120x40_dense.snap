@@ -1,0 +1,243 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(g.as_mut(), &history, &th, size)"
+---
+size: 59x18
+tier: procs
+view:
+  stack:
+    children:
+      - - Len(12)
+        - stack:
+            children:
+              - - Len(1)
+                - text:
+                    - - bold: false
+                        role: Text
+                        s: "Device 0 [RTX 50…]"
+                      - bold: false
+                        role: TextGhost
+                        s: "  "
+                      - bold: false
+                        role: TextMuted
+                        s: "PCIe GEN 5@16x RX: 34 MiB/s TX: 9 MiB/s"
+              - - Len(1)
+                - text:
+                    - - bold: false
+                        role: TextMuted
+                        s: "GPU "
+                      - bold: false
+                        role: Text
+                        s: 2796MHz
+                      - bold: false
+                        role: TextMuted
+                        s: " MEM "
+                      - bold: false
+                        role: Text
+                        s: 14001MHz
+                      - bold: false
+                        role: TextMuted
+                        s: " TEMP "
+                      - bold: false
+                        role: Ok
+                        s: 44°C
+                      - bold: false
+                        role: TextMuted
+                        s: " FAN "
+                      - bold: false
+                        role: Text
+                        s: 29%
+                      - bold: false
+                        role: TextMuted
+                        s: " POW "
+                      - bold: false
+                        role: Text
+                        s: 379/600W
+              - - Len(1)
+                - stack:
+                    children:
+                      - - Fill(1)
+                        - gauge:
+                            gradient: Load
+                            label: GPU
+                            text: 13%
+                            value: 0.1297207623720169
+                      - - Len(2)
+                        - empty
+                      - - Fill(1)
+                        - gauge:
+                            gradient: Mem
+                            label: MEM
+                            text: 42%
+                            value: 0.42467227578163147
+                    dir: H
+              - - Len(1)
+                - stack:
+                    children:
+                      - - Fill(1)
+                        - gauge:
+                            gradient: Load
+                            label: ENC
+                            text: 0%
+                            value: 0
+                      - - Len(2)
+                        - empty
+                      - - Fill(1)
+                        - gauge:
+                            gradient: Load
+                            label: DEC
+                            text: 0%
+                            value: 0
+                    dir: H
+              - - Len(1)
+                - text:
+                    - - bold: false
+                        role: TextMuted
+                        s: "POW "
+                      - bold: false
+                        role: TextGhost
+                        s: 20 ms
+              - - Len(3)
+                - sparkline:
+                    gradient: Power
+                    max: 600
+                    n: 50
+                    series:
+                      - 393.010009765625
+                      - 395.8361511230469
+                      - 397.0504150390625
+                      - 397.1171569824219
+                      - 400.7869567871094
+                      - 400.390869140625
+                      - 399.5592041015625
+                      - 396.0910339355469
+                      - 393.6805725097656
+                      - 391.7066345214844
+                      - 387.0793762207031
+                      - 386.4913330078125
+                      - 384.5927734375
+                      - 382.8167724609375
+                      - 384.2137145996094
+                      - 385.2132568359375
+                      - 389.450927734375
+                      - 389.7884216308594
+                      - 395.87750244140625
+                      - 398.5510559082031
+                      - 400.9377746582031
+                      - 398.39178466796875
+                      - 396.3511657714844
+                      - 395.31463623046875
+                      - 395.4126281738281
+                      - 392.25042724609375
+                      - 387.6702575683594
+                      - 387.8993835449219
+                      - 382.70098876953125
+                      - 385.755859375
+                      - 382.7157287597656
+                      - 383.37969970703125
+                      - 389.54193115234375
+                      - 392.85400390625
+                      - 394.4337158203125
+                      - 393.4107971191406
+                      - 395.974365234375
+                      - 401.6566467285156
+                      - 400.7605895996094
+                      - 396.4674377441406
+                      - 396.84136962890625
+                      - 393.2081604003906
+                      - 390.8694763183594
+                      - 384.998779296875
+                      - 385.083251953125
+                      - 385.2492980957031
+                      - 384.73406982421875
+                      - 384.0617980957031
+                      - 386.48291015625
+                      - 389.4299011230469
+              - - Fill(1)
+                - stack:
+                    children:
+                      - - Len(1)
+                        - text:
+                            - - bold: false
+                                role: TextMuted
+                                s: "1:util "
+                              - bold: false
+                                role: Text
+                                s: 14%
+                              - bold: false
+                                role: TextGhost
+                                s: "  "
+                              - bold: false
+                                role: TextMuted
+                                s: "2:vram "
+                              - bold: false
+                                role: Text
+                                s: 42%
+                              - bold: false
+                                role: TextGhost
+                                s: "  "
+                              - bold: false
+                                role: TextMuted
+                                s: "4:power "
+                              - bold: false
+                                role: Text
+                                s: 65%
+                              - bold: false
+                                role: TextGhost
+                                s: "  1m ⟶"
+                      - - Fill(1)
+                        - chart:
+                            - label: util
+                              points: 39
+                            - label: vram
+                              points: 20
+                            - label: power
+                              points: 39
+                    dir: V
+            dir: V
+      - - Len(6)
+        - table:
+            columns:
+              - PID
+              - TYPE
+              - GPU
+              - GPU MEM
+              - CPU
+              - Command
+            rows:
+              - - " 412345"
+                - Both G+C
+                - " 17%"
+                - " 12879MiB  39%"
+                - 459.6%
+                - /opt/game/bin/game --fullscreen --vulkan
+              - - "   1701"
+                - Graphic
+                - "  2%"
+                - "   464MiB   1%"
+                - "  2.4%"
+                - /usr/bin/gnome-shell
+              - - "   6120"
+                - Graphic
+                - "  0%"
+                - "   318MiB   1%"
+                - " 18.3%"
+                - /usr/lib/firefox/firefox
+              - - "  11805"
+                - Compute
+                - "  0%"
+                - "    44MiB   0%"
+                - "  3.6%"
+                - /usr/bin/ptyxis --gapplication-service
+              - - "   1842"
+                - Graphic
+                - "  0%"
+                - "    12MiB   0%"
+                - "  0.9%"
+                - /usr/bin/pipewire
+            scroll: 0
+            selected: ~
+            sort:
+              - 3
+              - Desc
+    dir: V
