@@ -59,7 +59,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p gridwatch --no-default-features
+      - run: cargo check -p gridwatch --no-default-features --features cpu
+      - run: cargo check -p gridwatch --no-default-features --features gpu
       - run: cargo check -p gridwatch --all-features
+
+  docs:
+    name: Generated docs and screenshots (D33 drift check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+      - name: Regenerate docs/img/*.svg, docs/KEYS.md, docs/COMPONENTS.md and fail on drift
+        run: GRIDWATCH_BIN=target/release/gridwatch scripts/shots.sh --check
 
   deny:
     runs-on: ubuntu-latest

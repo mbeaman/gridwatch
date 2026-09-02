@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mbeaman/gridwatch/schema/journal.schema.json",
+  "title": "gridwatch journal line (ARCHITECTURE §4.5, D47)",
+  "description": "One JSON Lines record. The first line of a file is the header; every other line is an envelope with `t` (nanoseconds since the run epoch) and exactly one of `b` (batch), `st` (source status), `al` (alert event) or `in` (input event). A sample is `[name{label}, datum]`; the datum's JSON type selects its kind: number = Scalar, array = Vector, object = Record.",
+  "oneOf": [
+    { "$ref": "#/$defs/header" },
+    { "$ref": "#/$defs/envelope" }
+  ],
+  "$defs": {
+    "header": {
+      "type": "object",
+      "required": ["v", "wall_epoch", "host", "size", "sources"],
+      "additionalProperties": false,
+      "properties": {
+        "v": { "const": 1 },
+        "wall_epoch": { "type": "integer", "minimum": 0 },
+        "host": { "type": "string" },
+        "size": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer", "minimum": 0, "maximum": 65535 }
+        },
+        "sources": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "envelope": {
+      "type": "object",
+      "required": ["t"],
+      "additionalProperties": false,
+      "properties": {
+        "t": { "type": "integer", "minimum": 0 },
+        "b": { "$ref": "#/$defs/batch" },
+        "st": { "$ref": "#/$defs/status" },
+        "al": { "$ref": "#/$defs/alert" },
+        "in": { "$ref": "#/$defs/input" }
+      },
+      "oneOf": [
+        { "required": ["b"] },
+        { "required": ["st"] },
+        { "required": ["al"] },
+        { "required": ["in"] }
+      ]
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*(\\{[^{}]*\\})?$"
+    },
+    "datum": {
+      "oneOf": [
+        { "type": "number" },
+        { "type": "null" },
+        { "type": "array", "items": { "type": "number" } },
+        { "type": "object" }
+      ]
+    },
+    "sample": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [{ "$ref": "#/$defs/name" }, { "$ref": "#/$defs/datum" }]
+    },
+    "batch": {
+      "type": "object",
+      "required": ["src", "s"],
+      "additionalProperties": false,
+      "properties": {
+        "src": { "type": "string" },
+        "s": { "type": "array", "items": { "$ref": "#/$defs/sample" } }
+      }
+    },
+    "status": {
+      "type": "object",
+      "required": ["src", "state", "reason", "hint", "dropped", "restarts"],
+      "additionalProperties": false,
+      "properties": {
+        "src": { "type": "string" },
+        "state": { "enum": ["Starting", "Ok", "Degraded", "Unavailable", "Stopped"] },
+        "reason": { "type": ["string", "null"] },
+        "hint": { "type": ["string", "null"] },
+        "dropped": { "type": "integer", "minimum": 0 },
+        "restarts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "alert": {
+      "type": "object",
+      "required": ["id", "source", "severity", "transition", "title", "detail", "at"],
+      "properties": {
+        "id": { "type": "string" },
+        "source": { "type": "string" },
+        "severity": { "enum": ["Info", "Warn", "Crit"] },
+        "transition": { "enum": ["Raised", "Repeated", "Resolved"] },
+        "title": { "type": "string" },
+        "detail": { "type": "string" },
+        "at": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "input": {
+      "description": "serde's externally tagged form of `InputEvent`: a string for the unit variants (FocusGained, FocusLost) or a one-key object for the rest.",
+      "oneOf": [
+        { "enum": ["FocusGained", "FocusLost"] },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "propertyNames": { "enum": ["Key", "Mouse", "Resize", "Paste"] }
+        }
+      ]
+    }
+  }
+}
