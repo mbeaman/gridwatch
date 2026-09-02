@@ -717,10 +717,10 @@
 <text x="8" y="556" fill="#efe9ff" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">cpu</text>
 <text x="40" y="556" fill="#05ffa1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
 <text x="320" y="556" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="328" y="556" fill="#8a7fb0" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">nvme#3 </text>
-<text x="384" y="556" fill="#efe9ff" font-weight="bold" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">37°</text>
-<text x="408" y="556" fill="#8a7fb0" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · r8169_0_c0 </text>
-<text x="520" y="556" fill="#efe9ff" font-weight="bold" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">55°</text>
+<text x="328" y="556" fill="#8a7fb0" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">k10temp </text>
+<text x="392" y="556" fill="#efe9ff" font-weight="bold" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">53°</text>
+<text x="416" y="556" fill="#8a7fb0" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · mt7925_phy </text>
+<text x="528" y="556" fill="#efe9ff" font-weight="bold" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">50°</text>
 <text x="800" y="556" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="572" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="572" fill="#efe9ff" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">gpu</text>
