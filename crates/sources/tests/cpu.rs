@@ -155,6 +155,7 @@ fn deltas_never_underflow_on_a_counter_reset() {
 #[test]
 fn first_tick_has_no_percentages_and_the_second_has_all_of_them() {
     let mut s = CpuSampler::new(Roots {
+        passwd: PathBuf::from("/etc/passwd"),
         proc: tick(1),
         sys: PathBuf::from("/nonexistent-sysfs"),
     });
@@ -170,6 +171,7 @@ fn first_tick_has_no_percentages_and_the_second_has_all_of_them() {
     // Feed tick1 then tick2 through one sampler: it keeps the previous ticks,
     // not the path, so re-pointing the root replays the recorded second scan.
     let mut s = CpuSampler::new(Roots {
+        passwd: PathBuf::from("/etc/passwd"),
         proc: tick(1),
         sys: PathBuf::from("/nonexistent-sysfs"),
     });
@@ -196,6 +198,7 @@ fn first_tick_has_no_percentages_and_the_second_has_all_of_them() {
 #[test]
 fn memory_formulas_match_htop() {
     let mut s = CpuSampler::new(Roots {
+        passwd: PathBuf::from("/etc/passwd"),
         proc: tick(1),
         sys: PathBuf::from("/nonexistent-sysfs"),
     });
@@ -310,6 +313,7 @@ fn die_temperature_labels_follow_the_die_map() {
     let tree = TempTree::new("sysfs-die");
     write_sysfs(&tree.0);
     let mut s = CpuSampler::new(Roots {
+        passwd: PathBuf::from("/etc/passwd"),
         proc: tick(1),
         sys: tree.0.clone(),
     });
@@ -328,6 +332,7 @@ fn demo_and_live_emit_the_same_key_names() {
     let tree = TempTree::new("sysfs-keys");
     write_sysfs(&tree.0);
     let mut s = CpuSampler::new(Roots {
+        passwd: PathBuf::from("/etc/passwd"),
         proc: tick(1),
         sys: tree.0.clone(),
     });

@@ -1,7 +1,10 @@
 //! The cpu source (§5 cadence row, §8): procfs meters at 3 s hidden / 1.5 s
-//! visible / 500 ms focused, on the shared phase grid. No process scan in arc
-//! 1b — `Detail::Table` arrives with the htop `table` tier in arc 2 (§8.1).
+//! visible / 500 ms focused, on the shared phase grid, plus the pid-level
+//! process scan at `Detail::Table` on its own slower grid — 3 s visible,
+//! 1.5 s focused (§8.1, P15) — so a focused tile's 500 ms meters never drag
+//! a 12 ms `/proc` walk along with them.
 
+pub mod procs;
 pub mod sampler;
 pub mod sysfs;
 
@@ -9,14 +12,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gridwatch_store::{
-    Cadence, Level, Sampler, Source, SourceCtx, SourceInfo, SourceState, SourceStatus, demo,
+    Cadence, Detail, Level, Sampler, Source, SourceCtx, SourceInfo, SourceState, SourceStatus, Ts,
+    demo,
 };
 
 /// How long a paused source parks between checks of the stop flag. It never
 /// samples at this cadence — `sleep_until` returns early on any control.
 const IDLE_PARK: Duration = Duration::from_secs(5);
 
+pub use procs::{ProcScanner, Scan};
 pub use sampler::{CpuSampler, Roots, Shares, Ticks, parse_stat, shares};
+
+/// The pid-level scan's own cadence (§8.1): 3 s on the grid, 1.5 s focused.
+pub fn scan_period(level: Level) -> Duration {
+    match level {
+        Level::Focused => Duration::from_millis(1500),
+        _ => Duration::from_secs(3),
+    }
+}
 
 /// The option names `[sources.cpu]` owns (§9). The htop component's view
 /// options must stay disjoint from these — a test in `gridwatch-components`
@@ -49,6 +62,9 @@ fn cadence_from(options: &toml::Table) -> Cadence {
 pub struct CpuSource {
     sampler: CpuSampler,
     cadence: Cadence,
+    /// When the next pid-level scan is due; the meters tick that crosses it
+    /// samples at `Detail::Table`, every other tick at `Meters`.
+    next_scan: Ts,
 }
 
 impl CpuSource {
@@ -56,6 +72,33 @@ impl CpuSource {
         CpuSource {
             sampler: CpuSampler::new(Roots::default()),
             cadence: cadence_from(options),
+            next_scan: Ts::ZERO,
+        }
+    }
+
+    /// The detail this tick samples at: the demanded one when a scan is due,
+    /// `Meters` otherwise. The scan grid is phase-aligned like the meters grid
+    /// (`next_deadline`): the next multiple of the scan period, so a meters
+    /// tick at `k·C + ε` can never miss a scan boundary by its own wake
+    /// latency (the review found `at + P` halving the rate at random). A
+    /// demand below `Table` resets the schedule so the first tick after a
+    /// table tier appears scans immediately, and forgets the per-pid deltas so
+    /// that first table shows no percentage rather than one averaged over the
+    /// whole absence.
+    pub fn detail_for(&mut self, at: Ts, level: Level, wanted: Detail) -> Detail {
+        if wanted < Detail::Table {
+            if self.next_scan != Ts::ZERO {
+                self.next_scan = Ts::ZERO;
+                self.sampler.forget_scan_deltas();
+            }
+            return wanted;
+        }
+        if at >= self.next_scan {
+            let p = scan_period(level).as_nanos().max(1) as u64;
+            self.next_scan = Ts(((at.0 / p) + 1) * p);
+            wanted
+        } else {
+            Detail::Meters
         }
     }
 }
@@ -86,7 +129,11 @@ impl Source for CpuSource {
         // rather than the third.
         // A paused source emits nothing, restart or not (§4.3).
         if cx.demand.level() != Level::Paused
-            && let Ok(samples) = self.sampler.sample(cx.clock.now(), cx.demand.detail())
+            && let Ok(samples) = {
+                let at = cx.clock.now();
+                let detail = self.detail_for(at, cx.demand.level(), cx.demand.detail());
+                self.sampler.sample(at, detail)
+            }
             && !samples.is_empty()
         {
             let at = cx.clock.now();
@@ -120,7 +167,10 @@ impl Source for CpuSource {
                 return;
             }
             let at = cx.clock.now();
-            match self.sampler.sample(at, cx.demand.detail()) {
+            // Re-read the level with the detail: the demand may have moved
+            // while we slept, and the two fields are separate atomics.
+            let detail = self.detail_for(at, cx.demand.level(), cx.demand.detail());
+            match self.sampler.sample(at, detail) {
                 Ok(samples) => {
                     let empty = samples.is_empty();
                     if !empty {

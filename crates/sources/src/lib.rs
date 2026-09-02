@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "cpu")]
 pub mod cpu;
 pub mod registry;
 pub mod stub;

@@ -10,6 +10,14 @@ repository.workspace = true
 [dependencies]
 gridwatch-store.workspace = true
 gridwatch-ui.workspace = true
-procfs.workspace = true
+procfs = { workspace = true, optional = true }
 toml.workspace = true
 tracing.workspace = true
+
+[features]
+# One feature per source (WORKSPACE.md §15, D47 seam 5): a feature arrives with
+# its module. `gpu` is declared now so the bin's matrix is stable; its module
+# and the `nvml-wrapper` dependency land in session 2b.
+default = ["cpu", "gpu"]
+cpu = ["dep:procfs"]
+gpu = []

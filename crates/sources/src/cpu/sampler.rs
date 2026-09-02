@@ -18,6 +18,7 @@ use gridwatch_store::{Datum, Detail, Key, Label, MetricId, Sample, SourceError, 
 use procfs::prelude::*;
 use procfs::{CpuPressure, CpuTime, IoPressure, KernelStats, LoadAverage, Meminfo, MemoryPressure};
 
+use super::procs::ProcScanner;
 use super::sysfs;
 
 /// One CPU line of `/proc/stat` after htop's guest correction.
@@ -110,6 +111,8 @@ pub fn shares(prev: Ticks, cur: Ticks) -> Shares {
 pub struct Roots {
     pub proc: PathBuf,
     pub sys: PathBuf,
+    /// The uid → name map for the process table's `USER` column.
+    pub passwd: PathBuf,
 }
 
 impl Default for Roots {
@@ -117,6 +120,7 @@ impl Default for Roots {
         Roots {
             proc: PathBuf::from("/proc"),
             sys: PathBuf::from("/sys"),
+            passwd: PathBuf::from("/etc/passwd"),
         }
     }
 }
@@ -141,10 +145,16 @@ pub struct CpuSampler {
     topology: cpu::CpuTopology,
     topology_sent: bool,
     probed: bool,
+    /// The pid-level scan (§8.1), run only at `Detail::Table` and richer.
+    scanner: ProcScanner,
+    /// Online CPUs per `/proc/stat` — htop's `activeCPUs` for the CPU% period.
+    active_cpus: usize,
+    mem_total_kib: u64,
 }
 
 impl CpuSampler {
     pub fn new(roots: Roots) -> CpuSampler {
+        let scanner = ProcScanner::new(roots.proc.clone(), roots.passwd.clone());
         CpuSampler {
             roots,
             prev_total: None,
@@ -155,6 +165,9 @@ impl CpuSampler {
             topology: cpu::CpuTopology::default(),
             topology_sent: false,
             probed: false,
+            scanner,
+            active_cpus: 0,
+            mem_total_kib: 0,
         }
     }
 
@@ -162,10 +175,17 @@ impl CpuSampler {
         &self.topology
     }
 
+    /// Drop the scan's per-pid counters (the table tier went away): the next
+    /// pass starts like a first pass, with no percentages.
+    pub fn forget_scan_deltas(&mut self) {
+        self.scanner.forget_deltas();
+    }
+
     /// Re-point the `/proc` root, keeping the previous scan — how the fixture
     /// tests feed two recorded ticks through one sampler.
     pub fn with_proc_root(mut self, proc: PathBuf) -> CpuSampler {
-        self.roots.proc = proc;
+        self.roots.proc = proc.clone();
+        self.scanner.set_proc_root(proc);
         self
     }
 
@@ -216,6 +236,7 @@ impl CpuSampler {
         })?;
         let (total, cores, procs_running) = parse_stat(&text)?;
         self.probe(cores.len());
+        self.active_cpus = cores.len().max(1);
 
         if let Some(prev) = self.prev_total {
             let s = shares(prev, total);
@@ -263,7 +284,7 @@ impl CpuSampler {
     }
 
     /// htop's memory formulas (`LinuxMachine_scanMemoryInfo`), all in bytes.
-    fn mem_samples(&self, out: &mut Vec<Sample>) {
+    fn mem_samples(&mut self, out: &mut Vec<Sample>) {
         let Ok(m) = Meminfo::from_file(self.roots.proc.join("meminfo")) else {
             return;
         };
@@ -281,6 +302,7 @@ impl CpuSampler {
             m.mem_total - parts
         };
         let available = m.mem_available.unwrap_or(m.mem_free).min(m.mem_total);
+        self.mem_total_kib = m.mem_total / 1024;
         out.push(scalar(&cpu::MEM_TOTAL_B, m.mem_total as f64));
         out.push(scalar(&cpu::MEM_USED_B, used as f64));
         out.push(scalar(&cpu::MEM_AVAILABLE_B, available as f64));
@@ -315,8 +337,7 @@ impl CpuSampler {
         if let Some(n) = sysfs::process_count(&self.roots.proc) {
             out.push(scalar(&sys::TASKS_TOTAL, n as f64));
         }
-        // `tasks.kernel` needs the pid-level scan (PF_KTHREAD per pid) and is
-        // therefore arc 2 work; the tile renders `—` until then (PARITY.md).
+        // `tasks.kernel` comes from the pid-level scan below, at Detail::Table.
         out.push(scalar(
             &sys::PID_DIGITS,
             f64::from(sysfs::pid_digits(&self.roots.proc)),
@@ -374,9 +395,24 @@ impl gridwatch_store::Sampler for CpuSampler {
                 datum: Datum::Record(Arc::new(self.topology.clone())),
             });
         }
-        // `Detail::Table`/`Columns` add the pid-level scan and htop's gated
-        // files in arc 2 (§8.1); 1b is meters-only whatever the demand says.
-        let _ = detail;
+        // `Detail::Table` adds the pid-level scan (§8.1); htop's gated files and
+        // the `task/` walk are `Detail::Columns` work (arc 8). The scan needs
+        // the aggregate total this very tick for its CPU% period, so it runs
+        // after `cpu_samples` and reads what that pass just stored.
+        if detail >= Detail::Table
+            && let Some(total) = self.prev_total
+        {
+            let digits = sysfs::pid_digits(&self.roots.proc);
+            let scan =
+                self.scanner
+                    .scan(total.total(), self.active_cpus, self.mem_total_kib, digits);
+            out.push(scalar(&sys::TASKS_KERNEL, scan.kernel_threads as f64));
+            out.push(scalar(&sys::SCAN_MS, scan.ms));
+            out.push(Sample {
+                id: cpu::PROC_TABLE.id.clone(),
+                datum: Datum::Record(Arc::new(scan.table)),
+            });
+        }
         Ok(out)
     }
 }
