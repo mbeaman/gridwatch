@@ -125,10 +125,14 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 2026-09-02 | 5b | quiet | **live** overview 250x70 (pty), every source incl. the new `sensors` and the audio source on an idle sink, 40 s window (**P1/P5/P6**) | no | **1.95%** (render 0.35 · gw-cpu 0.65 · gw-gpu 0.83 · gw-sensors **0.05** · gw-audio 0.00) | 28 | 3.8 KB/s | 2.17 | — | — | — | — | — / 2.20 ms | 44260 kB |
 | 2026-09-02 | 6 | quiet | demo Audio page 250x70 (pty, `--demo --page 2`), the winamp tile animating at 10 fps beside the audio tile at 30, 40 s window (**P1/P5/P6/P19**) | no | **3.95%** (render 3.75 · gw-audio 0.18 · gw-mpris 0.00) | 68 | 198 KB/s | 29.9 (29.9 anim) | — | — | n/a | n/a | — / 1.63 ms | 17480 kB |
 | 2026-09-02 | 7a | quiet | **live** overview 250x70 (pty), every source incl. the new `net` with its connection scan, 40 s window (**P1/P5/P6/P13**) | no | **2.67%** (render 0.42 · gw-gpu 0.97 · gw-cpu 0.65 · gw-net **0.52** · gw-sensors 0.07) | 33 | 4.1 KB/s | 2.15 | — | — | — | scan 3.3 ms | — / 2.20 ms | 49828 kB |
+| 2026-09-02 | 7b | — | **P18** rules cost: ten rules over a batch of 40 scalars, in `Store::apply` (`ten_rules_cost_microseconds_per_batch`) | no | — | — | — | — | — | — | — | — | **24 µs** release / 149 µs debug per batch | — |
 
 
 
 
+
+
+**Arc 7b notes (2026-09-02).** The rules engine is name-indexed and sees only the scalars a batch carried, so its cost scales with *matches*, not with the store: ten rules against a forty-sample batch cost **24 µs** in release (149 µs in a debug build, which is what the gate measures). At the sensors source's one batch a second that is 0.002 % of a core, and the test fails above 0.5 ms a batch. A store with no rules does no work at all — the engine is skipped by an `is_empty` check before the samples are even collected, which is why the shipped `config.toml` keeps its four examples commented out.
 
 **Arc 7a notes (2026-09-02).** The net source costs **0.52 %** of one core with the connection table visible: one `/proc/net/dev` read a second, sysfs link attributes every two seconds, and the `/proc/*/fd` scan every two seconds — the scan itself reports **3.3 ms** on the `sources` tile beside `87/103 attributed` (the digest measured ~10 ms in Python for the same work). That is inside **P13**'s 1 % and its ≤ 10 ms scan. The whole process sits at 2.67 % with every source live, 33 wake-ups/s and 4.1 KB/s — P1, P5 and P6 hold with one more source than any earlier row. RSS is 49.8 MB (the connection table and the inode map are the biggest allocation this dashboard makes). **Owed to Matt:** the Wi-Fi row (`wlp7s0` is down on torch, so SSID/dBm/bitrate have no live measurement), P9/P10 in Ptyxis, and the public-IP path (off by default, and asking the internet is his call).
 
