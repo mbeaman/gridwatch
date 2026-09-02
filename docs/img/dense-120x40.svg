@@ -754,13 +754,13 @@
 <text x="696" y="572" fill="#efe9ff" textLength="104" lengthAdjust="spacingAndGlyphs" xml:space="preserve">41° / max 55°</text>
 <text x="800" y="572" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="588" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="8" y="588" fill="#efe9ff" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pins</text>
-<text x="48" y="588" fill="#05ffa1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
+<text x="8" y="588" fill="#efe9ff" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">mpris</text>
+<text x="56" y="588" fill="#05ffa1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
 <text x="320" y="588" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="800" y="588" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="604" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
-<text x="8" y="604" fill="#efe9ff" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">sensors</text>
-<text x="72" y="604" fill="#05ffa1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
+<text x="8" y="604" fill="#efe9ff" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pins</text>
+<text x="48" y="604" fill="#05ffa1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
 <text x="320" y="604" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="800" y="604" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="620" fill="#7a3fb5" textLength="808" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╚═══════════════════════════════════════╚═══════════════════════════════════════════════════════════╝</text>

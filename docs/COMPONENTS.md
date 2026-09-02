@@ -12,6 +12,7 @@
 | `pins` | 12V-2x6 pins | `pins`, `gpu`? | 4x2 | watts-badge → mini-bars → bars → trend → full | astral-watch's per-pin amperage: bars, balance, the watts trend and the alert log |
 | `sensors` | sensors | `sensors`, `gpu`? | 6x1 | hottest → strip → table → chart → full | every hwmon chip's temperatures, fans, volts and power, hottest first; RAPL and the GPU row |
 | `sources` | Sources | — | 4x1 | list → table | source health: state, generation, age, drops, restarts |
+| `winamp` | now playing | `mpris`, `audio`? | 4x2 | status → shade → main → main+art → full | the MPRIS player in classic-skin form: marquee, big digits, posbar, transport, art and the spectrum |
 
 ## `alerts` — Alerts
 
@@ -174,3 +175,29 @@ source health: state, generation, age, drops, restarts
 |---|---|---|---|---|
 | `list` | 8×3 | Meters | — | non-blank |
 | `table` | 40×4 | Meters | columns | non-blank |
+
+## `winamp` — now playing
+
+the MPRIS player in classic-skin form: marquee, big digits, posbar, transport, art and the spectrum
+
+- contract 1 · chrome Themed · footprints 1x1 2x1 4x2 6x3 · default 4x2
+- requires none · optional DbusSession
+- sources `mpris` · optional sources `audio`
+- example `options = { art = true, vis = "bars" }`
+
+| tier | min | demand | adds | signature |
+|---|---|---|---|---|
+| `status` | 8×3 | Meters | the play glyph, a marquee, a two-cell posbar | `:` |
+| `shade` | 24×3 | Meters | the elapsed clock, a mini spectrum | `:` |
+| `main` | 40×10 | Meters | big digits, the spectrum, volume, the transport row | `vol` |
+| `main+art` | 60×12 | Meters | the album art | `vol` |
+| `full` (zoom) | 100×24 | Meters | the playlist, the player list | `playlist` |
+
+Keys once captured with `Enter`:
+
+- `x c v` — play pause stop
+- `z b` — prev next
+- `← →` — seek 5 s
+- `+ -` — volume
+- `p` — player
+- `r` — raise

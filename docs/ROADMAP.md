@@ -83,9 +83,9 @@ Each arc: implement → adversarial review → fix → report → user approves 
 ## Arc 6 — v0.6.0 "Winamp"
 **Goal:** the MPRIS now-playing component in classic-skin form.
 **Deliverables**
-- [ ] `mpris` async source on the private tokio thread: proxies, discovery, per-player tasks, position model, art fetch/decode, `MediaCmd` control, Synth fake player with embedded PNG
-- [ ] `winamp` component: Custom chrome, `optional_sources = [audio]` with static vis fallback, tiers status/shade/main/main+art/full, marquee from `cx.now`, big digits, 19-band vis from `audio.bands`, kbps/kHz from `audio.sink`, posbar/volume/transport, EQ weighting, local playlist history, halfblock art
-- [ ] Recorded `a{sv}` metadata fixtures (Firefox/YouTube, a single-element page) for decoding tests
+- [x] `mpris` async source on the private tokio thread: proxies, discovery, per-player tasks, position model, art fetch/decode, `MediaCmd` control, Synth fake player with embedded PNG — 6a, 2026-09-02 (the fake-bus model replaces per-player tasks: one connection, one poll grid; art on a blocking task)
+- [x] `winamp` component: Custom chrome, `optional_sources = [audio]` with static vis fallback, tiers status/shade/main/main+art/full, marquee from `cx.now`, big digits, 19-band vis from `audio.bands`, kbps/kHz from `audio.sink`, posbar/volume/transport, EQ weighting, local playlist history, halfblock art — 6a, 2026-09-02 (`Chrome::Themed`, not Custom: the shell owns the frame — D56 amendment)
+- [x] Recorded `a{sv}` metadata fixtures (Firefox/YouTube, a single-element page) for decoding tests — 6a, 2026-09-02 (`fixtures/mpris/`: Firefox/YouTube, a stream, no title, two artists)
 **Acceptance:** Firefox playback controls work from the tile; track changes update within one poll; stream mode when `mpris:length` is absent; replay determinism holds with the marquee running; the tile renders on a page without the audio component.
 **Risks:** Firefox Position=0 on multi-element pages (stream mode); zbus/tokio feature interplay (asserted by the deny job).
 

@@ -117,6 +117,25 @@ Evidence for every claim is in `docs/research/htop-parity.md`,
 | CSV tail | **arc 8** (D50 §5) | |
 | `notify` transports (ntfy, webhook) | **out** — gridwatch is a viewer; the astral-watch service alerts (D51) | |
 
+## Winamp 2.x classic skin — the now-playing tile (arc 6)
+
+| classic-skin feature | gridwatch | Where |
+|---|---|---|
+| The scrolling title: one step every ~220 ms, `  ***  ` between repeats, still when it fits | **in — arc 6** from `cx.now` (virtual under replay, so a shot is deterministic); a new track restarts its scroll | `components::winamp::marquee::window` |
+| The big elapsed digits | **in — arc 6** through `View::BigNumber` (the theme's `big_number` pixel style — Quadrant by default), `1:23` and `1:02:03` | `winamp::view::main_tier` |
+| The position bar with the remaining time | **in — arc 6** as a `Gauge` with `1:23 -2:47`; **stream mode** (no `mpris:length`) draws the word `stream` and a local elapsed clock instead of a fraction | `view::posbar`, `keys::media::NowPlaying::fraction` |
+| The 19-band spectrum analyser | **in — arc 6**, borrowed from the **audio** source's `audio.bands` (never a second capture); the bands are widened to the tile with a gap column, and a static descending skin is drawn when the audio source is not running | `view::vis`; `optional_sources = [audio]` |
+| The oscilloscope mode of the vis | **out** — the `audio` tile owns the scope (`m` cycles it there); one visualizer per screen is enough | arc 5a |
+| kbps · kHz · stereo | **partly**: `48 kHz · stereo` from the audio source's sink Record; **no bitrate** — MPRIS does not carry one and gridwatch never opens the file | `view::format_line` |
+| Transport buttons (prev, play, pause, stop, next) | **in — arc 6** as a key row, each greyed to `TextGhost` when the player says it cannot (`CanGoNext`, `CanControl`, …); `z x c v b` as in the skin | `view::transport`, `keys::media::Caps` |
+| The volume slider | **in — arc 6** as a `Gauge` with `+`/`-` stepping 5 % | `view::volume` |
+| The balance slider | **out** — MPRIS has no balance | |
+| Shuffle / repeat toggles | **out for now** — `LoopStatus` and `Shuffle` are MPRIS properties the source does not read yet (BACKLOG) | |
+| The EQ window and its curve | **out** — nothing in the pipeline to equalise; the brief's "EQ weighting the vis" would have been a lie about what the numbers mean | D56 amendment |
+| The playlist window | **in — arc 6** as the zoom-only `full` tier's pane, from `media.history` (the last distinct tracks the source saw), the current one in `AccentPrimary` | `view::full` |
+| The album art (a skin's visualiser area in modern skins) | **in — arc 6**: fetched by the source (`file://`, `https://`, `data:`), decoded and downscaled to ≤ 256 px, painted as `▀` halfblocks by the **ui** crate — two pixels per cell, quantised for 256/16-colour terminals, luminance shades in a single-hue theme | `ui::halfblock`, `sources::mpris::art` |
+| "Winamp, it really whips the llama's ass" | **out** — no audio is played by gridwatch | |
+
 ## audio — cava and the Winamp spectrum analyser (arc 5a, `docs/research/audio-capture-and-fft.md` §2–3)
 
 | upstream feature | gridwatch | Where |

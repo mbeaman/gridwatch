@@ -84,3 +84,8 @@
 | `sensor.power_w` | Scalar | Watts | `sensors` | power per {chip:label}: RAPL package-0 from Δenergy_uj/Δt when readable |
 | `sensor.walk_ms` | Scalar | Milliseconds | `sensors` | wall ms of the last hwmon walk (the sources tile's cost line) |
 | `sensor.info` | Record | None | `sensors` | the chip inventory (name, path, kinds) and the RAPL state (ok \| root_only \| absent), once per generation |
+| `media.now` | Record | None | `mpris` | the current player's track: title/artist/album/url, status, position (pos_us as read at read_at), length (absent = a stream), rate, volume, capabilities and the track hash |
+| `media.players` | Record | None | `mpris` | every MPRIS player on the session bus with its status, and which one the tile is showing |
+| `media.art` | Record | None | `mpris` | the current track's cover decoded to RGB8, at most 256 px on the long side; absent when the track has none |
+| `media.history` | Record | None | `mpris` | the last distinct tracks seen, newest last (the playlist pane) |
+| `media.pos_pct` | Scalar | Percent | `mpris` | position as a percentage of the track's length; absent in stream mode |

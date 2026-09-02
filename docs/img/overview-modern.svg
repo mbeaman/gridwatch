@@ -1316,13 +1316,13 @@
 <text x="1664" y="1020" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="1688" y="1020" fill="#94e2d5" textLength="160" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▝▀▀ ▝▀▀  ▀  ▝▀▀ ▝▀▀ </text>
 <text x="0" y="1036" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="8" y="1036" fill="#cdd6f4" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pins</text>
+<text x="8" y="1036" fill="#cdd6f4" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">mpris</text>
 <text x="80" y="1036" fill="#a6e3a1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
 <text x="208" y="1036" fill="#cdd6f4" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">40</text>
 <text x="264" y="1036" fill="#a6adc8" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0s</text>
 <text x="320" y="1036" fill="#a6adc8" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
 <text x="352" y="1036" fill="#a6adc8" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
-<text x="368" y="1036" fill="#313244" textLength="288" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · read 4.7 ms · ≤2 </text>
+<text x="368" y="1036" fill="#313244" textLength="128" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo)</text>
 <text x="656" y="1036" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1036" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="1036" fill="#cdd6f4" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">nvme#2</text>
@@ -1332,13 +1332,13 @@
 <text x="1624" y="1036" fill="#cdd6f4" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 56 %</text>
 <text x="1664" y="1036" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="1052" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="8" y="1052" fill="#cdd6f4" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">sensors</text>
+<text x="8" y="1052" fill="#cdd6f4" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pins</text>
 <text x="80" y="1052" fill="#a6e3a1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
 <text x="208" y="1052" fill="#cdd6f4" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">40</text>
 <text x="264" y="1052" fill="#a6adc8" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0s</text>
 <text x="320" y="1052" fill="#a6adc8" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
 <text x="352" y="1052" fill="#a6adc8" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
-<text x="368" y="1052" fill="#313244" textLength="240" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · walk 0.6 ms</text>
+<text x="368" y="1052" fill="#313244" textLength="288" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · read 4.7 ms · ≤2 </text>
 <text x="656" y="1052" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1052" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="1052" fill="#cdd6f4" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">k10temp</text>
@@ -1348,6 +1348,13 @@
 <text x="1624" y="1052" fill="#cdd6f4" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 56 %</text>
 <text x="1664" y="1052" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="1068" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="8" y="1068" fill="#cdd6f4" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">sensors</text>
+<text x="80" y="1068" fill="#a6e3a1" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
+<text x="208" y="1068" fill="#cdd6f4" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">40</text>
+<text x="264" y="1068" fill="#a6adc8" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0s</text>
+<text x="320" y="1068" fill="#a6adc8" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
+<text x="352" y="1068" fill="#a6adc8" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
+<text x="368" y="1068" fill="#313244" textLength="240" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · walk 0.6 ms</text>
 <text x="656" y="1068" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1068" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="1068" fill="#cdd6f4" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">nvme</text>
