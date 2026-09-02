@@ -16,7 +16,7 @@ Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ra
 ## How work happens
 
 - **Arcs.** One arc ≈ one coherent phase ≈ one minor version (`v0.N.0`), with a `CHANGELOG.md` entry. Arc 1 is planned as two sessions (1a/1b).
-- **Per arc:** implement → adversarial review (Workflow/agents) → fix confirmed findings (reproduce them yourself first) → report → **Matt says commit / push / tag.** Never commit, push, tag or publish unprompted.
+- **Per arc:** implement → adversarial review (Workflow/agents) → fix confirmed findings (reproduce them yourself first) → report. **Standing rule for automated sessions (Matt, 2026-09-01): once `scripts/gate.sh` is green, commit in scoped commits, push `main`, watch CI (`gh run watch`) and fix anything red — without asking.** Tagging a version and anything else outward-facing (publishing, releases) still waits for Matt.
 - **Commit before review.** Snapshot (`git stash create` → tag) or commit before handing uncommitted work to any shell-enabled agent, and verify the tree is byte-identical afterwards.
 - **Read-only guard in every agent prompt** — research, design and review alike: "do not create/modify/delete files, no git mutation". A design workflow once wrote files into a repo; a review agent once ran `git restore` over uncommitted work.
 - **Commit messages:** `area: imperative summary` (e.g. `layout: derive dense threshold from GridSpec`), one scoped area per commit; split risky halves so they revert alone.
