@@ -33,7 +33,15 @@ pub const MIN_POLL: Duration = Duration::from_millis(250);
 pub const MAX_POLL: Duration = Duration::from_secs(5);
 /// How often the source re-tries a bus it could not reach.
 pub const RECONNECT: Duration = Duration::from_secs(10);
+/// Every D-Bus call is bounded: a player that stops answering must not
+/// hold the source thread (and with it `q`, which joins it) — review.
+pub const METHOD_TIMEOUT: Duration = Duration::from_secs(2);
+/// How many times a missing cover is re-fetched (a player often writes the
+/// file after it publishes the metadata).
+pub const ART_TRIES: u32 = 3;
 const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
+/// The namespace the bus filters `NameOwnerChanged` on.
+const MPRIS_NS: &str = "org.mpris.MediaPlayer2";
 const PLAYER_PATH: &str = "/org/mpris/MediaPlayer2";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -254,30 +262,58 @@ fn status(cx: &SourceCtx, state: SourceState, reason: &str, hint: Option<&str>) 
     });
 }
 
-/// Everything one poll of a player yields.
-async fn read_player(conn: &zbus::Connection, bus: &str) -> zbus::Result<Vec<Event>> {
+/// The two proxies for one player, built once and kept: zbus's lazy
+/// property cache would otherwise `GetAll` and `AddMatch` on every poll
+/// (a dozen round-trips per player per second — P5's budget).
+struct PlayerProxies<'a> {
+    player: PlayerProxy<'a>,
+    root: RootProxy<'a>,
+    identity: String,
+}
+
+async fn build_proxies<'a>(conn: &zbus::Connection, bus: &str) -> zbus::Result<PlayerProxies<'a>> {
     let player = PlayerProxy::builder(conn)
         .destination(bus.to_string())?
         .path(PLAYER_PATH)?
+        .cache_properties(zbus::proxy::CacheProperties::No)
         .build()
         .await?;
     let root = RootProxy::builder(conn)
         .destination(bus.to_string())?
         .path(PLAYER_PATH)?
+        .cache_properties(zbus::proxy::CacheProperties::No)
         .build()
         .await?;
-    let mut out = Vec::with_capacity(6);
-    out.push(Event::Added {
-        bus: bus.to_string(),
-        identity: root.identity().await.unwrap_or_else(|_| bus.to_string()),
-    });
-    if let Ok(s) = player.playback_status().await {
-        out.push(Event::Status {
+    let identity = root.identity().await.unwrap_or_default();
+    Ok(PlayerProxies {
+        player,
+        root,
+        identity,
+    })
+}
+
+/// One poll of a player. The **first** read decides whether the player is
+/// still there: an error means gone (the name vanished, or it stopped
+/// answering), and the caller removes it rather than showing a frozen row
+/// with a bus name for an identity (review).
+async fn read_player(
+    p: &PlayerProxies<'_>,
+    bus: &str,
+    want_position: bool,
+) -> zbus::Result<Vec<Event>> {
+    let status = PlayStatus::parse(&p.player.playback_status().await?);
+    let mut out = Vec::with_capacity(7);
+    if !p.identity.is_empty() {
+        out.push(Event::Added {
             bus: bus.to_string(),
-            status: PlayStatus::parse(&s),
+            identity: p.identity.clone(),
         });
     }
-    if let Ok(m) = player.metadata().await {
+    out.push(Event::Status {
+        bus: bus.to_string(),
+        status,
+    });
+    if let Ok(m) = p.player.metadata().await {
         let mut map = Metadata::new();
         for (k, v) in &m {
             map.insert(k.clone(), to_meta_value(v));
@@ -287,19 +323,22 @@ async fn read_player(conn: &zbus::Connection, bus: &str) -> zbus::Result<Vec<Eve
             meta: meta::decode(&map),
         });
     }
-    if let Ok(p) = player.position().await {
+    // The position is read for the player the tile is showing while it is
+    // playing — and on the tick its status changed, so resuming does not
+    // show a clock that ran while it was paused (review).
+    if want_position && let Ok(pos) = p.player.position().await {
         out.push(Event::Position {
             bus: bus.to_string(),
-            pos_us: p,
+            pos_us: pos,
         });
     }
-    if let Ok(r) = player.rate().await {
+    if let Ok(r) = p.player.rate().await {
         out.push(Event::Rate {
             bus: bus.to_string(),
             rate: r,
         });
     }
-    if let Ok(v) = player.volume().await {
+    if let Ok(v) = p.player.volume().await {
         out.push(Event::Volume {
             bus: bus.to_string(),
             volume: v,
@@ -308,42 +347,29 @@ async fn read_player(conn: &zbus::Connection, bus: &str) -> zbus::Result<Vec<Eve
     out.push(Event::Caps {
         bus: bus.to_string(),
         caps: Caps {
-            play_pause: player.can_play().await.unwrap_or(false)
-                || player.can_pause().await.unwrap_or(false),
-            next: player.can_go_next().await.unwrap_or(false),
-            prev: player.can_go_previous().await.unwrap_or(false),
-            seek: player.can_seek().await.unwrap_or(false),
-            control: player.can_control().await.unwrap_or(false),
-            raise: root.can_raise().await.unwrap_or(false),
+            play_pause: p.player.can_play().await.unwrap_or(false)
+                || p.player.can_pause().await.unwrap_or(false),
+            next: p.player.can_go_next().await.unwrap_or(false),
+            prev: p.player.can_go_previous().await.unwrap_or(false),
+            seek: p.player.can_seek().await.unwrap_or(false),
+            control: p.player.can_control().await.unwrap_or(false),
+            raise: p.root.can_raise().await.unwrap_or(false),
         },
     });
     Ok(out)
 }
 
-async fn run_command(conn: &zbus::Connection, bus: &str, cmd: &MediaCmd) -> zbus::Result<()> {
-    let player = PlayerProxy::builder(conn)
-        .destination(bus.to_string())?
-        .path(PLAYER_PATH)?
-        .build()
-        .await?;
+async fn run_command(p: &PlayerProxies<'_>, cmd: &MediaCmd) -> zbus::Result<()> {
     match cmd {
-        MediaCmd::PlayPause => player.play_pause().await,
-        MediaCmd::Play => player.play().await,
-        MediaCmd::Pause => player.pause().await,
-        MediaCmd::Stop => player.stop().await,
-        MediaCmd::Next => player.next().await,
-        MediaCmd::Prev => player.previous().await,
-        MediaCmd::SeekBy(us) => player.seek(*us).await,
-        MediaCmd::SetVolume(v) => player.set_volume(v.clamp(0.0, 1.0)).await,
-        MediaCmd::Raise => {
-            RootProxy::builder(conn)
-                .destination(bus.to_string())?
-                .path(PLAYER_PATH)?
-                .build()
-                .await?
-                .raise()
-                .await
-        }
+        MediaCmd::PlayPause => p.player.play_pause().await,
+        MediaCmd::Play => p.player.play().await,
+        MediaCmd::Pause => p.player.pause().await,
+        MediaCmd::Stop => p.player.stop().await,
+        MediaCmd::Next => p.player.next().await,
+        MediaCmd::Prev => p.player.previous().await,
+        MediaCmd::SeekBy(us) => p.player.seek(*us).await,
+        MediaCmd::SetVolume(v) => p.player.set_volume(v.clamp(0.0, 1.0)).await,
+        MediaCmd::Raise => p.root.raise().await,
         MediaCmd::Pick(_) => Ok(()),
     }
 }
@@ -387,39 +413,49 @@ impl Source for MprisSource {
 /// fetch on a blocking task.
 async fn run_async(options: Options, cx: SourceCtx) {
     let mut model = Model::new(options.history);
-    if !options.player.is_empty() {
-        model.apply(Event::Pick(options.player.clone()), cx.clock.now());
+    // The config's pin is not the `p` key's pin: a player leaving clears
+    // the latter, never the former (review).
+    let config_pin = options.player.clone();
+    if !config_pin.is_empty() {
+        model.apply(Event::Pick(config_pin.clone()), cx.clock.now());
     }
-    let mut art_done: Option<u64> = None;
+    // The art in flight, and what has already been fetched: keyed by the
+    // URL as well as the track, and retried a few times when the file is
+    // not there yet (Firefox writes its cover after the metadata).
+    let mut art_task: Option<
+        tokio::task::JoinHandle<Result<gridwatch_store::keys::media::Art, art::ArtError>>,
+    > = None;
+    let mut art_done: Option<(u64, String)> = None;
+    let mut art_tries: u32 = 0;
     let mut last_state = SourceState::Starting;
-    loop {
+    let mut last_reason = String::new();
+    'connect: loop {
         if cx.stopped() {
             return;
         }
         // Connect (and reconnect): a desktop session may start after us.
-        let conn = match zbus::Connection::session().await {
-            Ok(c) => c,
-            Err(e) => {
-                if last_state != SourceState::Unavailable {
-                    last_state = SourceState::Unavailable;
-                    status(
-                        &cx,
-                        SourceState::Unavailable,
-                        &format!("no session bus: {e}"),
-                        Some("start a desktop session, or set DBUS_SESSION_BUS_ADDRESS"),
-                    );
+        // Every method call is bounded, or one frozen player would hang the
+        // source — and `q` waits on this thread (review).
+        let conn =
+            match zbus::connection::Builder::session().map(|b| b.method_timeout(METHOD_TIMEOUT)) {
+                Ok(b) => match b.build().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        unavailable(&cx, &mut last_state, &mut last_reason, &e.to_string());
+                        if !sleep_or_stop(&cx, RECONNECT).await {
+                            return;
+                        }
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    unavailable(&cx, &mut last_state, &mut last_reason, &e.to_string());
+                    if !sleep_or_stop(&cx, RECONNECT).await {
+                        return;
+                    }
+                    continue;
                 }
-                if !sleep_or_stop(&cx, RECONNECT).await {
-                    return;
-                }
-                continue;
-            }
-        };
-        if last_state != SourceState::Ok {
-            last_state = SourceState::Ok;
-            status(&cx, SourceState::Ok, "session bus", None);
-        }
-        // Discovery: every MPRIS name now, then changes as they happen.
+            };
         let dbus = match zbus::fdo::DBusProxy::new(&conn).await {
             Ok(d) => d,
             Err(e) => {
@@ -430,23 +466,39 @@ async fn run_async(options: Options, cx: SourceCtx) {
                 continue;
             }
         };
-        let mut owner_changed = dbus.receive_name_owner_changed().await.ok();
+        // Only MPRIS names wake us: the bus does the filtering
+        // (`arg0namespace`), not this thread.
+        let rule = zbus::MatchRule::builder()
+            .msg_type(zbus::message::Type::Signal)
+            .sender("org.freedesktop.DBus")
+            .and_then(|b| b.interface("org.freedesktop.DBus"))
+            .and_then(|b| b.member("NameOwnerChanged"))
+            .and_then(|b| b.arg0ns(MPRIS_NS))
+            .map(|b| b.build());
+        let mut owners = match rule {
+            Ok(rule) => zbus::MessageStream::for_match_rule(rule, &conn, Some(16))
+                .await
+                .ok(),
+            Err(e) => {
+                tracing::debug!("mpris: no arg0ns match rule ({e}); falling back");
+                None
+            }
+        };
+        let mut fallback = if owners.is_none() {
+            dbus.receive_name_owner_changed().await.ok()
+        } else {
+            None
+        };
+        let mut proxies: HashMap<String, PlayerProxies<'_>> = HashMap::new();
         if let Ok(names) = dbus.list_names().await {
             for n in names {
                 let name = n.as_str().to_string();
-                if !name.starts_with(MPRIS_PREFIX) {
-                    continue;
-                }
-                if let Ok(events) = read_player(&conn, &name).await {
-                    let at = cx.clock.now();
-                    for e in events {
-                        let s = model.apply(e, at);
-                        emit(&cx, at, s);
-                    }
+                if name.starts_with(MPRIS_PREFIX) {
+                    add_player(&conn, &mut proxies, &mut model, &cx, &name).await;
                 }
             }
         }
-        // The steady state.
+        ok_status(&cx, &mut last_state, &mut last_reason, &model);
         let mut ticker = tokio::time::interval(options.poll);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -454,6 +506,31 @@ async fn run_async(options: Options, cx: SourceCtx) {
                 return;
             }
             tokio::select! {
+                // The art task, when one is in flight: never awaited
+                // inline, or a slow cover would freeze the commands and
+                // `q` for its whole timeout (review).
+                art = async { art_task.as_mut().unwrap().await }, if art_task.is_some() => {
+                    art_task = None;
+                    match art {
+                        Ok(Ok(a)) => {
+                            art_tries = 0;
+                            let at = cx.clock.now();
+                            emit(&cx, at, vec![Sample {
+                                id: media::ART.id.clone(),
+                                datum: Datum::Record(Arc::new(a)),
+                            }]);
+                        }
+                        Ok(Err(e)) => {
+                            // A cover the player has not written yet is
+                            // worth another look; anything else is not.
+                            if matches!(e, art::ArtError::Io(_)) && art_tries < ART_TRIES {
+                                art_done = None;
+                            }
+                            tracing::debug!("mpris art: {e}");
+                        }
+                        Err(e) => tracing::debug!("mpris art task: {e}"),
+                    }
+                }
                 _ = ticker.tick() => {
                     // Controls from the tile.
                     while let Some(c) = cx.try_control() {
@@ -461,116 +538,200 @@ async fn run_async(options: Options, cx: SourceCtx) {
                             gridwatch_store::Control::Stop => return,
                             gridwatch_store::Control::Domain(b) => {
                                 let any: Box<dyn std::any::Any + Send> = b;
-                                if let Ok(cmd) = any.downcast::<MediaCmd>() {
-                                    let at = cx.clock.now();
-                                    if let MediaCmd::Pick(bus) = cmd.as_ref() {
-                                        let bus = if bus.is_empty() {
-                                            String::new()
+                                match any.downcast::<MediaCmd>() {
+                                    Ok(cmd) => {
+                                        let at = cx.clock.now();
+                                        if let MediaCmd::Pick(bus) = cmd.as_ref() {
+                                            let bus = if bus.is_empty() {
+                                                config_pin.clone()
+                                            } else {
+                                                full_bus(bus)
+                                            };
+                                            let s = model.apply(Event::Pick(bus), at);
+                                            emit(&cx, at, s);
+                                        } else if let Some(p) = model.current() {
+                                            let bus = p.bus.clone();
+                                            if let Some(px) = proxies.get(&bus)
+                                                && let Err(e) = run_command(px, &cmd).await
+                                            {
+                                                tracing::warn!("mpris {bus}: {e}");
+                                            }
                                         } else {
-                                            full_bus(bus)
-                                        };
-                                        let s = model.apply(Event::Pick(bus), at);
-                                        emit(&cx, at, s);
-                                    } else if let Some(p) = model.current() {
-                                        let bus = p.bus.clone();
-                                        if let Err(e) = run_command(&conn, &bus, &cmd).await {
-                                            tracing::warn!("mpris {bus}: {e}");
+                                            tracing::debug!("mpris: {cmd:?} with no player");
                                         }
                                     }
+                                    Err(_) => tracing::debug!("mpris: unknown Domain control"),
                                 }
                             }
-                            _ => {}
+                            other => tracing::debug!("mpris: ignoring {other:?}"),
                         }
                     }
-                    // The visible poll: `Position` for the current player,
-                    // and a full read so a player that emits no property
-                    // signals still updates.
                     let level = cx.demand.level();
                     if level == gridwatch_store::Level::Hidden
                         || level == gridwatch_store::Level::Paused
                     {
                         continue;
                     }
-                    let buses: Vec<String> =
-                        model.players().map(|p| p.bus.clone()).collect();
+                    let buses: Vec<String> = proxies.keys().cloned().collect();
+                    let mut gone = Vec::new();
                     for bus in buses {
-                        let poll = model.wants_poll(&bus);
-                        let events = if poll {
-                            read_player(&conn, &bus).await.unwrap_or_default()
-                        } else {
-                            // Not playing: status and metadata only, so a
-                            // paused player still notices a track change.
-                            read_player(&conn, &bus)
-                                .await
-                                .unwrap_or_default()
-                                .into_iter()
-                                .filter(|e| !matches!(e, Event::Position { .. }))
-                                .collect()
-                        };
-                        if events.is_empty() {
-                            let at = cx.clock.now();
-                            let s = model.apply(Event::Removed { bus: bus.clone() }, at);
-                            emit(&cx, at, s);
-                            continue;
-                        }
-                        let at = cx.clock.now();
-                        for e in events {
-                            let s = model.apply(e, at);
-                            emit(&cx, at, s);
+                        let Some(px) = proxies.get(&bus) else { continue };
+                        // The current player's position is read while it
+                        // plays, and on the tick its status changes.
+                        let want = model.wants_poll(&bus);
+                        match read_player(px, &bus, want).await {
+                            Ok(events) => {
+                                let at = cx.clock.now();
+                                let was_playing = model.wants_poll(&bus);
+                                for e in events {
+                                    let s = model.apply(e, at);
+                                    emit(&cx, at, s);
+                                }
+                                // Resumed on this tick: read the position
+                                // now rather than a poll later.
+                                if !was_playing
+                                    && model.wants_poll(&bus)
+                                    && let Ok(pos) = px.player.position().await
+                                {
+                                    let s = model.apply(
+                                        Event::Position { bus: bus.clone(), pos_us: pos },
+                                        at,
+                                    );
+                                    emit(&cx, at, s);
+                                }
+                                // The posbar moves every tick, not only on
+                                // a notable change (seam 1's reason).
+                                if let Some(now) = model.now()
+                                    && let Some(f) = now.fraction(at)
+                                {
+                                    emit(&cx, at, vec![Sample {
+                                        id: media::POS_PCT.id.clone(),
+                                        datum: Datum::Scalar(f * 100.0),
+                                    }]);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::debug!("mpris {bus}: {e}");
+                                gone.push(bus);
+                            }
                         }
                     }
-                    // Art for the current track, once.
+                    for bus in gone {
+                        proxies.remove(&bus);
+                        let at = cx.clock.now();
+                        let s = model.apply(Event::Removed { bus }, at);
+                        emit(&cx, at, s);
+                    }
+                    ok_status(&cx, &mut last_state, &mut last_reason, &model);
+                    // Art for the current track, once per (track, url).
                     if options.art
+                        && art_task.is_none()
                         && let Some((track, url)) = model.art_wanted()
-                        && art_done != Some(track)
+                        && art_done.as_ref() != Some(&(track, url.clone()))
                     {
-                        art_done = Some(track);
+                        art_done = Some((track, url.clone()));
+                        art_tries += 1;
                         let max_px = options.art_max_px;
-                        let loaded = tokio::task::spawn_blocking(move || {
+                        art_task = Some(tokio::task::spawn_blocking(move || {
                             art::load(&url, track, max_px)
-                        })
-                        .await;
-                        match loaded {
-                            Ok(Ok(a)) => {
-                                let at = cx.clock.now();
-                                emit(
-                                    &cx,
-                                    at,
-                                    vec![Sample {
-                                        id: media::ART.id.clone(),
-                                        datum: Datum::Record(Arc::new(a)),
-                                    }],
-                                );
-                            }
-                            Ok(Err(e)) => tracing::debug!("mpris art: {e}"),
-                            Err(e) => tracing::debug!("mpris art task: {e}"),
-                        }
+                        }));
                     }
                 }
-                Some(sig) = next_owner_change(&mut owner_changed) => {
+                Some(sig) = next_owner_change(&mut owners, &mut fallback) => {
                     let at = cx.clock.now();
                     let (name, new_owner) = sig;
                     if name.starts_with(MPRIS_PREFIX) {
-                        let ev = if new_owner.is_empty() {
-                            Event::Removed { bus: name }
+                        if new_owner.is_empty() {
+                            proxies.remove(&name);
+                            let s = model.apply(Event::Removed { bus: name }, at);
+                            emit(&cx, at, s);
                         } else {
-                            Event::Added { bus: name.clone(), identity: name }
-                        };
-                        let s = model.apply(ev, at);
-                        emit(&cx, at, s);
+                            add_player(&conn, &mut proxies, &mut model, &cx, &name).await;
+                        }
+                        ok_status(&cx, &mut last_state, &mut last_reason, &model);
                     }
+                }
+                else => {
+                    // Every stream ended: the bus went away. Reconnect
+                    // rather than polling an empty model for ever (review).
+                    tracing::debug!("mpris: the bus streams ended; reconnecting");
+                    if !sleep_or_stop(&cx, RECONNECT).await {
+                        return;
+                    }
+                    continue 'connect;
                 }
             }
         }
     }
 }
 
-/// The next `NameOwnerChanged` as `(name, new owner)`.
+/// Build a player's proxies and fold its first reading into the model.
+async fn add_player<'a>(
+    conn: &zbus::Connection,
+    proxies: &mut HashMap<String, PlayerProxies<'a>>,
+    model: &mut Model,
+    cx: &SourceCtx,
+    bus: &str,
+) {
+    let Ok(px) = build_proxies(conn, bus).await else {
+        return;
+    };
+    let at = cx.clock.now();
+    match read_player(&px, bus, true).await {
+        Ok(events) => {
+            for e in events {
+                let s = model.apply(e, at);
+                emit(cx, at, s);
+            }
+            proxies.insert(bus.to_string(), px);
+        }
+        Err(e) => tracing::debug!("mpris {bus}: {e}"),
+    }
+}
+
+fn unavailable(cx: &SourceCtx, last: &mut SourceState, reason: &mut String, e: &str) {
+    let text = format!("no session bus: {e}");
+    if *last != SourceState::Unavailable || *reason != text {
+        *last = SourceState::Unavailable;
+        reason.clone_from(&text);
+        status(
+            cx,
+            SourceState::Unavailable,
+            &text,
+            Some("start a desktop session, or set DBUS_SESSION_BUS_ADDRESS"),
+        );
+    }
+}
+
+/// `Ok` with what the source can see — "no player" is not a failure.
+fn ok_status(cx: &SourceCtx, last: &mut SourceState, reason: &mut String, model: &Model) {
+    let n = model.players().count();
+    let text = if n == 0 {
+        "no player".to_string()
+    } else {
+        format!("{n} player{}", if n == 1 { "" } else { "s" })
+    };
+    if *last != SourceState::Ok || *reason != text {
+        *last = SourceState::Ok;
+        reason.clone_from(&text);
+        status(cx, SourceState::Ok, &text, None);
+    }
+}
+
+/// The next `NameOwnerChanged` as `(name, new owner)`, from the filtered
+/// match rule when the bus accepted one, else the unfiltered stream.
 async fn next_owner_change(
-    stream: &mut Option<zbus::fdo::NameOwnerChangedStream>,
+    filtered: &mut Option<zbus::MessageStream>,
+    fallback: &mut Option<zbus::fdo::NameOwnerChangedStream>,
 ) -> Option<(String, String)> {
     use futures_lite::StreamExt;
-    let s = stream.as_mut()?;
+    if let Some(s) = filtered.as_mut() {
+        let msg = s.next().await?.ok()?;
+        let body = msg.body();
+        let (name, _old, new): (String, String, String) = body.deserialize().ok()?;
+        return Some((name, new));
+    }
+    let s = fallback.as_mut()?;
     let sig = s.next().await?;
     let args = sig.args().ok()?;
     Some((
@@ -686,13 +847,16 @@ history = 9000"#,
                 if !name.starts_with(MPRIS_PREFIX) {
                     continue;
                 }
-                match read_player(&conn, &name).await {
-                    Ok(events) => {
-                        println!("== {name}");
-                        for e in events {
-                            println!("   {e:?}");
+                match build_proxies(&conn, &name).await {
+                    Ok(px) => match read_player(&px, &name, true).await {
+                        Ok(events) => {
+                            println!("== {name}");
+                            for e in events {
+                                println!("   {e:?}");
+                            }
                         }
-                    }
+                        Err(e) => println!("== {name}: {e}"),
+                    },
                     Err(e) => println!("== {name}: {e}"),
                 }
             }

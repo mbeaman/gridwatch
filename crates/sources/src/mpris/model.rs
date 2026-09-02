@@ -136,8 +136,13 @@ impl Model {
     /// Playing beats everything, then the most recently changed, then the
     /// bus name — and a pinned player wins outright while it exists.
     pub fn choose(&self) -> String {
-        if !self.pinned.is_empty() && self.players.contains_key(&self.pinned) {
-            return self.pinned.clone();
+        // A pin matches the bus name and its instance suffixes: Firefox is
+        // `org.mpris.MediaPlayer2.firefox.instance_1_107`, so pinning
+        // `firefox` has to reach it (review).
+        if !self.pinned.is_empty()
+            && let Some(bus) = self.pinned_match()
+        {
+            return bus;
         }
         self.players
             .values()
@@ -147,6 +152,15 @@ impl Model {
             })
             .map(|p| p.bus.clone())
             .unwrap_or_default()
+    }
+
+    /// The player a pin resolves to, if it is on the bus.
+    pub fn pinned_match(&self) -> Option<String> {
+        let prefix = format!("{}.", self.pinned);
+        self.players
+            .keys()
+            .find(|b| **b == self.pinned || b.starts_with(&prefix))
+            .cloned()
     }
 
     /// Does this player need its `Position` polled at `now`? Only the
@@ -164,12 +178,21 @@ impl Model {
     pub fn apply(&mut self, ev: Event, at: Ts) -> Vec<Sample> {
         match ev {
             Event::Added { bus, identity } => {
+                let fresh = !self.players.contains_key(&bus);
                 let p = self
                     .players
                     .entry(bus.clone())
                     .or_insert_with(|| PlayerState::new(&bus, at));
-                p.identity = identity;
-                p.changed_at = at;
+                // "Most recently changed" must mean *changed*: bumping the
+                // stamp on every poll made the tie-break "polled last",
+                // which switched the tile to whichever player sorted later
+                // the moment the current one paused (review).
+                if fresh || p.identity != identity {
+                    p.changed_at = at;
+                }
+                if !identity.is_empty() {
+                    p.identity = identity;
+                }
             }
             Event::Removed { bus } => {
                 self.players.remove(&bus);
@@ -197,9 +220,9 @@ impl Model {
                         // the previous track's clock.
                         p.pos_us = 0;
                         p.read_at = at;
+                        p.changed_at = at;
                     }
                     p.meta = meta;
-                    p.changed_at = at;
                 }
             }
             Event::Position { bus, pos_us } => {
@@ -210,7 +233,11 @@ impl Model {
             }
             Event::Rate { bus, rate } => {
                 if let Some(p) = self.players.get_mut(&bus) {
-                    p.rate = if rate.is_finite() && rate > 0.0 {
+                    // Firefox reports `Rate = 0` while paused; that is what
+                    // it said, so it is what the store carries. The clock
+                    // only interpolates while Playing, where a nonsense
+                    // rate would be a lie — `pos_at` guards that.
+                    p.rate = if rate.is_finite() && rate >= 0.0 {
                         rate
                     } else {
                         1.0
@@ -237,10 +264,11 @@ impl Model {
     /// so this needs no clock of its own.
     pub fn now(&self) -> Option<NowPlaying> {
         let p = self.current()?;
-        // A player reporting Position 0 for a track with no length is a
-        // stream: the elapsed clock runs from when we first saw the track
-        // (the digest's Firefox case).
-        let (pos_us, read_at) = if p.meta.len_us.is_none() && p.pos_us == 0 {
+        // No length is a stream, and a stream's own position cannot be
+        // trusted: Firefox reports 0 on some pages and a frozen non-zero
+        // value on others (review). The elapsed clock counts from when the
+        // track was first seen either way.
+        let (pos_us, read_at) = if p.meta.len_us.is_none() {
             (0, p.track_since)
         } else {
             (p.pos_us, p.read_at)
@@ -407,6 +435,18 @@ mod tests {
             Event::Pick("org.mpris.MediaPlayer2.a".into()),
             Ts(4_000_000_000),
         );
+        // A pin reaches an instance suffix: Firefox is
+        // `…MediaPlayer2.firefox.instance_1_107` (review).
+        let mut ff = Model::new(10);
+        ff.apply(
+            Event::Added {
+                bus: "org.mpris.MediaPlayer2.firefox.instance_1_107".into(),
+                identity: "Firefox".into(),
+            },
+            Ts(1),
+        );
+        ff.apply(Event::Pick("org.mpris.MediaPlayer2.firefox".into()), Ts(2));
+        assert_eq!(ff.choose(), "org.mpris.MediaPlayer2.firefox.instance_1_107");
         assert_eq!(m.choose(), "org.mpris.MediaPlayer2.a");
         m.apply(
             Event::Removed {
@@ -566,24 +606,36 @@ mod tests {
         assert_eq!(now.read_at, Ts(10_000_000_000));
         assert_eq!(now.pos_at(Ts(40_000_000_000)), 30_000_000, "30 s in");
         assert_eq!(now.fraction(Ts(40_000_000_000)), None);
-        // A position that matches the interpolation is not republished.
-        let out = m.apply(
-            Event::Position {
+        // In stream mode the player's own position is ignored: Firefox
+        // reports 0 on some pages and a frozen non-zero value on others
+        // (review), so neither report republishes anything.
+        for pos in [0, 90_000_000] {
+            let out = m.apply(
+                Event::Position {
+                    bus: bus.clone(),
+                    pos_us: pos,
+                },
+                Ts(41_000_000_000),
+            );
+            assert!(!names(&out).contains(&"media.now"), "{:?}", names(&out));
+        }
+        assert_eq!(m.now().unwrap().pos_us, 0, "the local clock still rules");
+        // With a length, a seek is a real change and is published.
+        m.apply(
+            Event::Meta {
                 bus: bus.clone(),
-                pos_us: 0,
+                meta: meta("with length", Some(300_000_000)),
             },
-            Ts(41_000_000_000),
+            Ts(50_000_000_000),
         );
-        assert!(!names(&out).contains(&"media.now"), "{:?}", names(&out));
-        // A real seek is.
         let out = m.apply(
             Event::Position {
                 bus,
                 pos_us: 90_000_000,
             },
-            Ts(42_000_000_000),
+            Ts(51_000_000_000),
         );
-        assert!(names(&out).contains(&"media.now"));
+        assert!(names(&out).contains(&"media.now"), "{:?}", names(&out));
     }
 
     #[test]

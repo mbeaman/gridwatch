@@ -13,6 +13,10 @@ use gridwatch_store::keys::media::Art;
 /// The most bytes fetched for one cover (the brief's cap).
 pub const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
+/// What the decoder will accept before the downscale: a cover, not a
+/// poster.
+pub const MAX_DECODE_PX: u32 = 8192;
+pub const MAX_DECODE_BYTES: u64 = 64 << 20;
 
 #[derive(Debug)]
 pub enum ArtError {
@@ -114,10 +118,13 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, ArtError> {
         }
         return std::fs::read(&path).map_err(|e| ArtError::Io(e.to_string()));
     }
-    if url.starts_with("https://") || url.starts_with("http://") {
+    if url.starts_with("https://") {
+        // https only, and no downgrade through a redirect: a cover is not
+        // worth a plaintext request (review).
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(HTTP_TIMEOUT))
             .max_redirects(3)
+            .https_only(true)
             .build()
             .new_agent();
         let mut resp = agent
@@ -140,7 +147,19 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, ArtError> {
 
 /// Decode and downscale to the Record the store carries.
 pub fn decode(bytes: &[u8], track: u64, max_px: u32) -> Result<Art, ArtError> {
-    let img = image::load_from_memory(bytes).map_err(|e| ArtError::Decode(e.to_string()))?;
+    // A 1 MB PNG can declare 12000x12000 and decode to 430 MB; the decoder
+    // is told what this dashboard will accept (review).
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_PX);
+    limits.max_image_height = Some(MAX_DECODE_PX);
+    limits.max_alloc = Some(MAX_DECODE_BYTES);
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| ArtError::Decode(e.to_string()))?;
+    reader.limits(limits);
+    let img = reader
+        .decode()
+        .map_err(|e| ArtError::Decode(e.to_string()))?;
     let max_px = max_px.clamp(16, 512);
     let img = if img.width().max(img.height()) > max_px {
         img.thumbnail(max_px, max_px)
@@ -222,6 +241,13 @@ mod tests {
             load("ftp://x/y.png", 1, 256),
             Err(ArtError::Unsupported(_))
         ));
+        assert!(
+            matches!(
+                load("http://x/y.png", 1, 256),
+                Err(ArtError::Unsupported(_))
+            ),
+            "plain http is not fetched"
+        );
         assert!(matches!(
             load("file:///nonexistent/x.png", 1, 256),
             Err(ArtError::Io(_))
