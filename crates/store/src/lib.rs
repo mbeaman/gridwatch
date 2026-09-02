@@ -16,6 +16,7 @@ pub mod key;
 pub mod keys;
 pub mod msg;
 pub mod ring;
+pub mod rules;
 pub mod series;
 pub mod source;
 pub mod store;

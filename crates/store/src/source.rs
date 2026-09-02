@@ -21,6 +21,11 @@ use crate::ts::{Clock, Ts};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct SourceId(pub &'static str);
 
+/// The pseudo-source a `[[rules]]` alert comes from (§9, arc 7b): the alert
+/// belongs to the rule, not to whichever source happened to publish the
+/// sample that tripped it.
+pub const RULES: SourceId = SourceId("rules");
+
 impl<'de> Deserialize<'de> for SourceId {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<SourceId, D::Error> {
         let name = String::deserialize(d)?;

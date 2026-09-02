@@ -8,7 +8,7 @@ use std::time::Duration;
 use smallvec::SmallVec;
 
 use crate::alert::{AlertEvent, AlertLog};
-use crate::key::{Key, MetricId, RecordValue, Vec32};
+use crate::key::{Datum, Key, MetricId, RecordValue, Vec32};
 use crate::msg::{ControlMsg, Msg};
 use crate::series::{Agg, Retention, Series, resample};
 use crate::source::{SourceId, SourceStatus};
@@ -37,6 +37,9 @@ pub struct Store {
     latest: Ts,
     retention: Retention,
     series: BTreeMap<MetricId, Series>,
+    /// The `[[rules]]` this run watches (§9, arc 7b); empty by default, so
+    /// a store with no rules pays nothing.
+    rules: crate::rules::Rules,
     sources: BTreeMap<&'static str, PerSource>,
     alerts: AlertLog,
 }
@@ -50,6 +53,7 @@ impl Default for Store {
 impl Store {
     pub fn new(retention: Retention) -> Store {
         Store {
+            rules: crate::rules::Rules::default(),
             latest: Ts::ZERO,
             retention,
             series: BTreeMap::new(),
@@ -69,6 +73,40 @@ impl Store {
     }
 
     /// The only mutation (§4.2). Returns alert events for the overlay.
+    /// Install the `[[rules]]` this run watches (§9, arc 7b). They are
+    /// evaluated inside `apply`, over the keys a batch touched.
+    pub fn set_rules(&mut self, rules: crate::rules::Rules) {
+        self.rules = rules;
+    }
+
+    pub fn rules(&self) -> &crate::rules::Rules {
+        &self.rules
+    }
+
+    /// The `absent` rules, on the frame's clock rather than a batch's.
+    pub fn tick_rules(&mut self, at: Ts) -> SmallVec<[AlertEvent; 2]> {
+        let mut out = SmallVec::new();
+        if self.rules.is_empty() {
+            return out;
+        }
+        // The labels a rule watches, and when each last arrived.
+        let mut rules = std::mem::take(&mut self.rules);
+        let known = |name: &str, pattern: &str| -> Vec<(String, Ts)> {
+            self.series
+                .iter()
+                .filter(|(id, _)| id.name == name)
+                .map(|(id, s)| (crate::rules::label_text(&id.label), s.last_at()))
+                .filter(|(label, _)| crate::rules::glob(pattern, label))
+                .collect()
+        };
+        for ev in rules.tick(at, crate::source::RULES, &known) {
+            self.alerts.observe(&ev);
+            out.push(ev);
+        }
+        self.rules = rules;
+        out
+    }
+
     pub fn apply(&mut self, msg: &Msg) -> SmallVec<[AlertEvent; 2]> {
         let mut out = SmallVec::new();
         match msg {
@@ -90,6 +128,33 @@ impl Store {
                 per.generation += 1;
                 per.last_sample = Some(b.at);
                 per.status.last_sample = Some(b.at);
+                // The rules see only the scalars this batch carried (§9,
+                // arc 7b): never a scan of the whole store.
+                if !self.rules.is_empty() {
+                    let scalars: Vec<(MetricId, f64)> = b
+                        .samples
+                        .iter()
+                        .filter_map(|s| match &s.datum {
+                            Datum::Scalar(v) => Some((s.id.clone(), *v)),
+                            _ => None,
+                        })
+                        .collect();
+                    if !scalars.is_empty() {
+                        let mut rules = std::mem::take(&mut self.rules);
+                        let lookup = |name: &str, label: &crate::key::Label| -> Option<f64> {
+                            let id = MetricId {
+                                name: crate::key::lookup(name)?.name,
+                                label: label.clone(),
+                            };
+                            self.series.get(&id)?.last_scalar().map(|(_, v)| v)
+                        };
+                        for ev in rules.observe(b.source, b.at, &scalars, &lookup) {
+                            self.alerts.observe(&ev);
+                            out.push(ev);
+                        }
+                        self.rules = rules;
+                    }
+                }
             }
             Msg::Control(ControlMsg::Status(id, st)) => {
                 let per = self.sources.entry(id.0).or_insert_with(|| PerSource {

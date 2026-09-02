@@ -66,6 +66,25 @@ impl Series {
     }
 }
 
+impl Series {
+    /// The newest scalar, for the rules' metric right-hand side.
+    pub fn last_scalar(&self) -> Option<(Ts, f64)> {
+        match self {
+            Series::Scalar(ring) => ring.iter().next_back().copied(),
+            _ => None,
+        }
+    }
+
+    /// When this series last received anything (the `absent` rule's clock).
+    pub fn last_at(&self) -> Ts {
+        match self {
+            Series::Scalar(ring) => ring.iter().next_back().map(|(t, _)| *t).unwrap_or(Ts::ZERO),
+            Series::Vector { latest, .. } => latest.as_ref().map(|(t, _)| *t).unwrap_or(Ts::ZERO),
+            Series::Record(slot) => slot.as_ref().map(|(t, _)| *t).unwrap_or(Ts::ZERO),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Agg {
     Last,

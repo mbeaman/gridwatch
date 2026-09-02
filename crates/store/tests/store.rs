@@ -306,3 +306,110 @@ fn demand_and_cadence_follow_levels() {
         Some(Duration::from_secs(1))
     );
 }
+
+/// Arc 7b: a `[[rules]]` entry raises through the normal alert path, so the
+/// banner, the alerts tile and `a` need no change — the store's own
+/// `apply` produces the event and the log records it.
+#[test]
+fn a_rule_raises_and_resolves_through_the_alert_log() {
+    use gridwatch_store::rules::{Rules, parse_all};
+    let toml_text = r#"
+[[rules]]
+name = "gpu-hot"
+key = "gpu.temp_c"
+op = ">"
+value = 84
+for_s = 2
+clear_s = 2
+severity = "crit"
+message = "the gpu is {value}°C"
+"#;
+    #[derive(serde::Deserialize)]
+    struct Wrapper {
+        rules: Vec<toml::Table>,
+    }
+    let w: Wrapper = toml::from_str(toml_text).unwrap();
+    let (rules, errors) = parse_all(&w.rules, &|k| gridwatch_store::key::lookup(k).is_some());
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(rules.len(), 1);
+    let mut store = Store::default();
+    store.set_rules(Rules::new(rules));
+
+    let hot = |t: u64, v: f64| {
+        Msg::Batch(Batch {
+            source: SourceId("gpu"),
+            at: Ts(t * 1_000_000_000),
+            samples: vec![Sample {
+                id: gridwatch_store::keys::gpu::TEMP_C.idx(0).id,
+                datum: Datum::Scalar(v),
+            }],
+        })
+    };
+    // Hot, but inside the hold.
+    assert!(store.apply(&hot(1, 90.0)).is_empty());
+    assert!(store.apply(&hot(2, 90.0)).is_empty());
+    // Past it: one Crit, and the log has it.
+    let ev = store.apply(&hot(3, 90.0));
+    assert_eq!(ev.len(), 1);
+    assert_eq!(ev[0].severity, gridwatch_store::Severity::Crit);
+    assert_eq!(ev[0].transition, gridwatch_store::Transition::Raised);
+    assert!(ev[0].detail.contains("90.0"), "{}", ev[0].detail);
+    assert_eq!(store.alerts().active().count(), 1);
+    // Cool: resolved after the clear hold, and the log lets it go.
+    assert!(store.apply(&hot(4, 50.0)).is_empty());
+    let ev = store.apply(&hot(6, 50.0));
+    assert_eq!(ev.len(), 1);
+    assert_eq!(ev[0].transition, gridwatch_store::Transition::Resolved);
+    assert_eq!(store.alerts().active().count(), 0);
+    // A store with no rules costs nothing and produces nothing.
+    let mut plain = Store::default();
+    assert!(plain.apply(&hot(9, 200.0)).is_empty());
+    assert!(plain.rules().is_empty());
+}
+
+/// Arc 7b P18: the rules' per-batch cost. Ten rules over a batch of forty
+/// scalars, the shape a busy source publishes, measured the way the other
+/// performance rows are — as a wall-clock number this test prints and a
+/// ceiling it enforces loosely enough not to flake on a loaded machine.
+#[test]
+fn ten_rules_cost_microseconds_per_batch() {
+    use gridwatch_store::rules::{Rules, parse_all};
+    let tables: Vec<toml::Table> = (0..10)
+        .map(|i| {
+            toml::from_str(&format!(
+                "name = \"r{i}\"\nkey = \"sensor.temp_c\"\nop = \">\"\nvalue = {}\nfor_s = 5\n",
+                50 + i
+            ))
+            .unwrap()
+        })
+        .collect();
+    let (rules, errors) = parse_all(&tables, &|k| gridwatch_store::key::lookup(k).is_some());
+    assert!(errors.is_empty(), "{errors:?}");
+    let mut store = Store::default();
+    store.set_rules(Rules::new(rules));
+    let samples: Vec<Sample> = (0..40)
+        .map(|i| Sample {
+            id: gridwatch_store::keys::sensors::TEMP_C
+                .named(&Arc::from(format!("chip{i}:Sensor").as_str()))
+                .id,
+            datum: Datum::Scalar(60.0),
+        })
+        .collect();
+    let n = 200;
+    let t0 = std::time::Instant::now();
+    for i in 0..n {
+        store.apply(&Msg::Batch(Batch {
+            source: SourceId("sensors"),
+            at: Ts(i * 1_000_000_000),
+            samples: samples.clone(),
+        }));
+    }
+    let per_batch = t0.elapsed() / n as u32;
+    println!("rules: {per_batch:?} per batch of 40 samples against 10 rules");
+    assert!(
+        per_batch < Duration::from_micros(500),
+        "the rules cost {per_batch:?} a batch — the ceiling is 0.5 ms (P18)"
+    );
+    // And they raised: forty labels over ten thresholds, each once.
+    assert_eq!(store.alerts().active().count(), 400);
+}
