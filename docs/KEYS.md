@@ -30,7 +30,6 @@
 | `psi.cpu` | Scalar | Percent | `cpu` | PSI some avg10, cpu |
 | `psi.mem` | Scalar | Percent | `cpu` | PSI some avg10, memory |
 | `psi.io` | Scalar | Percent | `cpu` | PSI some avg10, io |
-| `sensor.temp_c` | Scalar | Celsius | `cpu` | temperature {chip:label}; cpu source owns k10temp until arc 5 |
 | `cpu.topology` | Record | None | `cpu` | die/core map: die_of, core_of, per-die temp label; latest-only |
 | `proc.table` | Record | None | `cpu` | pid-level process scan (arc 2); latest-only |
 | `gpu.util_pct` | Scalar | Percent | `gpu` | SM utilisation {dev} (utilization_rates.gpu) |
@@ -77,3 +76,11 @@
 | `audio.sink` | Record | None | `audio` | the captured sink: node.name, description, object.serial, state, default flag, rate, channels; once per generation and on change |
 | `audio.sinks` | Record | None | `audio` | every Audio/Sink pw-dump lists, while the picker enumerates |
 | `audio.level` | Record | None | `audio` | the silence rule's state (silent, since); the DSP publishes at 2 Hz while silent |
+| `sensor.temp_c` | Scalar | Celsius | `sensors` | hwmon temperature per {chip:label} (k10temp:Tctl, nvme:Composite, spd5118:temp1 …); the cpu source publishes k10temp's when the sensors feature is off (§16) |
+| `sensor.max_c` | Scalar | Celsius | `sensors` | the chip's own max threshold per {chip:label}, once per generation (sentinels > 1 000 °C dropped) |
+| `sensor.crit_c` | Scalar | Celsius | `sensors` | the chip's own critical threshold per {chip:label}, once per generation |
+| `sensor.fan_rpm` | Scalar | Count | `sensors` | hwmon fan speed per {chip:label}, RPM |
+| `sensor.volt_v` | Scalar | Volts | `sensors` | hwmon voltage per {chip:label} |
+| `sensor.power_w` | Scalar | Watts | `sensors` | power per {chip:label}: RAPL package-0 from Δenergy_uj/Δt when readable |
+| `sensor.walk_ms` | Scalar | Milliseconds | `sensors` | wall ms of the last hwmon walk (the sources tile's cost line) |
+| `sensor.info` | Record | None | `sensors` | the chip inventory (name, path, kinds) and the RAPL state (ok \| root_only \| absent), once per generation |

@@ -102,7 +102,17 @@
 <rect x="336" y="960" width="24" height="16" fill="#b6ffc9"/>
 <rect x="360" y="960" width="8" height="16" fill="#0a0f0a"/>
 <rect x="368" y="960" width="288" height="16" fill="#b6ffc9"/>
-<rect x="656" y="960" width="1344" height="16" fill="#0a0f0a"/>
+<rect x="656" y="960" width="24" height="16" fill="#0a0f0a"/>
+<rect x="680" y="960" width="128" height="16" fill="#b6ffc9"/>
+<rect x="808" y="960" width="8" height="16" fill="#0a0f0a"/>
+<rect x="816" y="960" width="680" height="16" fill="#b6ffc9"/>
+<rect x="1496" y="960" width="8" height="16" fill="#0a0f0a"/>
+<rect x="1504" y="960" width="56" height="16" fill="#b6ffc9"/>
+<rect x="1560" y="960" width="8" height="16" fill="#0a0f0a"/>
+<rect x="1568" y="960" width="40" height="16" fill="#b6ffc9"/>
+<rect x="1608" y="960" width="8" height="16" fill="#0a0f0a"/>
+<rect x="1616" y="960" width="48" height="16" fill="#b6ffc9"/>
+<rect x="1664" y="960" width="336" height="16" fill="#0a0f0a"/>
 <rect x="0" y="976" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="992" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="1008" width="2000" height="16" fill="#0a0f0a"/>
@@ -282,10 +292,10 @@
 <text x="0" y="124" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="124" fill="#7dffa6" font-weight="bold" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">CCD0</text>
 <text x="56" y="124" fill="#2e8b3a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">4.9 GHz</text>
-<text x="128" y="124" fill="#2e8b3a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">61.8 °C</text>
+<text x="128" y="124" fill="#2e8b3a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">50.1 °C</text>
 <text x="496" y="124" fill="#7dffa6" font-weight="bold" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">CCD1</text>
 <text x="544" y="124" fill="#2e8b3a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">5.4 GHz</text>
-<text x="616" y="124" fill="#2e8b3a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">53.6 °C</text>
+<text x="616" y="124" fill="#2e8b3a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">47.9 °C</text>
 <text x="992" y="124" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="124" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="1992" y="124" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1242,6 +1252,11 @@
 <text x="368" y="972" fill="#0a0f0a" textLength="288" lengthAdjust="spacingAndGlyphs" xml:space="preserve">NOTE                                </text>
 <text x="656" y="972" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="972" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="680" y="972" fill="#0a0f0a" textLength="128" lengthAdjust="spacingAndGlyphs" xml:space="preserve">chip            </text>
+<text x="816" y="972" fill="#0a0f0a" textLength="680" lengthAdjust="spacingAndGlyphs" xml:space="preserve">sensor                                                                               </text>
+<text x="1504" y="972" fill="#0a0f0a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  value</text>
+<text x="1568" y="972" fill="#0a0f0a" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  max</text>
+<text x="1616" y="972" fill="#0a0f0a" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">of max</text>
 <text x="1664" y="972" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="1688" y="972" fill="#7dffa6" textLength="160" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▟▀▜▖▟▀▜▖ ▄  ▟▀▜▖▟▀▜▖</text>
 <text x="0" y="988" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1254,6 +1269,11 @@
 <text x="368" y="988" fill="#143d1c" textLength="232" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · dsp 0.4 ms</text>
 <text x="656" y="988" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="988" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="680" y="988" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">spd5118</text>
+<text x="816" y="988" fill="#2e8b3a" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">temp1</text>
+<text x="1512" y="988" fill="#b6ffc9" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">41.1°C</text>
+<text x="1584" y="988" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">55°</text>
+<text x="1624" y="988" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 75 %</text>
 <text x="1664" y="988" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="1688" y="988" fill="#7dffa6" textLength="160" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█▗█▌█▗█▌ ▀  █▗█▌█▗█▌</text>
 <text x="0" y="1004" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1266,6 +1286,11 @@
 <text x="368" y="1004" fill="#143d1c" textLength="240" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · scan 5.2 ms</text>
 <text x="656" y="1004" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1004" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="680" y="1004" fill="#b6ffc9" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">spd5118#2</text>
+<text x="816" y="1004" fill="#2e8b3a" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">temp1</text>
+<text x="1512" y="1004" fill="#b6ffc9" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">40.5°C</text>
+<text x="1584" y="1004" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">55°</text>
+<text x="1624" y="1004" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 74 %</text>
 <text x="1664" y="1004" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="1688" y="1004" fill="#7dffa6" textLength="160" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█▛▐▌█▛▐▌ ▄  █▛▐▌█▛▐▌</text>
 <text x="0" y="1020" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1278,7 +1303,11 @@
 <text x="368" y="1020" fill="#143d1c" textLength="288" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · nvml 0.1+2.4+2.1 </text>
 <text x="656" y="1020" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1020" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="688" y="1020" fill="#2e8b3a" font-weight="bold" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▪ sensors</text>
+<text x="680" y="1020" fill="#b6ffc9" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">nvme</text>
+<text x="816" y="1020" fill="#2e8b3a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Composite</text>
+<text x="1512" y="1020" fill="#b6ffc9" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">50.1°C</text>
+<text x="1584" y="1020" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">82°</text>
+<text x="1624" y="1020" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 61 %</text>
 <text x="1664" y="1020" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="1688" y="1020" fill="#7dffa6" textLength="160" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▝▀▀ ▝▀▀  ▀  ▝▀▀ ▝▀▀ </text>
 <text x="0" y="1036" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1291,19 +1320,45 @@
 <text x="368" y="1036" fill="#143d1c" textLength="288" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · read 4.7 ms · ≤2 </text>
 <text x="656" y="1036" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1036" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="688" y="1036" fill="#2e8b3a" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">arrives in a later arc</text>
+<text x="680" y="1036" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">nvme#2</text>
+<text x="816" y="1036" fill="#2e8b3a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Composite</text>
+<text x="1512" y="1036" fill="#b6ffc9" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">47.0°C</text>
+<text x="1584" y="1036" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">84°</text>
+<text x="1624" y="1036" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 56 %</text>
 <text x="1664" y="1036" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="1052" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="8" y="1052" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">sensors</text>
+<text x="80" y="1052" fill="#00ff41" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ok</text>
+<text x="208" y="1052" fill="#b6ffc9" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">40</text>
+<text x="264" y="1052" fill="#2e8b3a" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0s</text>
+<text x="320" y="1052" fill="#2e8b3a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
+<text x="352" y="1052" fill="#2e8b3a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
+<text x="368" y="1052" fill="#143d1c" textLength="240" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · walk 0.6 ms</text>
 <text x="656" y="1052" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1052" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="680" y="1052" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">nvme#3</text>
+<text x="816" y="1052" fill="#2e8b3a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Composite</text>
+<text x="1512" y="1052" fill="#b6ffc9" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">37.2°C</text>
+<text x="1584" y="1052" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">75°</text>
+<text x="1624" y="1052" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 50 %</text>
 <text x="1664" y="1052" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="1068" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="656" y="1068" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1068" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="680" y="1068" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">r8169_0_c00:00</text>
+<text x="816" y="1068" fill="#2e8b3a" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">temp1</text>
+<text x="1512" y="1068" fill="#b6ffc9" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">54.9°C</text>
+<text x="1576" y="1068" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">110°</text>
+<text x="1624" y="1068" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 50 %</text>
 <text x="1664" y="1068" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="1084" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="656" y="1084" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="1084" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="680" y="1084" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">r8169_0_b00:00</text>
+<text x="816" y="1084" fill="#2e8b3a" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">temp1</text>
+<text x="1512" y="1084" fill="#b6ffc9" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">58.1°C</text>
+<text x="1576" y="1084" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">120°</text>
+<text x="1624" y="1084" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 48 %</text>
 <text x="1664" y="1084" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="1100" fill="#1f7a33" textLength="664" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└─────────────────────────────────────────────────────────────────────────────────┘</text>
 <text x="672" y="1100" fill="#1f7a33" textLength="1000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</text>

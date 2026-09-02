@@ -10,6 +10,7 @@
 | `gpu` | GPU | `gpu`, `cpu`? | 6x3 | badge → gauges → header → charts → procs → full | nvtop's header, gauges, ten-minute charts and the GPU process table over NVML |
 | `htop` | CPU | `cpu` | 6x3 | tiny → big-number → meters → cores → table | htop's meters, per-core CCD blocks, memory, load and pressure |
 | `pins` | 12V-2x6 pins | `pins`, `gpu`? | 4x2 | watts-badge → mini-bars → bars → trend → full | astral-watch's per-pin amperage: bars, balance, the watts trend and the alert log |
+| `sensors` | sensors | `sensors`, `gpu`? | 6x1 | hottest → strip → table → chart → full | every hwmon chip's temperatures, fans, volts and power, hottest first; RAPL and the GPU row |
 | `sources` | Sources | — | 4x1 | list → table | source health: state, generation, age, drops, restarts |
 
 ## `alerts` — Alerts
@@ -138,6 +139,28 @@ Keys once captured with `Enter`:
 - `r` — reset the session peaks
 - `+ -` — faster / slower sampling by 100 ms (500–5000 ms, as tui.rs)
 - `↑/↓ PgUp/PgDn` — scroll the alert log
+
+## `sensors` — sensors
+
+every hwmon chip's temperatures, fans, volts and power, hottest first; RAPL and the GPU row
+
+- contract 1 · chrome Themed · footprints 2x1 4x1 6x1 4x2 6x3 · default 6x1
+- requires none · optional Hwmon, Rapl
+- sources `sensors` · optional sources `gpu`
+- example `options = { chips = ["nvme*", "k10temp"], sort = "chip" }`
+
+| tier | min | demand | adds | signature |
+|---|---|---|---|---|
+| `hottest` | 8×3 | Meters | the hottest reading with its chip, ▲ over max | `°` |
+| `strip` | 24×4 | Meters | up to six chips as chips, hottest first | `°` |
+| `table` | 40×8 | Meters | CHIP · SENSOR · VALUE · MAX · BAR, scrolling | `chip` |
+| `chart` | 60×14 | Meters | braille chart of the four hottest over ten minutes | `chart` |
+| `full` (zoom) | 100×24 | Meters | fans, volts, power, the RAPL line, the PSI row, the gpu row | `RAPL` |
+
+Keys once captured with `Enter`:
+
+- `↑/↓` — scroll
+- `o` — sort hottest / by chip
 
 ## `sources` — Sources
 
