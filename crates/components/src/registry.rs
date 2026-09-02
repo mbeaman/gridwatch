@@ -7,6 +7,9 @@ pub fn builtin_components(reg: &mut Registry) {
     reg.register_component((crate::htop::DEF)());
     #[cfg(feature = "gpu")]
     reg.register_component((crate::gpu::DEF)());
+    #[cfg(feature = "pins")]
+    reg.register_component((crate::pins::DEF)());
+    reg.register_component((crate::alerts::DEF)());
     reg.register_component((crate::clock::DEF)());
     reg.register_component((crate::sources_tile::DEF)());
 }

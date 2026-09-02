@@ -1,0 +1,94 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(p.as_mut(), &history, &th, size)"
+---
+size: 59x18
+tier: bars
+view:
+  stack:
+    children:
+      - - Fill(1)
+        - custom: six pin bars over 10 A with the limit line at 9.2 A
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "p1 "
+              - bold: false
+                role: Ok
+                s: "1.7"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p2 "
+              - bold: false
+                role: Ok
+                s: "1.7"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p3 "
+              - bold: false
+                role: Ok
+                s: "1.5"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p4 "
+              - bold: false
+                role: Ok
+                s: "1.5"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p5 "
+              - bold: false
+                role: Ok
+                s: "1.4"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p6 "
+              - bold: false
+                role: Ok
+                s: "1.3"
+      - - Len(1)
+        - gauge:
+            gradient: Temp
+            label: balance
+            text: 1.26× NORMAL
+            value: 0.5236030220985413
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Text
+                s: 9.1 A
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: 110 W
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: peak 110 W
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: pins 12.04–12.07 V
+    dir: V

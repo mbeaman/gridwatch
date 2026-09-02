@@ -24,3 +24,12 @@ view:
       - bold: false
         role: Info
         s: starting
+    - - bold: false
+        role: Text
+        s: pins
+      - bold: false
+        role: TextGhost
+        s: " "
+      - bold: false
+        role: Info
+        s: starting

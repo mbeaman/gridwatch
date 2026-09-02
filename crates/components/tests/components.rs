@@ -23,9 +23,17 @@ fn gpu() -> Box<dyn Component> {
     Box::new(gridwatch_components::gpu::Gpu::default())
 }
 
+fn pins() -> Box<dyn Component> {
+    Box::new(gridwatch_components::pins::Pins::default())
+}
+
+fn alerts() -> Box<dyn Component> {
+    Box::new(gridwatch_components::alerts::Alerts::default())
+}
+
 #[test]
 fn tiers_are_well_formed() {
-    for mk in [clock, sources, htop, gpu] {
+    for mk in [clock, sources, htop, gpu, pins, alerts] {
         let c = mk();
         assert_tiers_well_formed(c.tiers());
         assert_min_tier_fits(c.tiers(), Size::new(8, 3));
@@ -43,6 +51,8 @@ fn renders_everywhere() {
         assert_renders_everywhere(&|| sources(), &store, &empty, &th);
         assert_renders_everywhere(&|| htop(), &store, &empty, &th);
         assert_renders_everywhere(&|| gpu(), &store, &empty, &th);
+        assert_renders_everywhere(&|| pins(), &store, &empty, &th);
+        assert_renders_everywhere(&|| alerts(), &store, &empty, &th);
     }
 }
 
@@ -73,6 +83,18 @@ fn view_snapshots_at_real_grid_sizes() {
         insta::assert_yaml_snapshot!(
             format!("gpu_{name}"),
             view_snapshot(g.as_mut(), &history, &th, size)
+        );
+        // Forty ticks reach 60 s: the scripted overload has raised (21.5 s)
+        // and resolved (50 s), so the pins and alerts snapshots pin both log lines.
+        let mut p = pins();
+        insta::assert_yaml_snapshot!(
+            format!("pins_{name}"),
+            view_snapshot(p.as_mut(), &history, &th, size)
+        );
+        let mut a = alerts();
+        insta::assert_yaml_snapshot!(
+            format!("alerts_{name}"),
+            view_snapshot(a.as_mut(), &history, &th, size)
         );
     }
 }

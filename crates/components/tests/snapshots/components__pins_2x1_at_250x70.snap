@@ -1,0 +1,26 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(p.as_mut(), &history, &th, size)"
+---
+size: 38x8
+tier: mini-bars
+view:
+  stack:
+    children:
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextGhost
+                s: ·
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "Σ "
+              - bold: true
+                role: Text
+                s: 110 W
+      - - Fill(1)
+        - custom: six pin bars over 10 A with the limit line at 9.2 A
+    dir: V

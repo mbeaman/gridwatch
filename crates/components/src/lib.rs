@@ -3,11 +3,14 @@
 
 #![forbid(unsafe_code)]
 
+pub mod alerts;
 pub mod clock;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 #[cfg(feature = "htop")]
 pub mod htop;
+#[cfg(feature = "pins")]
+pub mod pins;
 pub mod registry;
 pub mod sources_tile;
 

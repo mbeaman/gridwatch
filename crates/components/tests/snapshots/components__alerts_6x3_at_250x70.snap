@@ -1,0 +1,46 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(a.as_mut(), &history, &th, size)"
+---
+size: 122x31
+tier: log
+view:
+  stack:
+    children:
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextGhost
+                s: no active alerts
+      - - Len(1)
+        - text:
+            - - bold: true
+                role: TextMuted
+                s: log
+      - - Fill(1)
+        - text:
+            - - bold: false
+                role: TextGhost
+                s: "   51.0s "
+              - bold: false
+                role: Ok
+                s: "RESOLVED OVERLOAD: clear after 28s"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: pins/overload
+            - - bold: false
+                role: TextGhost
+                s: "   22.5s "
+              - bold: false
+                role: Crit
+                s: RAISED OVERLOAD pins 1+2 >9.2A
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: pins/overload
+    dir: V

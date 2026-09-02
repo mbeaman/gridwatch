@@ -1,0 +1,237 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(p.as_mut(), &history, &th, size)"
+---
+size: 248x66
+tier: trend
+view:
+  stack:
+    children:
+      - - Len(6)
+        - custom: six pin bars over 10 A with the limit line at 9.2 A
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "p1 "
+              - bold: false
+                role: Ok
+                s: "1.7"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p2 "
+              - bold: false
+                role: Ok
+                s: "1.7"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p3 "
+              - bold: false
+                role: Ok
+                s: "1.5"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p4 "
+              - bold: false
+                role: Ok
+                s: "1.5"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p5 "
+              - bold: false
+                role: Ok
+                s: "1.4"
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextMuted
+                s: "p6 "
+              - bold: false
+                role: Ok
+                s: "1.3"
+      - - Len(1)
+        - gauge:
+            gradient: Temp
+            label: balance
+            text: 1.26× NORMAL
+            value: 0.5236030220985413
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Text
+                s: 9.1 A
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: 110 W
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: peak 110 W
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: pins 12.04–12.07 V
+      - - Len(3)
+        - sparkline:
+            gradient: Power
+            max: ~
+            n: 120
+            series:
+              - ~
+              - ~
+              - ~
+              - 110.42508697509766
+              - ~
+              - ~
+              - 110.74991607666016
+              - ~
+              - ~
+              - 110.23480987548828
+              - ~
+              - ~
+              - 110.3449935913086
+              - ~
+              - ~
+              - 109.5208740234375
+              - ~
+              - ~
+              - 111.86809539794922
+              - ~
+              - ~
+              - 110.86276245117188
+              - ~
+              - ~
+              - 111.74897766113281
+              - ~
+              - ~
+              - 109.9818344116211
+              - ~
+              - ~
+              - 110.68087005615234
+              - ~
+              - ~
+              - 110.82732391357422
+              - ~
+              - ~
+              - 111.05327606201172
+              - ~
+              - ~
+              - 111.6108627319336
+              - ~
+              - ~
+              - 298.0281066894531
+              - ~
+              - ~
+              - 298.90960693359375
+              - ~
+              - ~
+              - 298.62109375
+              - ~
+              - ~
+              - 298.017578125
+              - ~
+              - ~
+              - 299.0867614746094
+              - ~
+              - ~
+              - 298.3194274902344
+              - ~
+              - ~
+              - 298.5924072265625
+              - ~
+              - ~
+              - 298.6711730957031
+              - ~
+              - ~
+              - 298.39337158203125
+              - ~
+              - ~
+              - 299.4143981933594
+              - ~
+              - ~
+              - 296.84619140625
+              - ~
+              - ~
+              - 297.26043701171875
+              - ~
+              - ~
+              - 298.72479248046875
+              - ~
+              - ~
+              - 110.7518081665039
+              - ~
+              - ~
+              - 110.71675109863281
+              - ~
+              - ~
+              - 111.04764556884766
+              - ~
+              - ~
+              - 111.44889068603516
+              - ~
+              - ~
+              - 110.38648223876953
+              - ~
+              - ~
+              - 110.76146697998047
+              - ~
+              - ~
+              - 110.43726348876953
+              - ~
+              - ~
+              - 110.6341323852539
+              - ~
+              - ~
+              - 111.15318298339844
+              - ~
+              - ~
+              - 112.08987426757813
+              - ~
+              - ~
+              - 111.56269073486328
+              - ~
+              - ~
+              - 110.18838500976563
+              - ~
+              - ~
+              - 110.20039367675781
+              - ~
+              - ~
+      - - Fill(1)
+        - text:
+            - - bold: true
+                role: TextMuted
+                s: log
+            - - bold: false
+                role: TextGhost
+                s: "  22.5s "
+              - bold: false
+                role: Crit
+                s: RAISED OVERLOAD pins 1+2 >9.2A
+            - - bold: false
+                role: TextGhost
+                s: "  51.0s "
+              - bold: false
+                role: Ok
+                s: RESOLVED OVERLOAD clear after 28s
+    dir: V

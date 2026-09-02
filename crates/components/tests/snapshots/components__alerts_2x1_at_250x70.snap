@@ -1,0 +1,11 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(a.as_mut(), &history, &th, size)"
+---
+size: 38x8
+tier: list
+view:
+  text:
+    - - bold: false
+        role: TextGhost
+        s: no active alerts

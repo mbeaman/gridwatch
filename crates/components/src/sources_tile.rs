@@ -97,6 +97,21 @@ fn note(cx: &RenderCx<'_>, s: &gridwatch_store::SourceOverview<'_>) -> String {
             out.push_str(" · spec row disagrees with NVML");
         }
     }
+    // The pins source's read cost and transactions per second (P14's
+    // evidence): one block read is one transaction, at the sample cadence.
+    if s.id == gridwatch_store::keys::pins::SOURCE
+        && let Some((_, ms)) = cx.store.last(&gridwatch_store::keys::pins::READ_MS)
+    {
+        let tx_per_s = cx
+            .store
+            .record(&gridwatch_store::keys::pins::INFO)
+            .map(|(_, i)| 1000.0 / f64::from(i.interval_ms.max(1)))
+            .unwrap_or(2.0);
+        if !out.is_empty() {
+            out.push_str(" · ");
+        }
+        out.push_str(&format!("read {ms:.1} ms · ≤{tx_per_s:.0} tx/s"));
+    }
     out
 }
 

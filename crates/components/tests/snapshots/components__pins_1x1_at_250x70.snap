@@ -1,0 +1,52 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(p.as_mut(), &history, &th, size)"
+---
+size: 17x8
+tier: watts-badge
+view:
+  stack:
+    children:
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "Σ "
+              - bold: true
+                role: Text
+                s: 110 W
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Ok
+                s: 1.26×
+              - bold: false
+                role: TextGhost
+                s: " "
+              - bold: false
+                role: TextGhost
+                s: ·
+      - - Fill(1)
+        - sparkline:
+            gradient: Power
+            max: ~
+            n: 17
+            series:
+              - 110.5875015258789
+              - 110.28990173339844
+              - 110.75057983398438
+              - 110.86540222167969
+              - 110.75409698486328
+              - 173.5640869140625
+              - 298.7653503417969
+              - 298.55218505859375
+              - 298.5276794433594
+              - 298.90386962890625
+              - 297.0533142089844
+              - 173.3977813720703
+              - 111.2482681274414
+              - 110.573974609375
+              - 110.74153137207031
+              - 111.82627868652344
+              - 110.19438934326172
+    dir: V
