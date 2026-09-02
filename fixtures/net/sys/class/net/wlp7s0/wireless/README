@@ -1,0 +1,4 @@
+The kernel's `wireless/` directory is empty on a down radio (torch,
+2026-09-02), and git does not track an empty directory — this file exists
+so the fixture keeps the marker the walker looks for. A real tree has the
+directory (and a `phy80211` symlink) whether or not it holds anything.
