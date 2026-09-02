@@ -53,7 +53,7 @@ is the one row of this arc a machine cannot tick for itself.
 
 ## Loader v2 (arc 3b, D52)
 
-- **`inherits = "<built-in or sibling file>"`**, one level: the child overrides its parent key by key — a palette entry, one role, one gradient, one widget — and the merged result must be complete. A parent that itself inherits is refused ("inherits chains are not supported"). A `.toml` theme may inherit a built-in or a `<name>.toml` next to it; a built-in may inherit only a built-in.
+- **`inherits = "<built-in or sibling file>"`**, one level of *files*: the child overrides its parent key by key — a palette entry, one role, one gradient, one widget, `class` — and the merged result must be complete. Every built-in is inheritable (`phosphor-green` inherits `mono` inside the binary and is flattened first); a sibling `<name>.toml` next to your file may itself inherit a built-in (flattened too), but a sibling that inherits another *file* is refused ("inherits chains are not supported"), as is inheriting yourself.
 - **`[components.<kind>] gradients.<id> = [...]`** re-paints one gradient for one component kind (`Theme::for_kind`); the component never knows.
 - **Colour values:** `#rrggbb`, `default`, the sixteen names (`black red green yellow blue magenta cyan white`, each also `bright-…`), `ansi:N`, and `$palette` references.
 - **The WCAG gate** warns at load — toasted at start, in the log, and in full with `gridwatch config check --theme NAME` — when `text` on `panel` or `surface` is below 4.5:1 or `text_muted` below 3:1. `text_ghost` is the decorative role (the empty-bar fill and the gauge track are drawn in it) and has no floor; never put a label in it (arc 1b review).
