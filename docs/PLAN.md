@@ -1,6 +1,6 @@
 # gridwatch — the plan
 
-> **Status: arc 1 complete — 1a (core seam) committed, 1b (cpu source + htop tiers + retrowave + first live perf rows) built and reviewed 2026-08-31 (D41–D45), awaiting Matt's commit and the `v0.1.0` tag. Arc 2 (GPU + journal) is next.** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
+> **Status: arc 1 is built, committed and pushed (2026-09-01) — `main` on `github.com/mbeaman/gridwatch`, CI green on all eight jobs. `v0.1.0` is deliberately NOT tagged yet: P4/P21/P9/P10 need a human in Ptyxis (see `PERFORMANCE.md`'s owed list), as do the glyph check and the README PNG. Arc 2 (GPU + journal + process tables) is next, and per D36 its brief is written in a Fable session before any code.** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
 
 ## What we are building
 
