@@ -130,7 +130,15 @@
       }
     },
     "glyphs": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "rain": {
+          "enum": [
+            "katakana",
+            "ascii"
+          ]
+        }
+      }
     },
     "borders": {
       "type": "object"
@@ -142,13 +150,233 @@
       "type": "object"
     },
     "flourish": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "grid_floor": {
+          "type": "boolean"
+        },
+        "sun": {
+          "type": "boolean"
+        },
+        "marquee": {
+          "type": "boolean"
+        },
+        "decode": {
+          "type": "boolean"
+        },
+        "big_clock": {
+          "type": "object",
+          "properties": {
+            "pixel": {
+              "enum": [
+                "quadrant",
+                "sextant",
+                "full"
+              ]
+            }
+          }
+        }
+      }
     },
     "effects": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "startup": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "sweep_in",
+                "fade_in",
+                "dissolve",
+                "fade",
+                "hsl_pulse"
+              ]
+            },
+            "duration_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "motion": {
+              "type": "string"
+            },
+            "lightness": {
+              "type": "number"
+            },
+            "period_ms": {
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        "theme_swap": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "sweep_in",
+                "fade_in",
+                "dissolve",
+                "fade",
+                "hsl_pulse"
+              ]
+            },
+            "duration_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "motion": {
+              "type": "string"
+            },
+            "lightness": {
+              "type": "number"
+            },
+            "period_ms": {
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        "focus": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "sweep_in",
+                "fade_in",
+                "dissolve",
+                "fade",
+                "hsl_pulse"
+              ]
+            },
+            "duration_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "motion": {
+              "type": "string"
+            },
+            "lightness": {
+              "type": "number"
+            },
+            "period_ms": {
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        "alert": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "sweep_in",
+                "fade_in",
+                "dissolve",
+                "fade",
+                "hsl_pulse"
+              ]
+            },
+            "duration_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "motion": {
+              "type": "string"
+            },
+            "lightness": {
+              "type": "number"
+            },
+            "period_ms": {
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        }
+      }
     },
     "ambient": {
-      "type": "object"
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "matrix_rain"
+          ]
+        },
+        "fps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "density": {
+          "type": "number"
+        },
+        "speed": {
+          "type": "number"
+        },
+        "reveal": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reveal_ms": {
+          "type": "integer"
+        },
+        "governor": {
+          "type": "boolean"
+        },
+        "light": {
+          "type": "object",
+          "properties": {
+            "fade_s": {
+              "type": "number"
+            },
+            "trail_ms": {
+              "type": "integer"
+            },
+            "sweep_s": {
+              "type": "number"
+            },
+            "head": {
+              "$ref": "#/$defs/color"
+            },
+            "floor": {
+              "$ref": "#/$defs/color"
+            },
+            "relight_on_update": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
     },
     "components": {
       "type": "object",
@@ -165,6 +393,14 @@
               "minItems": 1
             }
           }
+        }
+      }
+    },
+    "contrast": {
+      "type": "object",
+      "properties": {
+        "autofix": {
+          "type": "boolean"
         }
       }
     }

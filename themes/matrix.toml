@@ -1,0 +1,101 @@
+# gridwatch built-in theme: matrix — the first showcase-class theme (D28, D31,
+# D34, arc 4b). The ambient layer is the only thing that draws: the rain
+# prints the modules and they fade to black between falls. Inherits
+# phosphor-green's form (mono's) and overrides the paint.
+[meta]
+name = "matrix"
+schema = 1
+variant = "dark"
+inherits = "phosphor-green"
+class = "showcase"
+
+[palette]
+void = "#000000"
+deep = "#020a04"
+moss = "#0b3d16"
+neon = "#00ff41"
+mint = "#7dffa6"
+leaf = "#009a2e"
+ghost = "#0a3312"
+dim = "#1f9a4a"
+paper = "#b6ffc9"
+amber = "#e0c341"
+pill = "#ff2a2a"
+
+[colors]
+bg = "$void"
+surface = "$deep"
+panel = "$deep"
+border = "$moss"
+border_focused = "$neon"
+title = "$mint"
+text = "$paper"
+text_muted = "$dim"
+text_ghost = "$ghost"
+cursor = "$neon"
+
+[colors.accent]
+primary = "$neon"
+secondary = "$mint"
+tertiary = "$leaf"
+
+[colors.severity]
+ok = "$neon"
+warn = "$amber"
+crit = "$pill"
+info = "$mint"
+
+[colors.selection]
+fg = "$void"
+bg = "$neon"
+
+[gradients]
+load = ["$ghost", "$leaf", "$neon", "$mint"]
+temp = ["$leaf", "$neon", "$amber", "$pill"]
+power = ["$leaf", "$neon", "$mint"]
+mem = ["$ghost", "$leaf", "$neon"]
+netrx = ["$leaf", "$neon"]
+nettx = ["$dim", "$mint"]
+audio = ["$ghost", "$leaf", "$neon", "$mint", "$paper"]
+title = ["$paper", "$mint", "$neon"]
+# The rain's own palette: head-white down to the floor.
+rain = ["#ffffff", "#d8ffe0", "$neon", "#00b32c", "#008f11", "#004d0a", "#002a05"]
+
+[glyphs]
+set = "unicode"
+rain = "katakana"
+
+[borders]
+set = "plain"
+focused_set = "thick"
+
+[title]
+style = "plain"
+case = "upper"
+
+[flourish]
+decode = true
+big_clock = { pixel = "quadrant" }
+
+[ambient]
+kind = "matrix_rain"
+fps = 24
+density = 0.20
+speed = 1.0
+reveal = ["focus", "alert", "hover", "key"]
+reveal_ms = 2500
+governor = true
+
+[ambient.light]
+fade_s = 12
+trail_ms = 900
+sweep_s = 20
+head = "#ffffff"
+floor = "#000000"
+relight_on_update = true
+
+[effects]
+startup = { kind = "fade_in", duration_ms = 600 }
+focus = { kind = "fade", duration_ms = 300 }
+theme_swap = { kind = "dissolve", duration_ms = 600 }
+alert = { kind = "hsl_pulse", period_ms = 900, target = "crit_fg", lightness = 25 }

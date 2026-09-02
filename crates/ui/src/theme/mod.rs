@@ -9,8 +9,8 @@ pub use color::{
     ColorMode, contrast_ratio, nearest_16, nearest_256, parse_color, relative_luminance,
 };
 pub use file::{
-    BUILTIN_THEMES, ThemeFile, WCAG_MUTED_MIN, WCAG_TEXT_MIN, build_theme, builtin, builtin_file,
-    contrast_report, load_builtin, load_theme_file, merge, wcag_warnings,
+    BUILTIN_THEMES, EFFECT_KINDS, ThemeFile, WCAG_MUTED_MIN, WCAG_TEXT_MIN, autofix, build_theme,
+    builtin, builtin_file, contrast_report, load_builtin, load_theme_file, merge, wcag_warnings,
 };
 pub use gradient::Gradient;
 
@@ -285,6 +285,116 @@ pub struct WidgetSet {
     pub big_number: PixelStyle,
 }
 
+/// One `[effects]` hook (§7, arc 4b — D54 seam 6): data only; the app maps
+/// `kind` to a tachyonfx effect. Unknown kinds warn at load and are ignored.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EffectSpec {
+    pub kind: String,
+    pub duration_ms: u32,
+    pub motion: Option<String>,
+    pub lightness: Option<f32>,
+    pub period_ms: Option<u32>,
+    pub target: Option<String>,
+}
+
+/// The hooks a theme may declare (§7): each `None` plays nothing.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EffectHooks {
+    pub startup: Option<EffectSpec>,
+    pub theme_swap: Option<EffectSpec>,
+    pub focus: Option<EffectSpec>,
+    pub alert: Option<EffectSpec>,
+}
+
+impl EffectHooks {
+    pub fn any(&self) -> bool {
+        self.startup.is_some()
+            || self.theme_swap.is_some()
+            || self.focus.is_some()
+            || self.alert.is_some()
+    }
+}
+
+/// `[flourish]` (§7, seam 7): retro decorations a theme opts into.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Flourish {
+    pub grid_floor: bool,
+    pub sun: bool,
+    /// The clock's pixel style, overriding `[widgets] big_number` for it.
+    pub big_clock: Option<PixelStyle>,
+    pub marquee: bool,
+}
+
+/// `[ambient.light]` (D31/D34): how printed content and empty-space trails
+/// fade, in the ambient layer's own units.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Light {
+    pub fade_s: f32,
+    pub trail_ms: u32,
+    pub sweep_s: f32,
+    pub head: Color,
+    pub floor: Color,
+    pub relight_on_update: bool,
+}
+
+impl Default for Light {
+    fn default() -> Light {
+        Light {
+            fade_s: 12.0,
+            trail_ms: 900,
+            sweep_s: 20.0,
+            head: Color::Rgb(255, 255, 255),
+            floor: Color::Rgb(0, 0, 0),
+            relight_on_update: true,
+        }
+    }
+}
+
+/// `[ambient]` (§7, D28/D31/D34, seam 10): a showcase theme's layer — data
+/// here, the painter in `gridwatch-app::ambient`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AmbientSpec {
+    pub kind: String,
+    pub fps: u8,
+    pub density: f32,
+    pub speed: f32,
+    pub reveal: Vec<String>,
+    pub reveal_ms: u32,
+    pub governor: bool,
+    pub light: Light,
+}
+
+/// The glyph set the rain prints (`[glyphs] rain`): half-width katakana
+/// (East Asian Width `H`, one cell in VTE) or plain ASCII.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RainGlyphs {
+    #[default]
+    Katakana,
+    Ascii,
+}
+
+impl RainGlyphs {
+    /// The characters a droplet may print, all one cell wide.
+    pub fn chars(self) -> &'static [char] {
+        const KATAKANA: &[char] = &[
+            'ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ',
+            'ｷ', 'ｸ', 'ｹ', 'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ',
+            'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ', 'ﾘ',
+            'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', '=',
+            '*', '+', '<', '>', '|',
+        ];
+        const ASCII: &[char] = &[
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
+            'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+            'Y', 'Z', ':', '.', '=', '*', '+', '<', '>', '|',
+        ];
+        match self {
+            RainGlyphs::Katakana => KATAKANA,
+            RainGlyphs::Ascii => ASCII,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ThemeError(pub String);
 
@@ -309,6 +419,16 @@ pub struct Theme {
     gradients: [Gradient; 8],
     /// Warnings produced at load (ignored tables, the WCAG gate, etc.).
     pub warnings: Vec<String>,
+    /// `[effects]` hooks (arc 4b); empty for every theme but the ones that
+    /// declare them.
+    pub effects: EffectHooks,
+    /// `[flourish]` (arc 4b).
+    pub flourish: Flourish,
+    /// `[ambient]` (arc 4b): `Some` only for a showcase theme with a layer.
+    pub ambient: Option<AmbientSpec>,
+    /// The `rain` gradient (a ninth, optional): the ambient layer's palette.
+    pub rain: Option<Gradient>,
+    pub rain_glyphs: RainGlyphs,
     /// Per-kind derived themes from `[components.<kind>]` (D52), built once
     /// at load and shared; empty for a derived theme itself.
     kinds: std::collections::BTreeMap<String, std::sync::Arc<Theme>>,
@@ -341,9 +461,31 @@ impl Theme {
             colors,
             gradients,
             warnings,
+            effects: EffectHooks::default(),
+            flourish: Flourish::default(),
+            ambient: None,
+            rain: None,
+            rain_glyphs: RainGlyphs::default(),
             kinds: std::collections::BTreeMap::new(),
             raw: colors,
         }
+    }
+
+    /// The 4b tables, set by the loader after `from_parts`.
+    pub fn with_ambience(
+        mut self,
+        effects: EffectHooks,
+        flourish: Flourish,
+        ambient: Option<AmbientSpec>,
+        rain: Option<Gradient>,
+        rain_glyphs: RainGlyphs,
+    ) -> Theme {
+        self.effects = effects;
+        self.flourish = flourish;
+        self.ambient = ambient;
+        self.rain = rain;
+        self.rain_glyphs = rain_glyphs;
+        self
     }
 
     pub fn with_kinds(

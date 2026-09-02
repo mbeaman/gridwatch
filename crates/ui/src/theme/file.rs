@@ -13,8 +13,9 @@ use serde::Deserialize;
 use super::color::{ColorMode, contrast_ratio, parse_color, to_mode};
 use super::gradient::Gradient;
 use super::{
-    BarStyle, BorderKind, BorderSpec, ChartMarker, GRADIENTS, GaugeStyle, GlyphSet, GlyphTier,
-    HeaderStyle, PerfClass, PixelStyle, Role, Theme, ThemeError, TitleSpec, TitleStyle, WidgetSet,
+    AmbientSpec, BarStyle, BorderKind, BorderSpec, ChartMarker, EffectHooks, EffectSpec, Flourish,
+    GRADIENTS, GaugeStyle, GlyphSet, GlyphTier, HeaderStyle, Light, PerfClass, PixelStyle,
+    RainGlyphs, Role, Theme, ThemeError, TitleSpec, TitleStyle, WidgetSet,
 };
 
 /// A parsed theme file. Every section is optional at parse time so a child
@@ -40,10 +41,110 @@ pub struct ThemeFile {
     /// `[components.<kind>]` — per-kind gradient overrides (D52).
     #[serde(default)]
     pub components: BTreeMap<String, ComponentSect>,
-    /// Tables the loader knows about but ignores (flourish, effects, ambient)
-    /// plus anything unknown — each produces one warning.
+    /// `[effects]` hooks (arc 4b, D54 seam 6).
+    #[serde(default)]
+    pub effects: EffectsSect,
+    /// `[flourish]` (seam 7).
+    #[serde(default)]
+    pub flourish: FlourishSect,
+    /// `[ambient]` (seam 10) — showcase themes only.
+    #[serde(default)]
+    pub ambient: Option<AmbientSect>,
+    /// `[contrast]` (seam 9): `autofix` moves text roles up to the floor.
+    #[serde(default)]
+    pub contrast: ContrastSect,
+    /// Anything unknown — each key produces one warning.
     #[serde(flatten)]
     pub extra: toml::Table,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct EffectsSect {
+    #[serde(default)]
+    pub startup: Option<EffectEntry>,
+    #[serde(default)]
+    pub theme_swap: Option<EffectEntry>,
+    #[serde(default)]
+    pub focus: Option<EffectEntry>,
+    #[serde(default)]
+    pub alert: Option<EffectEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EffectEntry {
+    pub kind: String,
+    #[serde(default)]
+    pub duration_ms: Option<u32>,
+    #[serde(default)]
+    pub motion: Option<String>,
+    #[serde(default)]
+    pub lightness: Option<f32>,
+    #[serde(default)]
+    pub period_ms: Option<u32>,
+    #[serde(default)]
+    pub target: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct FlourishSect {
+    #[serde(default)]
+    pub grid_floor: Option<bool>,
+    #[serde(default)]
+    pub sun: Option<bool>,
+    #[serde(default)]
+    pub big_clock: Option<BigClockSect>,
+    #[serde(default)]
+    pub marquee: Option<bool>,
+    /// Parsed for the arc-4 `matrix` excerpt in §9; unused (a `decode`
+    /// effect is not in this build).
+    #[serde(default)]
+    pub decode: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct BigClockSect {
+    pub pixel: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct AmbientSect {
+    pub kind: String,
+    #[serde(default)]
+    pub fps: Option<u8>,
+    #[serde(default)]
+    pub density: Option<f32>,
+    #[serde(default)]
+    pub speed: Option<f32>,
+    #[serde(default)]
+    pub reveal: Option<Vec<String>>,
+    #[serde(default)]
+    pub reveal_ms: Option<u32>,
+    #[serde(default)]
+    pub governor: Option<bool>,
+    #[serde(default)]
+    pub light: LightSect,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct LightSect {
+    #[serde(default)]
+    pub fade_s: Option<f32>,
+    #[serde(default)]
+    pub trail_ms: Option<u32>,
+    #[serde(default)]
+    pub sweep_s: Option<f32>,
+    #[serde(default)]
+    pub head: Option<String>,
+    #[serde(default)]
+    pub floor: Option<String>,
+    #[serde(default)]
+    pub relight_on_update: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ContrastSect {
+    #[serde(default)]
+    pub autofix: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -128,6 +229,9 @@ pub struct GlyphsSect {
     pub bar: Option<String>,
     #[serde(default)]
     pub chart_marker: Option<String>,
+    /// `rain = "katakana" | "ascii"` — the ambient layer's glyphs.
+    #[serde(default)]
+    pub rain: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -200,11 +304,21 @@ pub fn builtin(name: &str) -> Option<&'static str> {
         "retrowave" => Some(include_str!("../../../../themes/retrowave.toml")),
         "terminal" => Some(include_str!("../../../../themes/terminal.toml")),
         "phosphor-green" => Some(include_str!("../../../../themes/phosphor-green.toml")),
+        "phosphor-amber" => Some(include_str!("../../../../themes/phosphor-amber.toml")),
+        "matrix" => Some(include_str!("../../../../themes/matrix.toml")),
         _ => None,
     }
 }
 
-pub const BUILTIN_THEMES: &[&str] = &["retrowave", "modern", "mono", "terminal", "phosphor-green"];
+pub const BUILTIN_THEMES: &[&str] = &[
+    "retrowave",
+    "modern",
+    "mono",
+    "terminal",
+    "phosphor-green",
+    "phosphor-amber",
+    "matrix",
+];
 
 /// The WCAG 2.1 floors the warn gate applies (D52): body text on its two
 /// backgrounds, and muted text. `TextGhost` is the decorative role — the
@@ -305,6 +419,24 @@ pub fn merge(child: &ThemeFile, parent: &ThemeFile) -> ThemeFile {
             nerd: or(&child.glyphs.nerd, &parent.glyphs.nerd),
             bar: or(&child.glyphs.bar, &parent.glyphs.bar),
             chart_marker: or(&child.glyphs.chart_marker, &parent.glyphs.chart_marker),
+            rain: or(&child.glyphs.rain, &parent.glyphs.rain),
+        },
+        effects: EffectsSect {
+            startup: or(&child.effects.startup, &parent.effects.startup),
+            theme_swap: or(&child.effects.theme_swap, &parent.effects.theme_swap),
+            focus: or(&child.effects.focus, &parent.effects.focus),
+            alert: or(&child.effects.alert, &parent.effects.alert),
+        },
+        flourish: FlourishSect {
+            grid_floor: or(&child.flourish.grid_floor, &parent.flourish.grid_floor),
+            sun: or(&child.flourish.sun, &parent.flourish.sun),
+            big_clock: or(&child.flourish.big_clock, &parent.flourish.big_clock),
+            marquee: or(&child.flourish.marquee, &parent.flourish.marquee),
+            decode: or(&child.flourish.decode, &parent.flourish.decode),
+        },
+        ambient: or(&child.ambient, &parent.ambient),
+        contrast: ContrastSect {
+            autofix: or(&child.contrast.autofix, &parent.contrast.autofix),
         },
         borders: BordersSect {
             set: or(&child.borders.set, &parent.borders.set),
@@ -442,6 +574,12 @@ pub fn build_theme(
         raw[role.index()] = rc;
         colors[role.index()] = to_mode(rc, mode);
     }
+    if file.contrast.autofix == Some(true) {
+        for (role, fixed) in autofix(&raw, &mut warnings) {
+            raw[role.index()] = fixed;
+            colors[role.index()] = to_mode(fixed, mode);
+        }
+    }
     warnings.extend(wcag_warnings(&raw));
 
     let stops_of = |stops_raw: &[String]| -> Result<Vec<Color>, ThemeError> {
@@ -458,12 +596,16 @@ pub fn build_theme(
         gradients[g.index()] = Gradient::from_stops(&stops_of(stops_raw)?, mode);
     }
     for name in file.gradients.keys() {
-        if !GRADIENTS.iter().any(|g| g.name() == name) {
+        if name != "rain" && !GRADIENTS.iter().any(|g| g.name() == name) {
             warnings.push(format!(
                 "gradient '{name}' is not one of the eight — ignored"
             ));
         }
     }
+    let rain = match file.gradients.get("rain") {
+        Some(stops_raw) => Some(Gradient::from_stops(&stops_of(stops_raw)?, mode)),
+        None => None,
+    };
 
     let tier = match (file.glyphs.set.as_deref(), file.glyphs.nerd) {
         (_, Some(true)) => GlyphTier::Nerd,
@@ -568,9 +710,93 @@ pub fn build_theme(
         .unwrap_or_default(),
     };
 
+    // The 4b tables: hooks, flourishes, the ambient layer (seams 6, 7, 10).
+    let effects = parse_effects(&file.effects, &mut warnings);
+    let flourish = Flourish {
+        grid_floor: file.flourish.grid_floor.unwrap_or(false),
+        sun: file.flourish.sun.unwrap_or(false),
+        big_clock: match &file.flourish.big_clock {
+            None => None,
+            Some(b) => pick(
+                &Some(b.pixel.clone()),
+                &[
+                    ("quadrant", PixelStyle::Quadrant),
+                    ("sextant", PixelStyle::Sextant),
+                    ("full", PixelStyle::Full),
+                ],
+                "big clock pixel",
+            )?,
+        },
+        marquee: file.flourish.marquee.unwrap_or(false),
+    };
+    let rain_glyphs = pick(
+        &file.glyphs.rain,
+        &[
+            ("katakana", RainGlyphs::Katakana),
+            ("ascii", RainGlyphs::Ascii),
+        ],
+        "rain glyph set",
+    )?
+    .unwrap_or_default();
+    let ambient = match &file.ambient {
+        None => None,
+        Some(_) if class != PerfClass::Showcase => {
+            warnings.push(format!(
+                "`[ambient]` needs `class = \"showcase\"` — ignored in the quiet theme '{}'",
+                file.meta.name
+            ));
+            None
+        }
+        Some(_) if rain.is_none() => {
+            warnings.push(
+                "`[ambient]` needs a `rain` gradient for its palette — the layer stays off".into(),
+            );
+            None
+        }
+        Some(a) if a.kind != "matrix_rain" => {
+            warnings.push(format!(
+                "unknown ambient kind '{}' — the layer stays off",
+                a.kind
+            ));
+            None
+        }
+        Some(a) => {
+            let d = Light::default();
+            Some(AmbientSpec {
+                kind: a.kind.clone(),
+                fps: a.fps.unwrap_or(24).clamp(1, 60),
+                density: a.density.unwrap_or(0.20).clamp(0.01, 1.0),
+                speed: a.speed.unwrap_or(1.0).clamp(0.1, 4.0),
+                reveal: a.reveal.clone().unwrap_or_else(|| {
+                    ["focus", "alert", "hover", "key"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                }),
+                reveal_ms: a.reveal_ms.unwrap_or(2500),
+                governor: a.governor.unwrap_or(true),
+                light: Light {
+                    fade_s: a.light.fade_s.unwrap_or(d.fade_s).max(0.5),
+                    trail_ms: a.light.trail_ms.unwrap_or(d.trail_ms).max(50),
+                    sweep_s: a.light.sweep_s.unwrap_or(d.sweep_s).max(2.0),
+                    head: match &a.light.head {
+                        Some(c) => raw_color(p, c)?,
+                        None => d.head,
+                    },
+                    floor: match &a.light.floor {
+                        Some(c) => raw_color(p, c)?,
+                        None => d.floor,
+                    },
+                    relight_on_update: a.light.relight_on_update.unwrap_or(true),
+                },
+            })
+        }
+    };
+
     // Per-kind derived themes (D52 §components): the base with one or more
     // gradients replaced, built once and shared; `Theme::for_kind` hands
-    // them out and the shell passes the right one in `RenderCx`.
+    // them out and the shell passes the right one in `RenderCx`. The clock
+    // kind also takes `[flourish] big_clock.pixel` as its `big_number`.
     let mut kinds = BTreeMap::new();
     for (kind, sect) in &file.components {
         for key in sect.extra.keys() {
@@ -591,6 +817,13 @@ pub fn build_theme(
                 )),
             }
         }
+        let mut w = widgets;
+        if kind == "clock"
+            && let Some(px) = flourish.big_clock
+        {
+            w.big_number = px;
+            any = true;
+        }
         if any {
             kinds.insert(
                 kind.clone(),
@@ -603,11 +836,32 @@ pub fn build_theme(
                     glyphs,
                     borders,
                     title,
-                    widgets,
+                    w,
                     Vec::new(),
                 )),
             );
         }
+    }
+    if let Some(px) = flourish.big_clock
+        && !kinds.contains_key("clock")
+    {
+        let mut w = widgets;
+        w.big_number = px;
+        kinds.insert(
+            "clock".to_string(),
+            Arc::new(Theme::from_parts(
+                file.meta.name.clone(),
+                class,
+                mode,
+                colors,
+                gradients.clone(),
+                glyphs,
+                borders,
+                title,
+                w,
+                Vec::new(),
+            )),
+        );
     }
 
     Ok(Theme::from_parts(
@@ -623,7 +877,109 @@ pub fn build_theme(
         warnings,
     )
     .with_kinds(kinds)
-    .with_raw_colors(raw))
+    .with_raw_colors(raw)
+    .with_ambience(effects, flourish, ambient, rain, rain_glyphs))
+}
+
+/// The effect kinds this build maps (D54 seam 6); anything else warns.
+pub const EFFECT_KINDS: &[&str] = &["sweep_in", "fade_in", "dissolve", "fade", "hsl_pulse"];
+
+fn parse_effects(sect: &EffectsSect, warnings: &mut Vec<String>) -> EffectHooks {
+    let one =
+        |hook: &str, e: &Option<EffectEntry>, warnings: &mut Vec<String>| -> Option<EffectSpec> {
+            let e = e.as_ref()?;
+            if !EFFECT_KINDS.contains(&e.kind.as_str()) {
+                warnings.push(format!(
+                    "`[effects] {hook}` kind '{}' is not one of {} — ignored",
+                    e.kind,
+                    EFFECT_KINDS.join("/")
+                ));
+                return None;
+            }
+            Some(EffectSpec {
+                kind: e.kind.clone(),
+                // Event effects are bounded to 600 ms (seam 6).
+                duration_ms: e.duration_ms.unwrap_or(400).min(600),
+                motion: e.motion.clone(),
+                lightness: e.lightness,
+                period_ms: e.period_ms,
+                target: e.target.clone(),
+            })
+        };
+    EffectHooks {
+        startup: one("startup", &sect.startup, warnings),
+        theme_swap: one("theme_swap", &sect.theme_swap, warnings),
+        focus: one("focus", &sect.focus, warnings),
+        alert: one("alert", &sect.alert, warnings),
+    }
+}
+
+/// `[contrast] autofix` (seam 9): move `text` / `text_muted` toward their
+/// WCAG floor in Oklab lightness steps of 0.02 (lighter on a dark theme,
+/// darker on a light one — decided by the panel's luminance), at most 20
+/// steps; each change is a warning so the author sees it.
+pub fn autofix(raw: &[Color; 19], warnings: &mut Vec<String>) -> Vec<(Role, Color)> {
+    use palette::{IntoColor, Oklab, Srgb, convert::FromColorUnclamped};
+    let mut out = Vec::new();
+    let panel = raw[Role::Panel.index()];
+    let surface = raw[Role::Surface.index()];
+    let Some(panel_l) = super::color::relative_luminance(panel) else {
+        return out;
+    };
+    let lighten = panel_l < 0.5;
+    for (role, floor) in [
+        (Role::Text, WCAG_TEXT_MIN),
+        (Role::TextMuted, WCAG_MUTED_MIN),
+    ] {
+        let Color::Rgb(r, g, b) = raw[role.index()] else {
+            continue;
+        };
+        let ratio = |c: Color| {
+            let a = contrast_ratio(c, panel).unwrap_or(21.0);
+            let s = contrast_ratio(c, surface).unwrap_or(21.0);
+            a.min(s)
+        };
+        let original = Color::Rgb(r, g, b);
+        if ratio(original) >= floor {
+            continue;
+        }
+        let srgb = Srgb::new(
+            f32::from(r) / 255.0,
+            f32::from(g) / 255.0,
+            f32::from(b) / 255.0,
+        );
+        let mut lab: Oklab = Oklab::from_color_unclamped(srgb.into_linear());
+        let mut fixed = original;
+        for _ in 0..20 {
+            lab.l = if lighten {
+                (lab.l + 0.02).min(1.0)
+            } else {
+                (lab.l - 0.02).max(0.0)
+            };
+            let s: Srgb = palette::LinSrgb::from_color_unclamped(lab).into_color();
+            fixed = Color::Rgb(
+                (s.red.clamp(0.0, 1.0) * 255.0) as u8,
+                (s.green.clamp(0.0, 1.0) * 255.0) as u8,
+                (s.blue.clamp(0.0, 1.0) * 255.0) as u8,
+            );
+            if ratio(fixed) >= floor {
+                break;
+            }
+        }
+        let hex = |c: Color| match c {
+            Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+            other => format!("{other:?}"),
+        };
+        warnings.push(format!(
+            "WCAG autofix: {} {} → {} ({:.2}:1 on panel)",
+            role_key(role),
+            hex(original),
+            hex(fixed),
+            contrast_ratio(fixed, panel).unwrap_or(0.0)
+        ));
+        out.push((role, fixed));
+    }
+    out
 }
 
 /// The pairs the gate judges: `(foreground, background, floor)`.
@@ -695,24 +1051,29 @@ fn role_key(r: Role) -> &'static str {
 }
 
 /// A built-in, **flattened**: a built-in may inherit another built-in
-/// (`phosphor-green` inherits `mono`), and the result is merged here with
-/// `inherits` cleared, so a user file may inherit any built-in — the one
-/// level of `inherits` is the user's (D52).
+/// (`phosphor-green` inherits `mono`, `matrix` inherits `phosphor-green`),
+/// and the chain is merged here — built-ins are embedded and finite, so the
+/// one level of `inherits` D52 allows is the user's, not the binary's.
 pub fn builtin_file(name: &str) -> Result<ThemeFile, ThemeError> {
+    builtin_file_depth(name, 0)
+}
+
+fn builtin_file_depth(name: &str, depth: u8) -> Result<ThemeFile, ThemeError> {
+    if depth > 4 {
+        return Err(ThemeError(format!(
+            "built-in '{name}': inherits chain too deep"
+        )));
+    }
     let text = builtin(name).ok_or_else(|| ThemeError(format!("no built-in theme '{name}'")))?;
     let mut file =
         load_theme_file(text).map_err(|e| ThemeError(format!("built-in {name}: {e}")))?;
     if let Some(p) = file.meta.inherits.clone() {
-        let parent = load_theme_file(builtin(&p).ok_or_else(|| {
-            ThemeError(format!(
-                "built-in '{name}' inherits '{p}', which is not a built-in"
-            ))
-        })?)?;
-        if parent.meta.inherits.is_some() {
+        if builtin(&p).is_none() {
             return Err(ThemeError(format!(
-                "built-in '{name}' inherits '{p}', which inherits in turn — not supported"
+                "built-in '{name}' inherits '{p}', which is not a built-in"
             )));
         }
+        let parent = builtin_file_depth(&p, depth + 1)?;
         file = merge(&file, &parent);
         file.meta.inherits = None;
     }

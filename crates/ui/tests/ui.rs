@@ -670,3 +670,159 @@ mod unit_inverse {
         let _ = Size::new(8, 3);
     }
 }
+
+// ───────────────────────── arc 4b: the theme tables ─────────────────────────
+
+mod theme_4b {
+    use gridwatch_ui::ColorMode;
+    use gridwatch_ui::theme::{
+        BUILTIN_THEMES, PerfClass, PixelStyle, RainGlyphs, Role, build_theme, load_builtin,
+        load_theme_file,
+    };
+    use ratatui_core::style::Color;
+
+    const MODERN: &str = include_str!("../../../themes/modern.toml");
+
+    /// `matrix` is the showcase theme: its layer, rain palette and glyphs
+    /// parse; `phosphor-amber` inherits the flattened phosphor-green and
+    /// passes the gate; retrowave carries the hooks and flourishes.
+    #[test]
+    fn matrix_amber_and_retrowave_carry_their_tables() {
+        let m = load_builtin("matrix", ColorMode::TrueColor).unwrap();
+        assert_eq!(m.class, PerfClass::Showcase);
+        let a = m.ambient.as_ref().expect("matrix has an ambient layer");
+        assert_eq!(a.kind, "matrix_rain");
+        assert_eq!((a.fps, a.reveal_ms), (24, 2500));
+        assert!((a.density - 0.2).abs() < 1e-6);
+        assert!((a.light.fade_s - 12.0).abs() < 1e-6 && a.light.trail_ms == 900);
+        assert_eq!(a.light.floor, Color::Rgb(0, 0, 0));
+        let rain = m.rain.as_ref().expect("matrix has a rain gradient");
+        assert!(
+            matches!(rain.sample(0.0), Color::Rgb(r, g, b) if r >= 254 && g >= 254 && b >= 254),
+            "head-white within an Oklab step: {:?}",
+            rain.sample(0.0)
+        );
+        assert_eq!(m.rain_glyphs, RainGlyphs::Katakana);
+        assert!(m.rain_glyphs.chars().len() > 50);
+        assert!(m.effects.any());
+        assert_eq!(m.flourish.big_clock, Some(PixelStyle::Quadrant));
+        assert_eq!(m.for_kind("clock").widgets.big_number, PixelStyle::Quadrant);
+        assert!(
+            m.warnings
+                .iter()
+                .all(|w| !w.contains("WCAG") && !w.contains("ignored")),
+            "{:?}",
+            m.warnings
+        );
+        let amber = load_builtin("phosphor-amber", ColorMode::TrueColor).unwrap();
+        assert_eq!(amber.color(Role::Text), Color::Rgb(0xff, 0xe4, 0xa8));
+        assert_eq!(
+            amber.widgets.gauge,
+            gridwatch_ui::theme::GaugeStyle::Bar,
+            "mono's form through two flattened built-ins"
+        );
+        assert!(
+            amber.warnings.iter().all(|w| !w.contains("WCAG")),
+            "{:?}",
+            amber.warnings
+        );
+        let r = load_builtin("retrowave", ColorMode::TrueColor).unwrap();
+        assert_eq!(r.effects.startup.as_ref().unwrap().kind, "sweep_in");
+        assert_eq!(r.effects.alert.as_ref().unwrap().period_ms, Some(900));
+        assert!(r.flourish.sun && r.flourish.grid_floor);
+        assert!(r.ambient.is_none());
+        for name in BUILTIN_THEMES {
+            let t = load_builtin(name, ColorMode::TrueColor).unwrap();
+            assert!(
+                t.warnings.iter().all(|w| !w.contains("ignored")),
+                "{name}: {:?}",
+                t.warnings
+            );
+        }
+    }
+
+    /// A quiet theme with `[ambient]`, an unknown effect kind, and an
+    /// over-long duration: warned and bounded, never a failure.
+    #[test]
+    fn ambient_needs_showcase_and_effects_are_validated() {
+        let text = format!(
+            "{MODERN}\n[ambient]\nkind = \"matrix_rain\"\n[effects]\nstartup = {{ kind = \"explode\" }}\nfocus = {{ kind = \"fade\", duration_ms = 5000 }}\n"
+        );
+        let t = build_theme(&load_theme_file(&text).unwrap(), None, ColorMode::TrueColor).unwrap();
+        assert!(t.ambient.is_none());
+        assert!(
+            t.warnings
+                .iter()
+                .any(|w| w.contains("needs `class = \"showcase\"`")),
+            "{:?}",
+            t.warnings
+        );
+        assert!(
+            t.warnings.iter().any(|w| w.contains("'explode'")),
+            "{:?}",
+            t.warnings
+        );
+        assert!(t.effects.startup.is_none());
+        assert_eq!(
+            t.effects.focus.as_ref().unwrap().duration_ms,
+            600,
+            "bounded"
+        );
+        // Showcase without a rain gradient: the layer stays off, with a reason.
+        let text = format!(
+            "{}\n[ambient]\nkind = \"matrix_rain\"\n",
+            MODERN.replace(
+                "variant = \"dark\"",
+                "variant = \"dark\"\nclass = \"showcase\""
+            )
+        );
+        let t = build_theme(&load_theme_file(&text).unwrap(), None, ColorMode::TrueColor).unwrap();
+        assert!(t.ambient.is_none());
+        assert!(
+            t.warnings
+                .iter()
+                .any(|w| w.contains("needs a `rain` gradient")),
+            "{:?}",
+            t.warnings
+        );
+    }
+
+    /// `[contrast] autofix = true` lifts a failing text role to its floor and
+    /// says what it did; off by default.
+    #[test]
+    fn contrast_autofix_lifts_text_to_the_floor() {
+        let dull = MODERN
+            .replace("text_muted = \"#a6adc8\"", "text_muted = \"#3a3a4a\"")
+            .replace("text = \"#cdd6f4\"", "text = \"#767676\"");
+        let t = build_theme(&load_theme_file(&dull).unwrap(), None, ColorMode::TrueColor).unwrap();
+        assert!(t.warnings.iter().any(|w| w.contains("WCAG: text on panel")));
+        let fixed = format!("{dull}\n[contrast]\nautofix = true\n");
+        let t = build_theme(
+            &load_theme_file(&fixed).unwrap(),
+            None,
+            ColorMode::TrueColor,
+        )
+        .unwrap();
+        assert!(
+            t.warnings
+                .iter()
+                .any(|w| w.starts_with("WCAG autofix: text ")),
+            "{:?}",
+            t.warnings
+        );
+        assert!(
+            t.warnings
+                .iter()
+                .any(|w| w.starts_with("WCAG autofix: text_muted ")),
+            "{:?}",
+            t.warnings
+        );
+        assert!(
+            t.warnings.iter().all(|w| !w.starts_with("WCAG: ")),
+            "still failing after the fix: {:?}",
+            t.warnings
+        );
+        let report = t.contrast_report();
+        assert!(report.iter().all(|l| !l.contains("WARN")), "{report:?}");
+    }
+}

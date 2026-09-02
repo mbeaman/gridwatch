@@ -73,3 +73,17 @@ bars = "eighths"
 sparkline = "eighths"
 table_header = "reverse"
 big_number = "quadrant"
+
+# Arc 4b (D54 seams 6–7): the retro flourishes and the event effects. Both are
+# off in every other built-in; `--no-effects` or `[effects] enabled = false`
+# in config.toml switches the effects off here too.
+[flourish]
+grid_floor = true
+sun = true
+big_clock = { pixel = "quadrant" }
+
+[effects]
+startup = { kind = "sweep_in", motion = "left_to_right", duration_ms = 600 }
+theme_swap = { kind = "fade", duration_ms = 300 }
+focus = { kind = "fade", duration_ms = 200 }
+alert = { kind = "hsl_pulse", lightness = 25, period_ms = 900, target = "crit_fg" }
