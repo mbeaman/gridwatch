@@ -198,8 +198,7 @@
             },
             "duration_ms": {
               "type": "integer",
-              "minimum": 0,
-              "maximum": 600
+              "minimum": 0
             },
             "motion": {
               "type": "string"
@@ -232,8 +231,7 @@
             },
             "duration_ms": {
               "type": "integer",
-              "minimum": 0,
-              "maximum": 600
+              "minimum": 0
             },
             "motion": {
               "type": "string"
@@ -266,8 +264,7 @@
             },
             "duration_ms": {
               "type": "integer",
-              "minimum": 0,
-              "maximum": 600
+              "minimum": 0
             },
             "motion": {
               "type": "string"
@@ -300,8 +297,7 @@
             },
             "duration_ms": {
               "type": "integer",
-              "minimum": 0,
-              "maximum": 600
+              "minimum": 0
             },
             "motion": {
               "type": "string"

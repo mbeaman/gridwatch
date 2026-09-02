@@ -74,7 +74,6 @@ style = "plain"
 case = "upper"
 
 [flourish]
-decode = true
 big_clock = { pixel = "quadrant" }
 
 [ambient]

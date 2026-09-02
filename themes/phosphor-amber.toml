@@ -18,7 +18,8 @@ neon = "#ffb000"
 mint = "#ffcc55"
 paper = "#ffe4a8"
 crit = "#ff5a3c"
-info = "#ffd27a"
+warn = "#ff7a00"
+info = "#ffe8b0"
 
 [colors]
 bg = "$void"
@@ -39,7 +40,7 @@ tertiary = "$bright"
 
 [colors.severity]
 ok = "$neon"
-warn = "$mint"
+warn = "$warn"
 crit = "$crit"
 info = "$info"
 
