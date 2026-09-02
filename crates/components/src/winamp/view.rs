@@ -31,8 +31,8 @@ pub fn render(w: &Winamp, cx: &RenderCx<'_>) -> View {
     match cx.tier {
         TIER_STATUS => status_tier(w, cx, &now),
         TIER_SHADE => shade(w, cx, &now),
-        TIER_MAIN => main_tier(w, cx, &now, false),
-        TIER_ART => main_tier(w, cx, &now, true),
+        TIER_MAIN => main_tier(w, cx, &now, false, (cx.inner.width, cx.inner.height)),
+        TIER_ART => main_tier(w, cx, &now, true, (cx.inner.width, cx.inner.height)),
         _ => full(w, cx, &now),
     }
 }
@@ -276,8 +276,18 @@ fn volume(now: &NowPlaying) -> View {
     }
 }
 
-/// The main tier, with the art column when `with_art`.
-fn main_tier(w: &Winamp, cx: &RenderCx<'_>, now: &NowPlaying, with_art: bool) -> View {
+/// The main tier, with the art column when `with_art`. `area` is the rect
+/// the body will really occupy — `full` draws it in a pane, not the whole
+/// tile, and sizing from `cx.inner` there cut the spectrum and truncated
+/// the marquee (review).
+fn main_tier(
+    w: &Winamp,
+    cx: &RenderCx<'_>,
+    now: &NowPlaying,
+    with_art: bool,
+    area: (u16, u16),
+) -> View {
+    let (avail_w, avail_h) = area;
     let art = with_art
         .then(|| cx.store.record(&media::ART).map(|(_, a)| a.clone()))
         .flatten()
@@ -287,18 +297,11 @@ fn main_tier(w: &Winamp, cx: &RenderCx<'_>, now: &NowPlaying, with_art: bool) ->
     // 24 columns, or the art crowds out the player it belongs to.
     let art_cols = art
         .as_ref()
-        .map(|_| {
-            (cx.inner.height.saturating_sub(2) * 2)
-                .min(cx.inner.width / 4)
-                .min(24)
-        })
+        .map(|_| (avail_h.saturating_sub(2) * 2).min(avail_w / 4).min(24))
         .filter(|c| *c >= 8)
         .unwrap_or(0);
     let art = art.filter(|_| art_cols > 0);
-    let body_w = cx
-        .inner
-        .width
-        .saturating_sub(art_cols + u16::from(art_cols > 0));
+    let body_w = avail_w.saturating_sub(art_cols + u16::from(art_cols > 0));
     let elapsed = clock(now.pos_at(cx.now));
     let head_room = body_w.saturating_sub(2);
     let mut head: Line = vec![
@@ -378,6 +381,8 @@ fn main_tier(w: &Winamp, cx: &RenderCx<'_>, now: &NowPlaying, with_art: bool) ->
 
 /// The zoom-only tier: the main body beside the playlist and the players.
 fn full(w: &Winamp, cx: &RenderCx<'_>, now: &NowPlaying) -> View {
+    // The body gets Fill(3) of the tile minus the one-column gap.
+    let main_w = cx.inner.width.saturating_sub(1) * 3 / 5;
     let history = cx.store.record(&media::HISTORY).map(|(_, h)| h.clone());
     let players = cx.store.record(&media::PLAYERS).map(|(_, p)| p.clone());
     let rows: Vec<Vec<Line>> = history
@@ -463,7 +468,12 @@ fn full(w: &Winamp, cx: &RenderCx<'_>, now: &NowPlaying) -> View {
     View::Stack {
         dir: Dir::H,
         children: vec![
-            (Constraint::Fill(3), main_tier(w, cx, now, true)),
+            // Fill(3) of the tile minus the one-column gap: the body is
+            // told the width it will really get (review).
+            (
+                Constraint::Fill(3),
+                main_tier(w, cx, now, true, (main_w, cx.inner.height)),
+            ),
             (Constraint::Len(1), View::Empty),
             (Constraint::Fill(2), playlist),
         ],
