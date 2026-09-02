@@ -666,7 +666,8 @@ pub fn config_default() -> (&'static str, &'static str) {
 /// `detect_bus` runs — unless `offline` (§11, seam 10).
 pub fn doctor(offline: bool) -> Vec<String> {
     let caps = probe::probe();
-    let mut live = Vec::new();
+    // sysfs-only probes are safe offline (the hwmon walk, the RAPL state).
+    let mut live = gridwatch_sources::doctor_offline();
     if !offline {
         let exporter = config::load().ok().and_then(|l| {
             l.config
@@ -680,9 +681,9 @@ pub fn doctor(offline: bool) -> Vec<String> {
     let mut lines = probe::doctor_lines(&caps, &live);
     lines.push(String::new());
     lines.push(if offline {
-        "live probes skipped (--offline): the astral-watch exporter and i2c detect_bus".into()
+        "live probes skipped (--offline): the astral-watch exporter, i2c detect_bus and pw-record --version (the hwmon walk is a sysfs read and ran)".into()
     } else {
-        "live probes ran: the astral-watch exporter (one GET) and i2c detect_bus".into()
+        "live probes ran: the astral-watch exporter (one GET), i2c detect_bus and pw-record --version".into()
     });
     lines
 }

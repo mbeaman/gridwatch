@@ -796,3 +796,37 @@ fn demo_audio_at_sixty_fps_exits_cleanly() {
     assert_eq!(code, 0);
     assert!(!log.contains("ERROR"), "{log}");
 }
+
+/// C.20 (arc 5b) — `--demo` shows the sensors strip on the Overview (the
+/// default layout's `temps` slot), and `doctor --offline` lists the chips
+/// the walker found on this machine (a sysfs read — allowed).
+#[test]
+fn demo_shows_the_sensors_tile_and_doctor_lists_the_chips() {
+    if skip("demo_shows_the_sensors_tile_and_doctor_lists_the_chips") {
+        return;
+    }
+    let mut s = Session::start("sensors", 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(3), |t| {
+        t.contains("k10temp") || t.contains("spd5118")
+    });
+    assert!(seen.is_some(), "no sensors tile; screen: {:?}", s.screen());
+    let screen = s.screen();
+    assert!(screen.contains("sensors"), "the tile's title: {screen}");
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+
+    // `doctor --offline` still runs the sources' sysfs probes.
+    let out = std::process::Command::new(bin())
+        .args(["doctor", "--offline"])
+        .output()
+        .expect("doctor runs");
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Hwmon"), "{text}");
+    assert!(
+        text.contains("chips") || text.contains("no hwmon"),
+        "the walker's row: {text}"
+    );
+}
