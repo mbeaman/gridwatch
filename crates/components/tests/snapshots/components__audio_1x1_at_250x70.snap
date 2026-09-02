@@ -1,0 +1,40 @@
+---
+source: crates/components/tests/components.rs
+assertion_line: 107
+expression: "view_snapshot(au.as_mut(), &store, &th, size)"
+---
+size: 17x8
+tier: mini
+view:
+  stack:
+    children:
+      - - Fill(1)
+        - bars:
+            gradient: Audio
+            labels: ~
+            n: 10
+            peaks: false
+            values:
+              - 0.12227800488471985
+              - 0.6939327120780945
+              - 0.25528860092163086
+              - 0.1670936644077301
+              - 0.46027058362960815
+              - 0.20584915578365326
+              - 0.17848904430866241
+              - 0.10449916124343872
+              - 0.08754206448793411
+              - 0.5815240144729614
+      - - Len(1)
+        - gauge:
+            gradient: Audio
+            label: L
+            text: −8 dB
+            value: 0.8669561147689819
+      - - Len(1)
+        - gauge:
+            gradient: Audio
+            label: R
+            text: −8 dB
+            value: 0.8676782846450806
+    dir: V

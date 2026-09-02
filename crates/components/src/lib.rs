@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 
 pub mod alerts;
+#[cfg(feature = "audio")]
+pub mod audio;
 pub mod clock;
 #[cfg(feature = "gpu")]
 pub mod gpu;

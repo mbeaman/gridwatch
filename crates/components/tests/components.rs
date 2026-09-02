@@ -31,9 +31,13 @@ fn alerts() -> Box<dyn Component> {
     Box::new(gridwatch_components::alerts::Alerts::default())
 }
 
+fn audio() -> Box<dyn Component> {
+    Box::new(gridwatch_components::audio::Audio::default())
+}
+
 #[test]
 fn tiers_are_well_formed() {
-    for mk in [clock, sources, htop, gpu, pins, alerts] {
+    for mk in [clock, sources, htop, gpu, pins, alerts, audio] {
         let c = mk();
         assert_tiers_well_formed(c.tiers());
         assert_min_tier_fits(c.tiers(), Size::new(8, 3));
@@ -53,6 +57,7 @@ fn renders_everywhere() {
         assert_renders_everywhere(&|| gpu(), &store, &empty, &th);
         assert_renders_everywhere(&|| pins(), &store, &empty, &th);
         assert_renders_everywhere(&|| alerts(), &store, &empty, &th);
+        assert_renders_everywhere(&|| audio(), &store, &empty, &th);
     }
 }
 
@@ -95,6 +100,13 @@ fn view_snapshots_at_real_grid_sizes() {
         insta::assert_yaml_snapshot!(
             format!("alerts_{name}"),
             view_snapshot(a.as_mut(), &history, &th, size)
+        );
+        // Three ticks reach 4.5 s: past the synth's 1.5 s of silence, so the
+        // bars, the scope and the levels are lit.
+        let mut au = audio();
+        insta::assert_yaml_snapshot!(
+            format!("audio_{name}"),
+            view_snapshot(au.as_mut(), &store, &th, size)
         );
     }
 }

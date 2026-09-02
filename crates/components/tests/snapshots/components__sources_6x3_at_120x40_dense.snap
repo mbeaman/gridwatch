@@ -1,5 +1,6 @@
 ---
 source: crates/components/tests/components.rs
+assertion_line: 76
 expression: "view_snapshot(s.as_mut(), &store, &th, size)"
 ---
 size: 59x18
@@ -15,6 +16,13 @@ view:
       - RST
       - NOTE
     rows:
+      - - audio
+        - starting
+        - "3"
+        - 0s
+        - "0"
+        - "0"
+        - dsp 0.3 ms
       - - cpu
         - starting
         - "3"

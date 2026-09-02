@@ -1,0 +1,35 @@
+---
+source: crates/components/tests/components.rs
+assertion_line: 107
+expression: "view_snapshot(au.as_mut(), &store, &th, size)"
+---
+size: 38x8
+tier: scope
+view:
+  stack:
+    children:
+      - - Len(1)
+        - text:
+            - - bold: true
+                role: Title
+                s: D50s (synthetic)
+              - bold: false
+                role: TextMuted
+                s: " · scope"
+      - - Fill(1)
+        - chart:
+            - label: scope
+              points: 152
+      - - Len(1)
+        - gauge:
+            gradient: Audio
+            label: L
+            text: −8 dB · pk −3 dB
+            value: 0.8669561147689819
+      - - Len(1)
+        - gauge:
+            gradient: Audio
+            label: R
+            text: −8 dB · pk −4 dB
+            value: 0.8676782846450806
+    dir: V
