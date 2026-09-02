@@ -20,14 +20,14 @@ Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ra
 - **Commit before review.** Snapshot (`git stash create` → tag) or commit before handing uncommitted work to any shell-enabled agent, and verify the tree is byte-identical afterwards.
 - **Read-only guard in every agent prompt** — research, design and review alike: "do not create/modify/delete files, no git mutation". A design workflow once wrote files into a repo; a review agent once ran `git restore` over uncommitted work.
 - **Commit messages:** `area: imperative summary` (e.g. `layout: derive dense threshold from GridSpec`), one scoped area per commit; split risky halves so they revert alone.
-- **Gate before any commit:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace`, `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`, MSRV **1.88** check. CI mirrors astral-watch's (`dtolnay/rust-toolchain`, `Swatinem/rust-cache`).
+- **Gate before any commit:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace` (which includes the pty suite — `crates/cli/tests/pty.rs` runs the binary under a real terminal, D46), `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`, MSRV **1.88** check. CI mirrors astral-watch's (`dtolnay/rust-toolchain`, `Swatinem/rust-cache`).
 
 ## Architecture rules that reviews enforce (see `docs/ARCHITECTURE.md`)
 
 - Crate direction `store ← ui ← components ← app ← bin` and `store ← sources ← app`. **crossterm only in `app`/`bin`.** Components depend on `store` + `ui`, never on `sources`.
 - Components **describe, never do**: `view(&self, cx) -> View` returns a semantic tree; the theme's renderer draws it. No I/O, no threads, no device access, no `Instant::now()` (use `cx.now`), no colour/glyph literals, no cell writes outside `View::Custom` (and there only through theme roles). Side effects are returned as `Command`s.
 - The render thread owns the `Store`; the only mutation is `Store::apply(&Msg)`. Sources are singletons per kind, configured under `[sources.<id>]` only; instance options are view-only.
-- Every component's `tiers()[0].min` fits **8×3**; tiers are cumulative, poorest first. Test with `assert_min_tier_fits` and `assert_never_panics`.
+- Every component's `tiers()[0].min` fits **8×3**; tiers are cumulative, poorest first. Test with `assert_min_tier_fits` and `assert_renders_everywhere` — "didn't panic" is never a passing assertion on its own (D46, `docs/TESTING.md`); components declare `signature(tier)`.
 - Never call `ratatui::init` / `try_init` / `run` / `restore` (`clippy.toml` bans them): the app owns raw mode, alternate screen, mouse capture and the panic hook.
 - No `unsafe`. No `.lock().unwrap()` on the render thread. Std threads by default; tokio only inside `sources` behind `mpris` / `net-*` features.
 - Performance ceilings in `docs/PERFORMANCE.md` are commit gates (P-class for quiet themes, S-class for showcase themes while focused).
@@ -50,4 +50,4 @@ Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ra
 
 ## Where things live
 
-`docs/PLAN.md` (entry point) · `ARCHITECTURE.md` · `WORKSPACE.md` · `ROADMAP.md` · `DECISIONS.md` · `MACHINE.md` · `research/` (verified digests) · `design-review/` (why this design won).
+`docs/PLAN.md` (entry point) · `ARCHITECTURE.md` · `WORKSPACE.md` · `ROADMAP.md` · `DECISIONS.md` · `TESTING.md` · `MACHINE.md` · `research/` (verified digests) · `design-review/` (why this design won).

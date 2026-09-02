@@ -24,7 +24,8 @@ Workflow shape: N finder lenses in parallel → per-finding adversarial verify (
 - **spec-drift** — implementation vs `ARCHITECTURE.md`/schemas/brief, both directions; catalogue vs `KEYS.md` (exists from arc 2)
 - **perf-budget** — the arc's `PERFORMANCE.md` gates: cadences, wake-ups, NVML call classes, scan cost, bytes written
 - **parity** — the arc's `PARITY.md` rows against the real tool's behaviour (htop/nvtop side-by-side where possible)
-- **ux-theme** — tiers at real sizes, theme roles only (no literals), readability pins, degraded modes
+- **ux-theme** — tiers at real sizes, theme roles only (no literals), readability pins, degraded modes. `shot` is a supplement here, never the only instrument (D46)
+- **user-path** (**mandatory every arc, D46**) — launch the built binary in a pty (`script -qfec "stty rows R cols C; gridwatch run" file`) and try to break it: no tty, one row, 40 columns, resize mid-run, `q`, a killed source, a corrupt `config.toml`. Report *what the user saw* on screen and on stderr — a finding that cites a buffer instead of a terminal is not a user-path finding
 
 Verify stage per finding: "Adversarially verify: <finding>. Try to REFUTE it; default to refuted when uncertain; state exactly how you checked." Keep findings that survive ≥2 of 3 verifiers (or 1 of 1 for cheap arcs), then reproduce by hand.
 
@@ -45,4 +46,7 @@ MSRV check (1.88) · per-crate check (store, ui) · feature matrix · cargo deny
 scripts/perf/measure.sh rows green per PERFORMANCE.md gates table
 PARITY.md rows for the arc ticked (the arc that first needs a section creates it — htop lands in 1b)
 snapshots inspected via `cargo insta pending-snapshots` + individual diff review and accepted one by one — never a bulk accept
+cargo test -p gridwatch --test pty   # D46: the binary under a real pty; its transcript goes in the arc report
 ```
+
+**Never a passing assertion on its own (D46):** "didn't panic". Every sweep and lattice asserts content — non-blank, the tier's signature, no fabricated readings — and the app-level lint asserts that a size which cannot be drawn *says so*. `docs/TESTING.md` is the contract.
