@@ -2,7 +2,7 @@
 
 A modular, themeable ops dashboard for the terminal — a grid of components that each render from a 1x1 tile to full screen, in themes like `retrowave` and `modern`, reproducing the behaviour of htop, nvtop and [astral-watch](https://github.com/mbeaman/astral-watch) alongside network, audio-visualizer and Winamp-style now-playing tiles. Rust + ratatui 0.30, built for a single Linux workstation first.
 
-**Status:** arc 1 (`v0.1.0`) — the grid lights up — and arc 2 (`v0.2.0`, untagged): the core seam, the 12×6 layout engine, three themes, the cpu source with htop's meters, CCD core bars and the top-N process table, **the gpu source over NVML with nvtop's header, ten-minute charts and GPU process table**, journal record/replay, and CI-regenerated screenshots. Pins, network, audio and Winamp follow (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+**Status:** arc 1 (`v0.1.0`) — the grid lights up — and arc 2 (`v0.2.0`, untagged): the core seam, the 12×6 layout engine, three themes, the cpu source with htop's meters, CCD core bars and the top-N process table, **the gpu source over NVML with nvtop's header, ten-minute charts and GPU process table**, journal record/replay, CI-regenerated screenshots — and arc 3's first half: **the astral-watch pins tile with the cross-page alert banner**. Network, audio and Winamp follow (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 
 [![the Overview at 250×70 in retrowave](docs/img/overview-retrowave.svg)](docs/img/overview-retrowave.svg)
 
@@ -67,7 +67,8 @@ cargo run --release -- doctor       # what this machine can feed
 
 Keys: `1`–`9` pages, `Tab`/`hjkl` focus, `Enter` capture (then, in the cpu and gpu tiles,
 `↑/↓ PgUp/PgDn Home/End` select, `<`/`>`/`F6` sort, `I` invert; in the gpu tile `1`–`6`
-toggle chart series and `r` reverses them), `z` zoom, `d` dense,
+toggle chart series and `r` reverses them; in the pins tile `p` freezes, `r` resets
+peaks, `+`/`-` change the interval), `a` ack the alert banner, `A` alerts, `z` zoom, `d` dense,
 `t` theme, `space` pause, `r` pause/resume a `--record`, `F12` stats HUD, `?` help,
 `q` (or `Ctrl-q`) quit.
 
@@ -86,7 +87,14 @@ toggle chart series and `r` reverses them), `z` zoom, `d` dense,
   nvml-wrapper on its own thread, ≈ 4.3 ms of NVML time per second with the
   table on, never `pcie_throughput`, never a GPU client itself. Falls back to
   `nvidia-smi` when the library will not load.
-- **`clock` and `sources` tiles**, the second of which shows every source's
+- **`pins` tile** — astral-watch's per-pin 12V-2x6 amperage over its own
+  library (exporter or direct i2c, auto-selected): six bars with peak caps and
+  the 9.2 A limit line, the balance gauge, the watts trend, the alert log and
+  a device header from the gpu source; astral-watch's `Lifecycle` debounces
+  and its overload/disconnect/imbalance alerts raise a **banner on every page**
+  (`a` acknowledges, `A` opens the log). Thresholds come from astral-watch's
+  own config file, so what gridwatch shows is what the service would send.
+- **`alerts`, `clock` and `sources` tiles**, the second of which shows every source's
   state, generation, age, drops and restarts.
 - **Themes** `retrowave`, `modern`, `mono` — components never name a colour.
 

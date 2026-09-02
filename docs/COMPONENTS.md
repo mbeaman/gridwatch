@@ -4,10 +4,29 @@
 
 | kind | name | sources | default footprint | tiers | summary |
 |---|---|---|---|---|---|
+| `alerts` | Alerts | — | 4x1 | list → log | active alerts worst-first and the event log |
 | `clock` | Clock | — | 2x1 | mini → big | wall-clock time |
 | `gpu` | GPU | `gpu`, `cpu`? | 6x3 | badge → gauges → header → charts → procs → full | nvtop's header, gauges, ten-minute charts and the GPU process table over NVML |
 | `htop` | CPU | `cpu` | 6x3 | tiny → big-number → meters → cores → table | htop's meters, per-core CCD blocks, memory, load and pressure |
+| `pins` | 12V-2x6 pins | `pins`, `gpu`? | 4x2 | watts-badge → mini-bars → bars → trend → full | astral-watch's per-pin amperage: bars, balance, the watts trend and the alert log |
 | `sources` | Sources | — | 4x1 | list → table | source health: state, generation, age, drops, restarts |
+
+## `alerts` — Alerts
+
+active alerts worst-first and the event log
+
+- contract 1 · chrome Themed · footprints 2x1 4x1 4x2 · default 4x1
+- requires none · optional none
+- sources none · optional sources none
+
+| tier | min | demand | adds | signature |
+|---|---|---|---|---|
+| `list` | 8×3 | Meters | active alerts, worst first | non-blank |
+| `log` | 40×8 | Meters | the event ring, newest first | `log` |
+
+Keys once captured with `Enter`:
+
+- `↑/↓ PgUp/PgDn Home` — scroll the log
 
 ## `clock` — Clock
 
@@ -70,6 +89,30 @@ Keys once captured with `Enter`:
 - `↑/↓ j/k PgUp/PgDn Home/End` — select a process
 - `< > F6` — sort column
 - `I` — invert the sort
+
+## `pins` — 12V-2x6 pins
+
+astral-watch's per-pin amperage: bars, balance, the watts trend and the alert log
+
+- contract 1 · chrome Themed · footprints 1x1 2x1 4x2 6x3 · default 4x2
+- requires none · optional I2cNvidia, AstralExporter
+- sources `pins` · optional sources `gpu`
+- example `options = { history = 300 }`
+
+| tier | min | demand | adds | signature |
+|---|---|---|---|---|
+| `watts-badge` | 8×3 | Meters | total W, balance badge, alert glyph | `W` |
+| `mini-bars` | 20×4 | Meters | six eighth-block bars, 9.2 A limit line | `W` |
+| `bars` | 40×8 | Meters | peak caps, per-pin values, balance gauge, totals | `balance` `W` |
+| `trend` | 60×14 | Meters | watts sparkline, alert log, active-alert row | `balance` `log` |
+| `full` (zoom) | 100×24 | Meters | device header from the gpu source, six-pin braille trend, scrollable log | `balance` `log` |
+
+Keys once captured with `Enter`:
+
+- `p` — freeze the display (the source keeps sampling)
+- `r` — reset the session peaks
+- `+ -` — faster / slower sampling by 100 ms (500–5000 ms, as tui.rs)
+- `↑/↓ PgUp/PgDn` — scroll the alert log
 
 ## `sources` — Sources
 

@@ -1,6 +1,7 @@
 > **Status: opened in arc 1b (2026-08-31) with the htop section; the htop
 > process-table rows ticked in arc 2a (2026-09-01); the nvtop section added in
-> session 2b (2026-09-01).** astral-watch lands with arc 3 (§12.7). Every row is
+> session 2b (2026-09-01); the astral-watch section added in session 3a
+> (2026-09-02).** Every row is
 > **in** (with the arc that ships it) or **out** (with the reason). A row is
 > ticked by a test or by hand with a note — never by assertion. The parity arc
 > (8) accepts by diffing against this file.
@@ -8,10 +9,11 @@
 # Parity — what the emulated tools do, and what gridwatch does
 
 Reference builds: **htop 3.4.1** (Ubuntu 3.4.1-5build2, sources at tag 3.4.1),
-measured against torch's own `~/.config/htop/htoprc`, and **nvtop 3.2.0**
-(`nvtop --snapshot`, upstream sources at tag 3.2.0) on driver 610.57.04.
-Evidence for every claim is in `docs/research/htop-parity.md` and
-`docs/research/nvtop-parity.md`.
+measured against torch's own `~/.config/htop/htoprc`, **nvtop 3.2.0**
+(`nvtop --snapshot`, upstream sources at tag 3.2.0) on driver 610.57.04, and
+**astral-watch `dce7eee`** (v0.7.0 + 3, `src/tui.rs` with the `tui` feature).
+Evidence for every claim is in `docs/research/htop-parity.md`,
+`docs/research/nvtop-parity.md` and `docs/research/astral-watch-and-sensors.md`.
 
 ## htop — header meters
 
@@ -87,6 +89,33 @@ Evidence for every claim is in `docs/research/htop-parity.md` and
 | `F9` "Send signal" menu (signals 1–31) | **arc 8**, behind `readonly` and a confirm line (D35 #7) | |
 | `-P` hide the process list, `-p` no plots | **in** as tiers: a tile shorter than `procs` has no table; `view = "header"` pins a plotless tile | §4.6 `view` |
 | Own process hidden | **in** — gridwatch is never a GPU client (P12) and filters its own pid from the lists anyway | `Poller::new(dev, own_pid)` |
+
+## astral-watch — `tui.rs` (per-pin 12V-2x6)
+
+| tui.rs feature (digest §1 "what tui.rs renders") | gridwatch | Where |
+|---|---|---|
+| Six per-pin bars: `█` fill by amps/10, `▔` session-peak cap, dim red `┄` at 9.2 A on empty cells, `8.2` value and `p1` labels; pin colour red > 9.2, yellow > 7.82, dark at 0 or stale, else green | **in — arc 3a** (`mini-bars` 20×4 without labels, `bars` 40×8 with values and labels) with **recorded deviations**: the bar *fill* is the `Power` gradient by height (the bands colour the values row), the limit line sits on the row that contains 9.2 A, a zero peak draws no cap | `pins::limit::PinBars` (`View::Custom`: the theme's `View::Bars` then the limit line through `Role::Crit` only — `limit_line_is_crit_role_on_empty_cells_only`); the amps bands are roles `Crit`/`Warn`/`TextMuted`/`Ok` (`pins::view::amps_role`); `AMPS_CEILING 10`, `OVERLOAD_A 9.2`, `IMBALANCE_ALARM_PIN_FRAC 0.85` verbatim from `keys/pins.rs` |
+| `PIN_COLORS` Cyan/Green/Yellow/Magenta/Blue/LightRed as pin identity in the trend | **deliberate deviation**: six *roles* (`AccentPrimary, AccentSecondary, AccentTertiary, Info, Ok, Warn`) name the series in the legend; the trend's line colour is the `Power` gradient by height | components never name a colour (§4.6) |
+| Totals `9.2 A ~111 W peak 620 W`, `pins 12.06–12.08 V · samples N` | **in — arc 3a** | `pins::view::totals_line`, `device_header` line 3 (`samples`) |
+| Balance `Gauge`: ratio `(b−1)/(1.5−1)` clamped, `NORMAL` / `WARN` (> 1.33) / `ALARM` (> 1.5) / idle when total ≤ `min_load` | **in — arc 3a**; the `WARN` band stays the constant 1.33 while `ALARM` follows the configured ratio (tui.rs uses constants for both) | `pins::model::balance_class`, `balance_classes_follow_tui_rs`; the thresholds come from `pins.info` (astral-watch's own config) with the constants as fallback (D50 §4) |
+| Watts `Sparkline` over `HISTORY = 300` samples | **in — arc 3a** (`trend` 60×14 and `full`; the badge's third row too) | `store.resample(pins.total_w)` over `history × interval` — the store's history, no second ring; `history` is the tile's one option |
+| Braille trend `Chart` of six pins, y max = max(9.2, peak) | **in — arc 3a** (`full`, zoom-only) | `pins::view::pin_trend` through the arc-2b braille renderer |
+| Alert log `List` + `Scrollbar`, `LOG_CAP 200`, newest at bottom, red/amber/green (repeats always yellow), grey status lines, wall-clock times | **in — arc 3a** (`trend`: 3+ lines; `full`: scrollable with `↑/↓ PgUp/PgDn`); **deviations**: `Repeated` keeps its severity's colour, no status lines (the `sources` tile has them), run-relative seconds | `pins::view::log` reads `store.alerts().events()` (the 500-event ring) filtered to the pins source; `Resolved` in `Ok` |
+| Alarm row: red bg + white + BOLD + `SLOW_BLINK` `⚠ ALERT: OVERLOAD + DISCONNECT ⚠`; yellow, no blink, `IMBALANCE (ADVISORY)` for advisories only; `TELEMETRY LOST` shown as an alert | **in — arc 3a** inside the tile (`trend`, `full`) **and** as the cross-page banner; **deviations**: no `SLOW_BLINK` — the banner pulses reversed/plain on the heartbeat (D50 §7); the advisory-only state shows a `▲ N advisory` chip in the key bar and no banner; `TELEMETRY LOST` is `Info` — the `?` glyph, `STALE`, the `Degraded` status and the log, never the banner | `pins::view::alarm_row`; `Shell::banner_text`, `overlay::banner`; `the_alert_banner_is_on_every_page_and_acknowledges` |
+| Device header line 1: badge + model + PCI + `PCIe Gen5×16` (yellow + `↓` below the card's max) + `i2c-N @ 0x2b` + `⏸ PAUSED` | **in — arc 3a** (`full`) — the model from astral-watch's card DB via `pins.info`, the PCIe link from the **gpu source's keys** (never sysfs), `PAUSED` while frozen; **deviation**: `↓` means below Gen5×16 (this card), the gpu source does not publish the link maximum yet (BACKLOG) | `pins::view::device_header`; `full_tier_reads_the_gpu_source_and_survives_without_it` |
+| Device header line 2: `GPU 19%` bar, `PWR 107/600W` (green < 85 %, yellow < 97 %, red), `45°C` (green < 75, yellow < 85, red), `fan 30%` polled by an `nvidia-smi` subprocess every 1.5 s | **in — arc 3a** as text from the gpu source's keys with the same bands as roles; **out**: the `nvidia-smi` subprocess (gridwatch has the gpu source) and the bar glyphs | `device_header` line 2; `—` for every field when the gpu source is absent |
+| Device header line 3: `connector 9.2 A · 111 W · balance 1.54× · pins 12.06–12.08 V`, `STALE ·` prefix when not live | **in — arc 3a** | `device_header` line 3; `STALE` when the last sample is older than 3 × the interval (`pins::view::stale`), also in the badge and totals |
+| Compact 1-row header when height < 16 | **in**, as tiers: the header only exists in `full`; `trend` and below carry the totals line | §4.6 tiers instead of a height switch |
+| Body ≥ 110 cols: bars 45 % over trend 55 % on the left 58 %, totals / balance / sparkline / log on the right 42 %; narrow: stacked | **in — arc 3a** (`full` follows the wide layout; the grid tiers are the stacked form) | `pins::view::full` |
+| Keys: `q`/Ctrl-C quit, `space` pause sampling, `r` reset peaks, `+`/`-` rate, `1`–`5` zoom a panel (`0`/Esc back), `↑↓`/wheel scroll log, `Tab` card, `?` help | **in — arc 3a** with **deliberate renames**: `p` freezes the *display* (the source keeps sampling — gridwatch's `space` is the global pause and the banner must never be silenced, D50 §8); `r` peaks; `+`/`−` are faster/slower sampling by 100 ms as in tui.rs (500–5000 ms) through the first `Command::Source` in the product; `↑/↓ PgUp/PgDn Home` scroll the log. **Out**: `1`–`5` panel zoom (gridwatch's `z` zooms the tile), `Tab` cards (one card, arc 8), `?` (the shell's help) | `Pins::on_key`; `keys_freeze_reset_and_command_the_interval` |
+| Multi-card tabs (`discover_cards`, one tab per PCI id) | **arc 8** | torch has one card; every key is unlabelled by device today |
+| Interval clamp 100 ms–5 s | **deviation**: **500 ms–5 s** — P14 says ≥ 2 transactions/s never | `pins::clamp_interval` |
+| Sampling continues while paused (`⏸` shows stale bars) | **in**, stronger: the source is `always_on` and never pauses; only the tile's picture freezes | §4.3 |
+| Lifecycle: 3-of-5 confirm, 20 clean to resolve, repeat every 10 min, advisories at 240, TelemetryLost freezes the rest | **in — arc 3a**, astral-watch's own `Lifecycle` runs in the source with the policy from its own config file; gridwatch adds no debounce | `pins::bridge`; `an_overload_raises_and_resolves_through_the_bridge`, `telemetry_lost_is_info_and_freezes_the_rest` |
+| `detect_bus` reasons (`NoBuses` / `PermissionDenied` / `NoTelemetry`), `redetect_card` after 10 misses, the deeply idle GPU's zeros as `TelemetryLost` | **in — arc 3a** | `pins::i2c::I2cBackend::{detect, explain, redetect}`, `Sampler::tick`; `losses_count_misses_and_redetect_at_ten` |
+| Exporter (`/metrics`) as a telemetry source; its `alert_active` flags | **in — arc 3a** as the preferred backend in `auto`; the service's flags ride along as a `svc` chip and are **not** merged into the lifecycle (one debouncer, D50 §3) | `pins::exporter`, `pins::parse` (a 50-line parser, no `prometheus-parse`) |
+| CSV tail | **arc 8** (D50 §5) | |
+| `notify` transports (ntfy, webhook) | **out** — gridwatch is a viewer; the astral-watch service alerts (D51) | |
 
 ## Verified by hand on torch, 2026-09-01 (arc 2b)
 

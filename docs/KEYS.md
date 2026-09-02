@@ -59,3 +59,11 @@
 | `gpu.info` | Record | None | `gpu` | static probe {dev}: name, driver, cuda, arch, uuid, pci id, bus id, vbios, cores, bus width, spec row; once per generation |
 | `gpu.procs` | Record | None | `gpu` | GPU process rows {dev} (v3 lists merged by PID, utilisation overlaid); only at Detail::Table; latest-only |
 | `gpu.nvml_ms` | Scalar | Milliseconds | `gpu` | NVML wall ms per second per call class {fast\|slow\|procs} (P11 evidence) |
+| `pins.amps` | Scalar | Amps | `pins` | per-pin current {pin}, pins 1–6 as on the connector |
+| `pins.volts` | Scalar | Volts | `pins` | per-pin voltage {pin} |
+| `pins.total_a` | Scalar | Amps | `pins` | sum of the six pin currents |
+| `pins.total_w` | Scalar | Watts | `pins` | Σ V·I over the six pins |
+| `pins.balance` | Scalar | Ratio | `pins` | hi/lo pin current ratio; absent when the lowest pin is ≤ 0.05 A |
+| `pins.read_ms` | Scalar | Milliseconds | `pins` | wall ms of the last telemetry read (P14 evidence) |
+| `pins.info` | Record | None | `pins` | mode (i2c/exporter), bus, pci, model, access path, interval and the astral-watch thresholds/policy in force; once per generation and on change |
+| `pins.state` | Record | None | `pins` | telemetry health, miss count, the lifecycle's active conditions and the exporter's own flags; every sample |

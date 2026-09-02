@@ -88,7 +88,7 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 |---|---|
 | 1 | P1, P4, P5, P6, P8, P18, P19, P21 (no GPU yet); P21 confirmed interactively once |
 | 2 | + P11 (with the Overview's `procs` tile visible, sum shown), P12, P13, P15, P17 (1 h); zoomed gpu `full` shows USER/CPU/HOST MEM for the game (cpu detail raised through `demand`) |
-| 3 | + P14 (block-path number recorded); alarm banner adds no steady-state cost |
+| 3 | + P14 (block-path number recorded — by hand, the live pass opens `/dev/i2c-*`); alarm banner adds no steady-state cost |
 | 4 | + P20; edit mode idle = P8; **S1–S7 under `matrix`** (focused, beside the game) and S5 = P4 with the game focused |
 | 5 | + P2, P3, P7, P9, P10, P16; P7b/P10b measured and a gate proposed |
 | 6 | Winamp marquee at 220 ms steps stays inside P6 (it is ~40 cells) |
@@ -180,6 +180,23 @@ pty at 250×70, idle torch, no game, nothing focused (both 6x3 tiles at their
 | P9, P10, P4, P21 | Ptyxis Δ CPU / `pmon sm`; focus | — | **owed**: a pty is not Ptyxis; the run above was not in the real terminal |
 
 - **The gpu thread's time is all *system* time** (0.67 % sys, 0.00 % user): NVML is ioctls into the driver, so P11's wall-clock sum understates the CPU it costs by roughly the ratio 0.67 % / 0.48 % — the kernel side of each call. P1 is the ceiling that catches it, and it holds.
+**Arc 3a notes (2026-09-02).** The pins source's P14 evidence is `pins.read_ms`
+(published every sample) and the `sources` tile's `N tx/s · read N ms` note;
+the interval is clamped to ≥ 500 ms in `pins::clamp_interval`, so the source
+cannot exceed 2 transactions/s by construction. **The live number is owed to a
+human**: an agent never opens `/dev/i2c-*` (MACHINE.md), so the pass that
+records it is run by hand, beside the root `astral-watch log` that is still
+running on torch:
+
+```
+cargo test -p gridwatch-sources --release --test pins live_pins -- --ignored --nocapture
+```
+
+| gate | ceiling | measured | verdict |
+|---|---|---|---|
+| P14 | ≤ 2 i2c transactions/s, ≤ 1 % of a core | the interval floor (≥ 500 ms) bounds *reads* to 2/s; a **plausible** read is one block transaction, but a deeply idle GPU makes astral-watch re-probe bytewise (36 transactions) on every implausible reading — the review's finding — so the source backs off to 5 s after three misses while the chip answers zeros (≤ 7.2 tx/s worst, 0.4 tx/s steady) and returns to the cadence on the first good sample; the live pass gates on the mean read cost (block ≈ 4 ms vs bytewise ≈ 33 ms) as the transaction proxy. The read cost, the misses beside the root logger and the thread's CPU are **owed** — run the command above and paste its `P14:` line here | owed (a human's row); the idle case is bounded by construction |
+| banner steady state | no redraws when no alert is active; one row per second while a Crit alert is active | the banner is drawn inside `draw_frame` from the store's active set — no timer, no extra frame cause; the pulse rides the 1 Hz heartbeat frame that fires anyway | ✓ by construction; the `redraw_heartbeat` counter in `--stats-log` is the check |
+
 - **Still owed by a human on torch** (all need the real terminal, not a pty):
   P4 and P21 (focus events), P9/P10 (Ptyxis Δ CPU and `pmon sm`), and every row
   re-taken **at Matt's actual window size** (D42's open `stty size` item) **with
