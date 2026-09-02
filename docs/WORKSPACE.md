@@ -36,7 +36,7 @@ gridwatch/
 │   ├── udev/90-gridwatch-rapl.rules   # optional chmod 0440 on intel-rapl:0/energy_uj (documented, never required)
 │   └── flake.nix                   # arc 9
 ├── .github/workflows/
-│   ├── ci.yml                      # fmt, clippy -D warnings, test, doc -D warnings, MSRV 1.88, per-crate check, feature matrix, deny, tree -d, audit, (arc 2+) demo screenshot
+│   ├── ci.yml                      # fmt, clippy -D warnings, test, doc -D warnings, MSRV 1.88, per-crate check, feature matrix, deny, tree -d, audit, docs job: `scripts/shots.sh --check` regenerates docs/img/*.svg, KEYS.md, COMPONENTS.md and fails on drift (arc 2a)
 │   └── release.yml                 # gnu + musl tarballs, nfpm, GitHub release from CHANGELOG
 └── crates/
     ├── store/        gridwatch-store          # no TUI crate, no crossterm, no system deps; builds in ~1 s
@@ -166,4 +166,4 @@ proptest         = "1.11"
 criterion        = "0.8"
 ```
 
-Per-crate features: `gridwatch-sources` and `gridwatch-components` expose `cpu, gpu, pins, net, net-probe, net-rdns, net-dns, net-wifi, audio, audio-lufs, mpris, sensors`; `gridwatch` (bin) `default = ["cpu", "gpu", "pins", "net", "net-probe", "audio", "mpris", "sensors"]` (demo is always built — it lives in the store); `gridwatch-ui` exposes `testkit = ["dep:insta", "dep:proptest"]`. Deliberately absent: sysinfo (MSRV 1.95, no class breakdown), cpal/pipewire/libpulse (headers missing), `mpris` crate (libdbus), ratatui-image (halfblocks are 30 lines; default feature needs libchafa), figment (toml 0.8 duplicate), notify (1 Hz stat instead), enum-map (3.x needs 1.95), ansi_colours (LGPL), prometheus-parse (50-line parser in-tree). crossterm never appears below `gridwatch-app`.
+Per-crate features: `gridwatch-sources` and `gridwatch-components` expose `cpu, gpu, pins, net, net-probe, net-rdns, net-dns, net-wifi, audio, audio-lufs, mpris, sensors` — **each feature arrives with its module** (arc 2a landed `cpu`/`htop` and declared `gpu` ahead of session 2b; the workspace root declares the gridwatch crates `default-features = false` so `gridwatch-app` and the bin can forward them, D47 seam 5); `gridwatch` (bin) `default = ["cpu", "gpu", "pins", "net", "net-probe", "audio", "mpris", "sensors"]` (demo is always built — it lives in the store; today `default = ["cpu", "gpu"]`); `gridwatch-ui` exposes `testkit = ["dep:insta", "dep:proptest"]`. Deliberately absent: sysinfo (MSRV 1.95, no class breakdown), cpal/pipewire/libpulse (headers missing), `mpris` crate (libdbus), ratatui-image (halfblocks are 30 lines; default feature needs libchafa), figment (toml 0.8 duplicate), notify (1 Hz stat instead), enum-map (3.x needs 1.95), ansi_colours (LGPL), prometheus-parse (50-line parser in-tree). crossterm never appears below `gridwatch-app`.

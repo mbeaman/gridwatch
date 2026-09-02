@@ -106,6 +106,10 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 2026-08-31 | 1 | quiet | arc1a POST-FIX demo overview 250x70 focused | ? | 0.00% | 4 | 0 KB/s | ? | 0.65% | 0.0 | ? | ? | ? | 7928 kB |
 | 2026-08-31 | 1b | quiet | **live** overview 250x70, cpu tile focused (pty) | no | 0.38% | 6 | 3.4 KB/s | 2.00 | — | — | n/a | 0.29 | 0.69 / 1.10 ms | 10504 kB |
 | 2026-08-31 | 1b | quiet | demo overview 250x70 (pty) — synth jitters every core each tick | no | 0.20% | 6 | 24.8 KB/s | 1.9 | — | — | n/a | n/a | 0.84 / 1.45 ms | 10856 kB |
+| 2026-09-01 | 2a | quiet | **live** pid-level scan, release, 635 pids / 395 kthreads (`cpu::procs`) | no | — | — | — | — | — | — | n/a | **5.42 mean / 6.32 worst** | — | — |
+| 2026-09-01 | 2a | quiet | **live** overview 250x70, cpu tile focused, process table on (pty, review measurement) | no | 0.82% | 6 | 3.33 KB/s | 2.00 | — | — | n/a | 5.4 | 1.14 / 1.58 ms | 11708 kB |
+| 2026-09-01 | 2a | quiet | demo overview 250x70 (pty, review measurement) | no | 0.27% | 6 | 18.6 KB/s | 2.00 | — | — | n/a | n/a | 1.26 / 1.69 ms | 10600 kB |
+| 2026-09-01 | 2a | quiet | **live** overview 250x70 with `--record` (pty, review measurement) | no | 0.73% | 8 | 3.68 KB/s | 2.00 | — | — | n/a | 5.4 | 1.02 / 1.38 ms | 12000 kB |
 
 **Arc 1b notes (2026-08-31).** Release binary under a `script` pty sized 250×70
 (`sleep N | script -qec "stty rows 70 cols 250; gridwatch run --stats-log …"
@@ -125,8 +129,11 @@ stats log's own growth**; frames, frame times and both P18 timestamps from
 | P19 | p95 ≤ 8 ms, mean ≤ 3 ms | p50 0.69 ms, p95 1.10 ms | ✓ |
 | P17 | RSS ≤ 60 MB | 10.5 MB | ✓ |
 | P4, P21 | unfocused ≤ 0.3 %; focus reporting | — | **owed**: a pty sends no focus events |
+| P15 (arc 2a) | pid-level scan ≤ 20 ms wall, ≤ 1 % of a core amortised | **5.42 ms mean, 6.32 ms worst** over 10 passes (635 pids); 6.3 ms / 3 s = 0.21 % of a core at the grid cadence, 0.42 % focused | ✓ — `sys.scan_ms` carries the number; the `sources` tile prints it (`scan 5.4 ms`) |
+| P1, P5, P6, P8, P19 re-taken (arc 2a, process table on the Overview) | as above | live 0.82 % · 6 wake/s · 3.33 KB/s (HUD vs Δ`wchar` 0.3 %) · 2.00 fps · p95 1.58 ms; demo 0.27 % / 18.6 KB/s (down from 24.8: the table steals rows from the jittering core bars); `--record` 0.73 %, p95 1.38 ms | ✓ — the +0.44 pp over arc 1b is the scan (0.37 pp) plus ~0.07 pp for the table's derive/view/fingerprint |
 | P9, P10 | Ptyxis Δ CPU and `pmon sm` | — | **owed**: needs the real terminal beside the game |
 
+- **With `--record` the naive P6 recipe reads the journal's own disk writes** (≈ 11 KB/s) in Δ`wchar`: subtract the journal file's growth as the recipe already subtracts the stats log's.
 - **`first_frame_ms` is measured from `Shell::new`, not from `exec`** — everything
   before it (config, theme, capability probe, source spawn, terminal setup) is
   covered by the separate 13 ms exec→first-bytes measurement, and the two legs

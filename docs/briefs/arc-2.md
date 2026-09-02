@@ -2,6 +2,8 @@
 
 # Arc 2 — journal, process tables, the GPU
 
+> **2a status (2026-09-01): done — see D48 for the four seam notes it left (`sys.scan_ms`, `SourceCtx::inject`, the encode/decode signatures around the unchanged line format, the quit-drain fix). `torch-game.jsonl` is owed (no game was running). One acceptance number moved: the 120×40 dense tile shows six rows, not five (its inner is 59×19 on the grid's top row). 2b starts from the “Session 2b” section below unchanged.**
+
 Two sessions, in this order. **2a** has no hardware dependency and lands the machinery 2b's tests need (journal fixtures, the process scan, the SVG/CI screenshot loop). **2b** is the GPU vertical. Each half ends with the full D46 gate, the Template A review with the `user-path` lens, the pty transcript in the report, and — under Matt's standing rule for automated sessions — `scripts/gate.sh` green → commit → push → CI watched.
 
 ## Seam decisions made in this brief (D47) — implement as written, escalate if they do not fit

@@ -108,6 +108,8 @@ reads the pty stream and asserts what the user would have seen:
 Focus events cannot be produced under `script`; P4/P21 remain a human row, and
 they are the *only* one.
 
+Arc 2a's review found the shape of a hidden-by-the-fixture defect worth naming: the store-level replay tests fed *monotone* synthetic entries while the recorded fixture was not monotone, so `apply_until` looked correct until `shot --replay --at 0.2` was run by hand. A fixture recorded by the real binary is the oracle; a synthetic one is a convenience. Arc 2a added three cases: C.6 `--demo` draws the process table (`Command` and the synthetic game row reach the terminal), C.7 `--replay fixtures/journals/torch-idle.jsonl --speed 0` reaches a frame and the sources tile reports the end of the journal, C.8 `--record FILE` writes a header and batch lines with the tables off. The testkit's `render_component` / `view_snapshot` now run the component's `tick` before `view`, as the shell does — a table tier derives its rows there, and a sweep that skipped it saw an honest but empty table.
+
 ### D. Error visibility is a contract (§11)
 
 Any failure **before** the alternate screen is entered must be printed to the

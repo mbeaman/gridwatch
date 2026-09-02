@@ -1,6 +1,6 @@
 # gridwatch — the plan
 
-> **Status: arc 1 is built, committed and pushed (2026-09-01) — `main` on `github.com/mbeaman/gridwatch`, CI green on all eight jobs. `v0.1.0` is deliberately NOT tagged yet: P4/P21/P9/P10 need a human in Ptyxis (see `PERFORMANCE.md`'s owed list), as do the glyph check and the README PNG. Arc 2 is next; its brief is written (`docs/briefs/arc-2.md`, D47) — start session 2a from it.** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
+> **Status: arc 1 is on `main` (CI green); arc 2 session 2a — the journal (record/replay), the pid-level scan, the htop `table` tier, SVG/KEYS/COMPONENTS tooling with CI drift checks, Cargo features — is built, reviewed and gated (2026-09-01, D48). `v0.1.0` is deliberately NOT tagged yet: P4/P21/P9/P10 need a human in Ptyxis (see `PERFORMANCE.md`'s owed list), as do the glyph check and the README PNG. Next: session 2b (the GPU) from `docs/briefs/arc-2.md`; `fixtures/journals/torch-game.jsonl` needs Matt to start the game.** Repo: `github.com/mbeaman/gridwatch` (the on-disk directory remains `~/workspace/opsTui`; see `CLAUDE.md` for why). This file is the entry point — read it first in every session, then `ROADMAP.md` for the current arc and the tail of `DECISIONS.md`.
 
 ## What we are building
 

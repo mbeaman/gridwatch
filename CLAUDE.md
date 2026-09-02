@@ -1,6 +1,6 @@
 # gridwatch — working agreement
 
-Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ratatui 0.30). **Status: arc 1 is built, committed and pushed (2026-09-01); CI green. `v0.1.0` is untagged pending the four rows only Matt can close (P4/P21 in Ptyxis, the glyph check, the README PNG). Next: arc 2 from `docs/briefs/arc-2.md` (D47): session 2a (journal, pid scan, htop table, tooling) then 2b (GPU).** Name: **`gridwatch`** (crates `gridwatch-*`). The on-disk directory remains `~/workspace/opsTui`; don't rename it (Claude memory is keyed to the path — migrate `~/.claude/projects/-home-mattbeam-workspace-opsTui/memory/` first if it ever moves).
+Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ratatui 0.30). **Status: arc 1 is committed and pushed; session 2a (journal, pid scan, htop table, tooling — D48) is built, reviewed and gated (2026-09-01). `v0.1.0` is untagged pending the four rows only Matt can close (P4/P21 in Ptyxis, the glyph check, the README PNG). Next: session 2b (GPU) from `docs/briefs/arc-2.md`; `torch-game.jsonl` needs Matt's game.** Name: **`gridwatch`** (crates `gridwatch-*`). The on-disk directory remains `~/workspace/opsTui`; don't rename it (Claude memory is keyed to the path — migrate `~/.claude/projects/-home-mattbeam-workspace-opsTui/memory/` first if it ever moves).
 
 ## Model strategy (D36 — details in `docs/MODELS.md`)
 
