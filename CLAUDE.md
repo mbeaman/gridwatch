@@ -20,7 +20,7 @@ Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ra
 - **Commit before review.** Snapshot (`git stash create` → tag) or commit before handing uncommitted work to any shell-enabled agent, and verify the tree is byte-identical afterwards.
 - **Read-only guard in every agent prompt** — research, design and review alike: "do not create/modify/delete files, no git mutation". A design workflow once wrote files into a repo; a review agent once ran `git restore` over uncommitted work.
 - **Commit messages:** `area: imperative summary` (e.g. `layout: derive dense threshold from GridSpec`), one scoped area per commit; split risky halves so they revert alone.
-- **Gate before any commit:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace` (which includes the pty suite — `crates/cli/tests/pty.rs` runs the binary under a real terminal, D46), `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`, MSRV **1.88** check. CI mirrors astral-watch's (`dtolnay/rust-toolchain`, `Swatinem/rust-cache`).
+- **Gate before any commit:** `scripts/gate.sh` (one command, mirrors `ci.yml`; `--quick` for the inner loop) — i.e. `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace` (which includes the pty suite — `crates/cli/tests/pty.rs` runs the binary under a real terminal, D46), `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`, MSRV **1.88** check. CI mirrors astral-watch's (`dtolnay/rust-toolchain`, `Swatinem/rust-cache`).
 
 ## Architecture rules that reviews enforce (see `docs/ARCHITECTURE.md`)
 

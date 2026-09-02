@@ -40,6 +40,7 @@ One agent, whole-diff scope since the last tag: seams coherent, CHANGELOG comple
 ## Gate checklist per arc (the report quotes each)
 
 ```
+scripts/gate.sh          # all of the below in one command, mirroring ci.yml
 cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace && RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 MSRV check (1.88) · per-crate check (store, ui) · feature matrix · cargo deny · cargo tree -d
