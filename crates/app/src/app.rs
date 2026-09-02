@@ -103,6 +103,10 @@ pub struct Shell {
     /// Under `--replay`, when the journal ended: the virtual clock stops
     /// there, so staleness counts real time from that instant (review).
     journal_ended: Option<Instant>,
+    /// Only a live `run --replay` ages a finished journal in real time;
+    /// the determinism test and `shot` must stay a pure function of the
+    /// journal (CI's slower runner ended the two replays at different ages).
+    pub age_after_journal: bool,
     /// The watcher's theme-file sender (§9): the reload target moves with
     /// `t` and with a config edit, and the watched files follow it.
     pub watch_theme_files: Option<std::sync::mpsc::Sender<Vec<crate::watch::Watched>>>,
@@ -208,6 +212,7 @@ impl Shell {
             restart_only: (loaded.config.mouse, loaded.config.color.clone()),
             resumed_at: None,
             journal_ended: None,
+            age_after_journal: false,
             watch_theme_files: None,
             watch_ignore: None,
             edit: None,
@@ -1618,7 +1623,9 @@ impl Shell {
             return None;
         }
         let mut now = self.clock.now();
-        if let Some(ended) = self.journal_ended {
+        if let Some(ended) = self.journal_ended
+            && self.age_after_journal
+        {
             // The journal drove the virtual clock and has stopped: the
             // dashboard is frozen, and its age is real time since then.
             now = Ts(now.0 + ended.elapsed().as_nanos() as u64);

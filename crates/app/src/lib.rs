@@ -248,6 +248,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
         shell.warn_toast(w);
     }
     shell.set_theme_ref(theme_name.clone());
+    shell.age_after_journal = true;
     shell.set_effects(effects_on, loaded.config.effects.budget_ms);
     shell.theme_locked = force_mono || opts.theme.is_some();
     // Hot reload (§9, seam 8): the watcher stats the two config files and the

@@ -1042,6 +1042,7 @@ fn stale_threshold_follows_the_configured_cadence() {
 #[test]
 fn a_finished_replay_goes_stale_in_real_time() {
     let mut sh = shell_with_sources(probe::probe());
+    sh.age_after_journal = true; // as `run --replay` sets it; never in the harness
     sh.set_clock(Ts(60_000_000_000));
     assert!(!page_text(&mut sh, 250, 70).contains("stale"));
     sh.apply_control(ControlMsg::Status(
