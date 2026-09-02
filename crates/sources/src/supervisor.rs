@@ -33,6 +33,25 @@ impl SourceHandle {
         let _ = self.ctl.lock().unwrap_or_else(|e| e.into_inner()).send(c);
     }
 
+    /// A sender the shell can keep after the handle is parked with the others
+    /// (arc 3, D50 §6): `Command::Source(id, ctl)` lands here. Follows the
+    /// slot, so it survives a restart like `control` does.
+    pub fn controller(&self) -> impl Fn(Control) + Send + Sync + 'static {
+        let slot = self.ctl.clone();
+        let stop = self.stop.clone();
+        move |c: Control| {
+            if matches!(c, Control::Stop) {
+                stop.store(true, std::sync::atomic::Ordering::Release);
+            }
+            // `try_lock`: this runs on the render thread (§11 — no blocking
+            // lock there); the slot is only held for the instant of a restart,
+            // and a tuning control lost in that instant is affordable (D42).
+            if let Ok(tx) = slot.try_lock() {
+                let _ = tx.send(c);
+            }
+        }
+    }
+
     /// Stop the thread and wait for it.
     pub fn shutdown(mut self) {
         self.stop.store(true, std::sync::atomic::Ordering::Release);

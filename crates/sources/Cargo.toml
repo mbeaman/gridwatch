@@ -12,12 +12,14 @@ gridwatch-store.workspace = true
 gridwatch-ui.workspace = true
 procfs = { workspace = true, optional = true }
 nvml-wrapper = { workspace = true, optional = true }
+astral-watch = { workspace = true, optional = true }
 toml.workspace = true
 tracing.workspace = true
 
 [features]
 # One feature per source (WORKSPACE.md §15, D47 seam 5): a feature arrives with
 # its module.
-default = ["cpu", "gpu"]
+default = ["cpu", "gpu", "pins"]
 cpu = ["dep:procfs"]
 gpu = ["dep:nvml-wrapper"]
+pins = ["dep:astral-watch"]

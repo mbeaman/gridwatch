@@ -37,6 +37,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 libc             = "0.2"
 procfs           = { version = "0.18.0", default-features = false }   # sources only (D17): htop formulas, no chrono/flate2
 nvml-wrapper     = "0.12.1"                                          # sources only, feature gpu (dlopens libnvidia-ml.so.1)
+astral-watch     = { git = "https://github.com/mbeaman/astral-watch", rev = "dce7eee77676268c66b3624c7a2870ed9d84eb9c", default-features = false }   # sources only, feature pins (D50 §1: pinned rev, v0.8.0 not required)
 # dev
 insta            = { version = "1.48", features = ["yaml"] }
 proptest         = "1.11"

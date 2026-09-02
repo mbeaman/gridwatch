@@ -17,4 +17,10 @@ pub fn builtin_sources(reg: &mut Registry) {
         start: crate::gpu::start,
         demo: gridwatch_store::demo::gpu_demo,
     });
+    #[cfg(feature = "pins")]
+    reg.register_source(gridwatch_store::SourceDef {
+        info: gridwatch_store::demo::pins_source_info(),
+        start: crate::pins::start,
+        demo: gridwatch_store::demo::pins_demo,
+    });
 }

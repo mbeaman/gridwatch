@@ -7,6 +7,8 @@
 pub mod cpu;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+#[cfg(feature = "pins")]
+pub mod pins;
 pub mod registry;
 pub mod stub;
 pub mod supervisor;
