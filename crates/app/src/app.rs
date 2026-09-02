@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use gridwatch_store::{
-    CapSet, Clock, ControlMsg, Detail, Inbox, InputEvent, KeyCode, Level, Msg, Severity, SourceId,
-    Store, Ts,
+    CapSet, Clock, ControlMsg, Detail, Inbox, InputEvent, KeyCode, Level, Msg, Recorder, Severity,
+    SourceId, Store, Ts,
 };
 use gridwatch_ui::component::{BuildCx, Chrome, Command, Component, Outcome, Size, pick_tier};
 use gridwatch_ui::layout::{
@@ -57,7 +57,6 @@ struct CacheKey {
 
 pub struct Shell {
     pub store: Store,
-    registry: Registry,
     theme: Theme,
     theme_cycle: Vec<&'static str>,
     grid: gridwatch_ui::layout::GridSpec,
@@ -95,6 +94,8 @@ pub struct Shell {
     unfocused_fps: u16,
     pub stats_log: Option<std::path::PathBuf>,
     view_warnings: Vec<String>,
+    /// `--record`: the journal tee (§4.5). `r` toggles it; the HUD counts it.
+    pub recorder: Option<Recorder>,
 }
 
 impl Shell {
@@ -181,7 +182,6 @@ impl Shell {
         }
         Shell {
             store,
-            registry,
             theme,
             theme_cycle: vec!["retrowave", "modern", "mono"],
             grid: loaded.grid,
@@ -218,6 +218,48 @@ impl Shell {
             unfocused_fps: loaded.config.perf.unfocused_fps,
             stats_log: None,
             view_warnings,
+            recorder: None,
+        }
+    }
+
+    /// The run clock's now (§4.1): the recorder stamps inputs with it.
+    pub fn now(&self) -> Ts {
+        self.clock.now()
+    }
+
+    /// Advance a virtual clock (no-op on a real one): `shot --replay --at`.
+    pub fn set_clock(&self, at: Ts) {
+        self.clock.set(at);
+    }
+
+    /// Tee a drained message to the recorder, if one is running (§4.5).
+    pub fn tee(&self, t: Ts, msg: &Msg) {
+        if let Some(r) = &self.recorder {
+            r.record(t, msg);
+        }
+    }
+
+    /// A recorder whose writer died (disk full, I/O error) says so once on
+    /// screen (§11: after the alternate screen, the log *and* the UI).
+    fn check_recorder(&mut self) {
+        if self
+            .recorder
+            .as_ref()
+            .is_some_and(|r| r.dead() && r.enabled())
+        {
+            let path = self
+                .recorder
+                .as_ref()
+                .map(|r| r.path().display().to_string())
+                .unwrap_or_default();
+            if let Some(r) = &self.recorder {
+                r.set_enabled(false);
+            }
+            tracing::error!("recording to {path} stopped: the writer failed");
+            self.toast(
+                Severity::Crit,
+                format!("recording stopped: cannot write {path}"),
+            );
         }
     }
 
@@ -286,12 +328,19 @@ impl Shell {
         }
     }
 
-    /// Any visible source generation moved since the last frame → redraw (§5).
+    /// Any source generation moved since the last frame → redraw (§5). Over
+    /// the store's sources rather than the registry's: the store is the one
+    /// list that also holds the journal source under `--replay`, and it needs
+    /// no registry handle here.
     pub fn data_dirty(&mut self) -> bool {
         let mut dirty = false;
-        for def in self.registry.sources() {
-            let g = self.store.generation(def.info.id);
-            let e = self.last_gens.entry(def.info.id.0).or_insert(0);
+        let gens: Vec<(&'static str, u64)> = self
+            .store
+            .sources()
+            .map(|s| (s.id.0, s.generation))
+            .collect();
+        for (id, g) in gens {
+            let e = self.last_gens.entry(id).or_insert(0);
             if *e != g {
                 *e = g;
                 dirty = true;
@@ -411,6 +460,7 @@ impl Shell {
     pub fn draw_frame(&mut self, area: Rect, buf: &mut Buffer) {
         self.frame += 1;
         self.last_area = area;
+        self.check_recorder();
         let t_bg = self.theme.color(Role::Bg);
         for y in area.y..area.y + area.height {
             for x in area.x..area.x + area.width {
@@ -592,6 +642,7 @@ impl Shell {
                     SolveMode::Dense => "dense",
                     SolveMode::Stack => "stack",
                 },
+                recording: self.recorder.as_ref().map(|r| (r.written(), r.dropped())),
             };
             overlay::hud(&stats, body, &self.theme, buf);
         }
@@ -766,6 +817,23 @@ impl Shell {
             .map(|s| self.store.generation(*s))
             .collect();
         // (§5: an `animation frame` term joins this key with `Animated` in arc 5.)
+        // The fingerprint serialises the whole tree (0.11 ms at the table
+        // tier), so it is only computed when the cheap terms already match:
+        // a moved generation forces the render regardless.
+        let cheap_match = self.cache.get(&cell.index).is_some_and(|(k, _)| {
+            k.gens == gens
+                && k.tier == tier
+                && k.w == inner.width
+                && k.h == inner.height
+                && k.theme == theme_name
+                && k.focused == focused
+                && k.zoomed == zoomed
+        });
+        let view_hash = if cheap_match {
+            gridwatch_ui::view::fingerprint(&view)
+        } else {
+            0
+        };
         let cache_key = CacheKey {
             gens,
             tier,
@@ -774,13 +842,24 @@ impl Shell {
             theme: theme_name,
             focused,
             zoomed,
-            view_hash: gridwatch_ui::view::fingerprint(&view),
+            view_hash,
         };
-        let needs_render = self
-            .cache
-            .get(&cell.index)
-            .map(|(k, _)| *k != cache_key)
-            .unwrap_or(true);
+        let needs_render = !cheap_match
+            || self
+                .cache
+                .get(&cell.index)
+                .map(|(k, _)| k.view_hash != view_hash)
+                .unwrap_or(true);
+        // A rendered tile always stores its real fingerprint, so the next
+        // frame's cheap match has something honest to compare against.
+        let cache_key = if needs_render && !cheap_match {
+            CacheKey {
+                view_hash: gridwatch_ui::view::fingerprint(&view),
+                ..cache_key
+            }
+        } else {
+            cache_key
+        };
         if needs_render {
             let mut tile = Buffer::empty(local);
             crate::terminal::CONTAINED.with(|f| f.set(true));
@@ -997,7 +1076,9 @@ impl Shell {
                 true
             }
             KeyCode::Char('r') => {
-                self.toast(Severity::Info, "recording arrives in arc 2");
+                self.execute(Command::Record(
+                    !self.recorder.as_ref().is_some_and(|r| r.enabled()),
+                ));
                 true
             }
             KeyCode::Char('a') | KeyCode::Char('A') => {
@@ -1103,6 +1184,21 @@ impl Shell {
                 self.cache.clear();
             }
             Command::Toast(s, m) => self.toast(s, m),
+            Command::Record(on) => match &self.recorder {
+                Some(r) => {
+                    r.set_enabled(on);
+                    let msg = if on {
+                        format!("recording → {}", r.path().display())
+                    } else {
+                        format!("recording paused ({} lines)", r.written())
+                    };
+                    self.toast(Severity::Info, msg);
+                }
+                None => self.toast(
+                    Severity::Info,
+                    "no journal open — start with `gridwatch run --record FILE`",
+                ),
+            },
             other => self.toast(Severity::Info, format!("{other:?} arrives in a later arc")),
         }
     }
@@ -1134,6 +1230,17 @@ impl Shell {
     }
 }
 
+/// The journal timestamp of a drained message (§4.5): a status keeps `since`
+/// and an alert `at` — the moment the source meant, not the moment the render
+/// thread got round to it; everything else is stamped `now`.
+fn stamp(msg: &Msg, now: Ts) -> Ts {
+    match msg {
+        Msg::Control(ControlMsg::Status(_, s)) => s.since,
+        Msg::Control(ControlMsg::Alert(a)) => a.at,
+        _ => now,
+    }
+}
+
 fn wall_ns(clock: &Clock) -> u64 {
     // Real runs: wall = actual unix time. Virtual runs (shot/replay/tests):
     // wall = the virtual clock, so output is byte-deterministic (§12.5).
@@ -1146,6 +1253,10 @@ fn wall_ns(clock: &Clock) -> u64 {
     }
 }
 
+/// Copy a rendered tile into the frame. A cell the tile left unpainted has the
+/// `Reset` background; it keeps the frame's themed background underneath
+/// instead of punching a terminal-default hole in it (the SVG dumps showed
+/// every tile interior in a stand-in black inside `#0b0324` chrome).
 fn blit(tile: &Buffer, dest: Rect, buf: &mut Buffer) {
     let src = *tile.area();
     for y in 0..src.height.min(dest.height) {
@@ -1153,7 +1264,11 @@ fn blit(tile: &Buffer, dest: Rect, buf: &mut Buffer) {
             if let (Some(from), Some(to)) =
                 (tile.cell((x, y)), buf.cell_mut((dest.x + x, dest.y + y)))
             {
+                let bg = to.bg;
                 *to = from.clone();
+                if from.bg == ratatui::style::Color::Reset {
+                    to.set_bg(bg);
+                }
             }
         }
     }
@@ -1191,28 +1306,57 @@ where
         } else {
             Duration::from_millis(250)
         };
+        // Every drained message is also teed to the recorder (§4.2, §4.5):
+        // inputs and controls stamped with the run clock, batches with their
+        // own `at`. The tee never blocks; a full channel drops and counts.
         match inbox.input.recv_timeout(timeout) {
-            Ok(ev) => dirty |= shell.handle_input(ev),
+            Ok(ev) => {
+                shell.tee(shell.now(), &Msg::Input(ev.clone()));
+                dirty |= shell.handle_input(ev);
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
         }
         while let Ok(ev) = inbox.input.try_recv() {
+            shell.tee(shell.now(), &Msg::Input(ev.clone()));
             dirty |= shell.handle_input(ev);
         }
         // Control: never dropped, drained before data (§4.2).
         while let Ok(c) = inbox.control.try_recv() {
+            let msg = Msg::Control(c);
+            shell.tee(stamp(&msg, shell.now()), &msg);
+            let Msg::Control(c) = msg else { unreachable!() };
             shell.apply_control(c);
             dirty = true;
         }
         // Data: at most ~3 ms per frame (§5).
         let t0 = Instant::now();
         while let Ok(b) = inbox.data.try_recv() {
-            shell.store.apply(&Msg::Batch(b));
+            let msg = Msg::Batch(b);
+            let Msg::Batch(b) = &msg else { unreachable!() };
+            shell.tee(b.at, &msg);
+            shell.store.apply(&msg);
             if t0.elapsed() > Duration::from_millis(3) {
                 break;
             }
         }
         if shell.quit {
+            // Finish the drain before leaving: the 3 ms cap above exists to
+            // keep frames short, not to lose data, and a recorder attached to
+            // this loop must see every message that reached the channels
+            // (the replay determinism test found eight batches missing here).
+            while let Ok(c) = inbox.control.try_recv() {
+                let msg = Msg::Control(c);
+                shell.tee(stamp(&msg, shell.now()), &msg);
+                let Msg::Control(c) = msg else { unreachable!() };
+                shell.apply_control(c);
+            }
+            while let Ok(b) = inbox.data.try_recv() {
+                let msg = Msg::Batch(b);
+                let Msg::Batch(b) = &msg else { unreachable!() };
+                shell.tee(b.at, &msg);
+                shell.store.apply(&msg);
+            }
             return Ok(());
         }
         let mut cause_data = false;
@@ -1297,13 +1441,14 @@ pub fn shot_frame(shell: &mut Shell, w: u16, h: u16) -> Buffer {
 /// Feed the seeded synth straight into the shell's store (demo/headless).
 /// The status message is part of the feed: a source that is publishing batches
 /// is `Ok`, and without it every headless shot showed the one working source as
-/// `starting` — including the dump in the README.
+/// `starting` — including the dump in the README. Fed at `Detail::Table`, as
+/// the Overview's 6x3 tile demands it, so a shot shows the process table.
 pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
     let mut synth = gridwatch_store::demo::CpuSynth::new(seed);
     let src = gridwatch_store::keys::cpu::SOURCE;
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
-        let b = synth.tick(at);
+        let b = synth.tick_at(at, Detail::Table);
         shell.store.apply(&Msg::Batch(b));
         if i == 0 {
             shell.store.apply(&Msg::Control(ControlMsg::Status(

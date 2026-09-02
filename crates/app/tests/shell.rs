@@ -153,38 +153,75 @@ fn shell_with(layout: &str, page: usize) -> Shell {
     sh
 }
 
-/// Arc 1b acceptance (brief task 5): the shipped placements pick `cores` for
-/// the Overview's cpu tile at 250×70 *and* in dense mode at 120×40, and the
-/// Audio page's 12x3 tile honours its `view = "meters"` preference instead of
-/// growing into the richer tier that would also fit.
+/// Arc 2a acceptance (brief 2a, §8.1 row budget): the shipped placements pick
+/// `table` for the Overview's cpu tile — **10 rows** at 250×70 (18 available,
+/// capped by `table_rows`), **5 rows** in dense mode at 120×40 (59×18: exactly
+/// the tier's floor) — and the Audio page's 12x3 tile honours its
+/// `view = "meters"` preference instead of growing into the richer tiers.
+/// Row counts are read off the synth's sort order (CPU% desc, seed 42): the
+/// 10th row is `dockerd`/`pipewire` territory and `wireplumber` is 11th+;
+/// the 5th row is `rsync` and the 6th the firefox content process.
 #[test]
 fn shipped_placements_pick_the_expected_htop_tiers() {
     let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
     let big = page_text(&mut sh, 250, 70);
     assert!(
         big.contains("ccd0") && big.contains("ccd1"),
-        "6x3 at 250x70 is not `cores`"
+        "6x3 at 250x70 lost the cores block"
     );
-    assert!(big.contains("psi cpu"), "the cores tier draws the PSI row");
+    assert!(big.contains("psi cpu"), "the table tier keeps the PSI row");
+    assert!(
+        big.contains("kthr;"),
+        "the task line has htop's wording once kthr exists"
+    );
+    assert!(
+        big.contains("time+") && big.contains("command"),
+        "6x3 at 250x70 is not `table`: {big}"
+    );
+    assert!(
+        big.contains("dockerd") && big.contains("pipewire"),
+        "the 10-row table must reach the 9th/10th rows"
+    );
+    assert!(
+        !big.contains("wireplumber"),
+        "table_rows = 10 must cap the table at ten rows"
+    );
 
     let mut sh = shell_with(config::DEFAULT_LAYOUT, 1);
     let dense = page_text(&mut sh, 120, 40);
     assert!(
         dense.contains("ccd0") && dense.contains("ccd1"),
-        "6x3 dense at 120x40 must keep `cores` (59×18 fits the 56×12 minimum)"
+        "6x3 dense at 120x40 lost the cores block"
     );
+    assert!(
+        dense.contains("command"),
+        "6x3 dense at 120x40 must keep the table (59×19)"
+    );
+    // The solver gives the top grid row 19 inner lines at 120×40, one more
+    // than the testkit's canonical 59×18, so the budget is six rows here —
+    // count them rather than trust a truncated Command column.
+    let rows = dense
+        .lines()
+        .skip_while(|l| !l.contains("command"))
+        .skip(1)
+        .take_while(|l| {
+            l.trim_start_matches(['┃', '│', ' '])
+                .starts_with(|c: char| c.is_ascii_digit())
+        })
+        .count();
+    assert_eq!(rows, 6, "the dense table's row budget:\n{dense}");
 
     // Page 2's cpu tile is 12x3 with `view = "meters"`: the pinned tier wins
-    // even though `cores` would fit a 248-wide rect (§4.6).
+    // even though `table` would fit a 248-wide rect (§4.6).
     let mut sh = shell_with(config::DEFAULT_LAYOUT, 2);
     let audio = page_text(&mut sh, 250, 70);
     assert!(
-        audio.contains("pids,"),
+        audio.contains("running"),
         "the meters tier draws the task line"
     );
     assert!(
-        !audio.contains("ccd0"),
-        "`view = \"meters\"` must not grow into `cores`"
+        !audio.contains("ccd0") && !audio.contains("time+"),
+        "`view = \"meters\"` must not grow into `cores` or `table`"
     );
 }
 
@@ -200,14 +237,14 @@ fn laptop_fixture_stays_above_chip_level_in_dense_mode() {
     assert!(text.contains("00:00"), "the clock tile is missing");
 }
 
-/// §4.6: a placement naming a tier that does not exist (`table` until arc 2)
-/// is a config warning, and the tile falls back to the richest fitting tier.
+/// §4.6: a placement naming a tier that does not exist is a config warning,
+/// and the tile falls back to the richest fitting tier.
 #[test]
 fn an_unknown_view_name_warns_and_falls_back() {
-    let layout = config::DEFAULT_LAYOUT.replace("view = \"meters\"", "view = \"table\"");
+    let layout = config::DEFAULT_LAYOUT.replace("view = \"meters\"", "view = \"nonsense\"");
     let mut sh = shell_with(&layout, 2);
     assert!(
-        sh.view_warnings().iter().any(|w| w.contains("table")),
+        sh.view_warnings().iter().any(|w| w.contains("nonsense")),
         "no warning for the unknown view name: {:?}",
         sh.view_warnings()
     );
@@ -216,6 +253,12 @@ fn an_unknown_view_name_warns_and_falls_back() {
         text.contains("ccd0"),
         "the fallback must be the richest fitting tier"
     );
+    // And `view = "table"` — the arc-1b warning case — now resolves silently.
+    let layout = config::DEFAULT_LAYOUT.replace("view = \"meters\"", "view = \"table\"");
+    let mut sh = shell_with(&layout, 2);
+    assert!(sh.view_warnings().is_empty(), "{:?}", sh.view_warnings());
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("time+"), "the pinned table tier is drawn");
 }
 
 /// The whole live path in one test: the real cpu source on its supervised

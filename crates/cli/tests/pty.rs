@@ -336,3 +336,113 @@ fn quit_restores_the_terminal_and_logs_nothing_bad() {
     let bad: Vec<&str> = log.lines().filter(|l| l.contains("ERROR")).collect();
     assert!(bad.is_empty(), "errors in the log: {bad:?}");
 }
+
+/// C.6 (arc 2a) — `--demo` draws the process table in the 6x3 tile: the
+/// header and the synthetic game row reach the terminal.
+#[test]
+fn demo_draws_the_process_table() {
+    if skip("demo_draws_the_process_table") {
+        return;
+    }
+    let s = Session::start("table", 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(4), |t| {
+        t.contains("Command") && t.contains("/opt/game/bin/game")
+    });
+    assert!(seen.is_some(), "no process table; screen: {:?}", s.screen());
+}
+
+/// C.7 (arc 2a) — `--replay FILE --speed 0` reaches a frame from the
+/// recorded fixture, and the journal source reports the end of the file.
+#[test]
+fn replay_reaches_a_frame() {
+    if skip("replay_reaches_a_frame") {
+        return;
+    }
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/journals/torch-idle.jsonl");
+    let args = format!("run --replay {} --speed 0", fixture.display());
+    let mut s = Session::start("replay", 70, 250, &args);
+    let seen = s.wait_for(Duration::from_secs(5), |t| t.contains("CCD0"));
+    assert!(
+        seen.is_some(),
+        "no cpu tile from the journal; screen: {:?}",
+        s.screen()
+    );
+    let seen = s.wait_for(Duration::from_secs(5), |t| t.contains("end of journal"));
+    assert!(
+        seen.is_some(),
+        "the sources tile never showed the end of the journal"
+    );
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    let bad: Vec<&str> = log.lines().filter(|l| l.contains("ERROR")).collect();
+    assert!(bad.is_empty(), "errors in the log: {bad:?}");
+}
+
+/// C.8 (arc 2a) — `--record FILE` writes a journal with a header and lines,
+/// and the recording toast reaches the screen.
+#[test]
+fn record_writes_a_journal() {
+    if skip("record_writes_a_journal") {
+        return;
+    }
+    let out = std::env::temp_dir().join(format!("gridwatch-pty-rec-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+    let args = format!("run --demo --record {}", out.display());
+    let mut s = Session::start("record", 40, 131, &args);
+    let seen = s.wait_for(Duration::from_secs(4), |t| t.contains("recording"));
+    assert!(
+        seen.is_some(),
+        "no recording toast; screen: {:?}",
+        s.screen()
+    );
+    std::thread::sleep(Duration::from_millis(1800));
+    s.keys("q");
+    let (code, _, _) = s.finish();
+    assert_eq!(code, 0);
+    let text = std::fs::read_to_string(&out).expect("the journal file");
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(lines.len() >= 3, "too few lines: {}", lines.len());
+    assert!(lines[0].starts_with(r#"{"v":1,"#), "header: {}", lines[0]);
+    assert!(
+        lines.iter().any(|l| l.contains("\"b\":{\"src\":\"cpu\"")),
+        "no cpu batch"
+    );
+    assert!(!text.contains("proc.table"), "tables are off by default");
+    let _ = std::fs::remove_file(&out);
+}
+
+/// C.9 (arc 2a review) — `--replay` on a file that is not a journal is refused
+/// on stderr before the alternate screen (the tty check comes first, so this
+/// runs under a pty), never replayed into a dashboard of dashes.
+#[test]
+fn replay_of_a_non_journal_is_refused_loudly() {
+    if skip("replay_of_a_non_journal_is_refused_loudly") {
+        return;
+    }
+    let readme = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../README.md");
+    let empty = std::env::temp_dir().join(format!("gridwatch-empty-{}.jsonl", std::process::id()));
+    std::fs::write(&empty, "").unwrap();
+    for (tag, path, expect) in [
+        ("notjournal", readme, "not a gridwatch journal"),
+        ("emptyjournal", empty.clone(), "empty file"),
+    ] {
+        let args = format!("run --replay {}", path.display());
+        let s = Session::start(tag, 24, 100, &args);
+        let seen = s.wait_for(Duration::from_secs(3), |t| t.contains(expect));
+        assert!(
+            seen.is_some(),
+            "no refusal for {}; screen: {:?}",
+            path.display(),
+            s.screen()
+        );
+        let (code, raw, _) = s.finish();
+        assert_eq!(code, 1, "exit code for {}", path.display());
+        assert!(
+            !String::from_utf8_lossy(&raw).contains("\x1b[?1049h"),
+            "the alternate screen must not be entered"
+        );
+    }
+    let _ = std::fs::remove_file(&empty);
+}

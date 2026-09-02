@@ -1,7 +1,9 @@
 //! gridwatch — a modular, themeable ops dashboard for the terminal.
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
-use gridwatch_app::{RunOpts, run_terminal, shot};
+use gridwatch_app::{RunOpts, run_terminal, shot, shot_replay};
 use gridwatch_ui::Registry;
 
 #[derive(Parser)]
@@ -40,11 +42,27 @@ enum Cmd {
         stats: bool,
         /// Append per-second stats JSON lines to a file.
         #[arg(long)]
-        stats_log: Option<std::path::PathBuf>,
+        stats_log: Option<PathBuf>,
+        /// Record every message to a JSON Lines journal (`r` pauses/resumes).
+        #[arg(long, value_name = "FILE")]
+        record: Option<PathBuf>,
+        /// With --record: journal key/mouse/resize/focus events too.
+        #[arg(long, requires = "record")]
+        record_input: bool,
+        /// With --record: journal the process tables (`on`), or not (`off`).
+        #[arg(long, default_value = "off", value_parser = ["on", "off"], requires = "record")]
+        tables: String,
+        /// Replay a journal instead of running the live sources.
+        #[arg(long, value_name = "FILE", conflicts_with_all = ["demo", "record"])]
+        replay: Option<PathBuf>,
+        /// With --replay: time multiplier (0 = as fast as possible).
+        #[arg(long, requires = "replay")]
+        speed: Option<f64>,
     },
-    /// Render one frame headlessly from synthetic data.
+    /// Render one frame headlessly from synthetic data or a journal.
     Shot {
-        #[arg(long, default_value = "ansi")]
+        /// ansi | cells | svg
+        #[arg(long, default_value = "ansi", value_parser = ["ansi", "cells", "svg"])]
         format: String,
         /// WxH, e.g. 250x70.
         #[arg(long, default_value = "250x70")]
@@ -55,6 +73,19 @@ enum Cmd {
         seed: u64,
         #[arg(long, default_value_t = 1)]
         page: usize,
+        /// Render from a journal instead of the synth (see --at).
+        #[arg(long, value_name = "FILE")]
+        replay: Option<PathBuf>,
+        /// With --replay: seconds into the journal to render at (≥ 0).
+        #[arg(long, default_value_t = 60.0, requires = "replay", value_parser = parse_at)]
+        at: f64,
+    },
+    /// Print the metric catalogue as docs/KEYS.md (D33).
+    Keys,
+    /// Component manifests.
+    Component {
+        #[command(subcommand)]
+        what: ComponentCmd,
     },
     /// Validate or print configuration.
     Config {
@@ -66,11 +97,28 @@ enum Cmd {
 }
 
 #[derive(Subcommand)]
+enum ComponentCmd {
+    /// Every manifest and tier ladder, as docs/COMPONENTS.md.
+    List,
+    /// One component's manifest and tier ladder.
+    Info { kind: String },
+}
+
+#[derive(Subcommand)]
 enum ConfigCmd {
     /// Parse and validate config.toml + layout.toml.
     Check,
     /// Print the embedded defaults.
     Default,
+}
+
+fn parse_at(s: &str) -> Result<f64, String> {
+    let v: f64 = s.parse().map_err(|e| format!("{e}"))?;
+    if v.is_finite() && v >= 0.0 {
+        Ok(v)
+    } else {
+        Err("must be a non-negative number of seconds".into())
+    }
 }
 
 fn registry() -> Registry {
@@ -91,6 +139,11 @@ fn main() -> std::process::ExitCode {
         no_mouse: false,
         stats: false,
         stats_log: None,
+        record: None,
+        record_input: false,
+        tables: "off".into(),
+        replay: None,
+        speed: None,
     }) {
         Cmd::Run {
             demo,
@@ -101,6 +154,11 @@ fn main() -> std::process::ExitCode {
             no_mouse,
             stats,
             stats_log,
+            record,
+            record_input,
+            tables,
+            replay,
+            speed,
         } => run_terminal(
             registry(),
             RunOpts {
@@ -112,6 +170,11 @@ fn main() -> std::process::ExitCode {
                 no_mouse,
                 stats,
                 stats_log,
+                record,
+                record_input,
+                tables: tables == "on",
+                replay,
+                speed,
             },
         ),
         Cmd::Shot {
@@ -120,17 +183,49 @@ fn main() -> std::process::ExitCode {
             theme,
             seed,
             page,
+            replay,
+            at,
         } => {
             let (w, h) = size
                 .split_once('x')
                 .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
                 .unwrap_or((250, 70));
-            shot(registry(), seed, w, h, &theme, page, &format).map(|s| {
+            let frame = match replay {
+                Some(path) => shot_replay(registry(), &path, at, w, h, &theme, page, &format),
+                None => shot(registry(), seed, w, h, &theme, page, &format),
+            };
+            frame.map(|s| {
                 // `shot | head` must not panic: swallow EPIPE on stdout.
                 use std::io::Write as _;
                 let _ = std::io::stdout().write_all(s.as_bytes());
             })
         }
+        Cmd::Keys => {
+            print!("{}", gridwatch_app::keys_doc());
+            Ok(())
+        }
+        Cmd::Component { what } => match what {
+            ComponentCmd::List => {
+                print!("{}", gridwatch_app::components_doc(&registry()));
+                Ok(())
+            }
+            ComponentCmd::Info { kind } => {
+                let reg = registry();
+                match reg.component(&kind) {
+                    Some(def) => {
+                        print!("{}", gridwatch_app::component_info(def));
+                        Ok(())
+                    }
+                    None => Err(format!(
+                        "no component kind `{kind}` (have {})",
+                        reg.components()
+                            .map(|d| d.manifest.kind)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )),
+                }
+            }
+        },
         Cmd::Config { what } => match what {
             ConfigCmd::Check => gridwatch_app::config_check().map(|lines| {
                 for l in lines {

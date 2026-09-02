@@ -10,8 +10,8 @@ repository.workspace = true
 [dependencies]
 gridwatch-store.workspace = true
 gridwatch-ui.workspace = true
-gridwatch-sources.workspace = true
-gridwatch-components.workspace = true
+gridwatch-sources = { workspace = true }
+gridwatch-components = { workspace = true }
 ratatui.workspace = true
 crossterm.workspace = true
 serde.workspace = true
@@ -21,3 +21,9 @@ color-eyre.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 libc.workspace = true
+
+[features]
+# Forwarded to the bin (WORKSPACE.md §15, D47 seam 5).
+default = ["cpu", "gpu"]
+cpu = ["gridwatch-sources/cpu", "gridwatch-components/htop"]
+gpu = ["gridwatch-sources/gpu", "gridwatch-components/gpu"]

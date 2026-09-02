@@ -12,13 +12,17 @@ name = "gridwatch"
 path = "src/main.rs"
 
 [dependencies]
-gridwatch-app.workspace = true
+gridwatch-app = { workspace = true }
 gridwatch-store.workspace = true
 gridwatch-ui.workspace = true
-gridwatch-sources.workspace = true
-gridwatch-components.workspace = true
+gridwatch-sources = { workspace = true }
+gridwatch-components = { workspace = true }
 clap.workspace = true
 color-eyre.workspace = true
 
 [features]
-default = []
+# One feature per source/component pair (WORKSPACE.md §15, D47 seam 5). CI's
+# matrix checks none, each alone, and all.
+default = ["cpu", "gpu"]
+cpu = ["gridwatch-app/cpu"]
+gpu = ["gridwatch-app/gpu"]

@@ -58,8 +58,17 @@ fn shot_has_chrome_and_tiles() {
         text.contains("ccd0") && text.contains("ccd1"),
         "cpu tile is not at `cores`"
     );
-    assert!(text.contains("pids,"), "the task line is missing");
+    assert!(text.contains("kthr;"), "the task line is missing");
     assert!(text.contains("psi cpu"), "the pressure row is missing");
+    // Arc 2a: the top-N process table under the cores block.
+    assert!(
+        text.contains("time+") && text.contains("command"),
+        "the process table header is missing"
+    );
+    assert!(
+        text.contains("/opt/game/bin/game"),
+        "the game row is missing"
+    );
 }
 
 /// Every builtin theme renders the overview without panicking.
@@ -80,10 +89,10 @@ fn shot_second_page() {
     let out = gridwatch_app::shot(registry(), 7, 250, 70, "retrowave", 2, "cells").unwrap();
     assert!(!out.is_empty());
     let text = plain(&out).to_lowercase();
-    assert!(text.contains("pids,"), "the cpu strip is missing");
+    assert!(text.contains("running"), "the cpu strip is missing");
     assert!(
-        !text.contains("ccd0"),
-        "`view = \"meters\"` grew into `cores`"
+        !text.contains("ccd0") && !text.contains("time+"),
+        "`view = \"meters\"` grew into a richer tier"
     );
 }
 
