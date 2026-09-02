@@ -44,10 +44,19 @@ fn shot_has_chrome_and_tiles() {
     assert!(text.contains("gridwatch"), "tab bar missing");
     assert!(text.contains("sources"), "sources tile title missing");
     assert!(text.contains("state"), "sources table header missing");
+    // Every kind the Overview places is implemented as of arc 7: the
+    // placeholder chip that stood in for them has nothing left to cover
+    // there, and the network tile is the last one to have arrived.
     assert!(
-        text.contains("arrives in a later arc"),
-        "future-kind chips missing"
+        !text.contains("arrives in a later arc"),
+        "a placeholder chip on the Overview: {text}"
     );
+    assert!(text.contains("network"), "the net tile's title missing");
+    // Its 4x2 slot is wide enough for the interface table, so the rate
+    // pair belongs to the smaller tiers: what proves the tile drew is the
+    // interface it names and the probe strip under it.
+    assert!(text.contains("eno1"), "no interface listed");
+    assert!(text.contains("gateway"), "no probe strip");
     // The clock is borderless big-text; its glyph rows prove it rendered.
     assert!(
         frame.contains('▀') || frame.contains('█'),

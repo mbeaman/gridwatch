@@ -912,3 +912,86 @@ fn demo_winamp_transport_keys_are_consumed() {
     assert_eq!(code, 0);
     assert!(!log.contains("ERROR"), "{log}");
 }
+
+/// C.23 (arc 7a) — `--demo` shows the net tile with torch's interfaces and
+/// the probe strip; `q` exits 0. Then `doctor --offline` counts the real
+/// interfaces (a sysfs read, so it runs offline).
+#[test]
+fn demo_shows_the_net_tile_and_doctor_counts_interfaces() {
+    if skip("demo_shows_the_net_tile_and_doctor_counts_interfaces") {
+        return;
+    }
+    let mut s = Session::start("net", 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(3), |t| {
+        let t = t.to_lowercase();
+        t.contains("eno1") && t.contains("gateway")
+    });
+    assert!(seen.is_some(), "no net tile; screen: {:?}", s.screen());
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+
+    let out = std::process::Command::new(bin())
+        .args(["doctor", "--offline"])
+        .output()
+        .expect("doctor runs");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("interfaces"), "the net source's row: {text}");
+}
+
+/// C.24 (arc 7a) — captured, `a` lists the hidden interfaces and `s`
+/// changes the order.
+#[test]
+fn demo_net_keys_show_all_and_sort() {
+    if skip("demo_net_keys_show_all_and_sort") {
+        return;
+    }
+    let mut s = Session::start("netkeys", 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(3), |t| {
+        t.to_lowercase().contains("eno1")
+    });
+    assert!(seen.is_some(), "no net tile; screen: {:?}", s.screen());
+    // A layout with the net tile alone, so `Enter` captures it whatever
+    // the shipped page's order is (the reload path is C.12's).
+    let dir = s.sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Keep the shipped grid block (a layout without it does not load) and
+    // replace the pages with one full-screen net tile.
+    let shipped = gridwatch_app::config::DEFAULT_LAYOUT;
+    let grid = &shipped[..shipped.find("[[pages]]").expect("a pages section")];
+    std::fs::write(
+        dir.join("layout.toml"),
+        format!(
+            "{grid}[[pages]]\nname = \"net\"\nplace = [{{ id = \"lan\", at = [0, 0], size = [12, 6] }}]\n"
+        ),
+    )
+    .unwrap();
+    let seen = s.wait_for(Duration::from_secs(4), |t| {
+        t.contains("layout.toml reloaded")
+    });
+    assert!(seen.is_some(), "no reload toast; screen: {:?}", s.screen());
+    s.keys("\r");
+    std::thread::sleep(Duration::from_millis(400));
+    s.keys("a");
+    let seen = s.wait_for(Duration::from_secs(2), |t| t.contains("br-"));
+    assert!(
+        seen.is_some(),
+        "`a` did not reveal the hidden bridge: {:?}",
+        s.screen()
+    );
+    // `s` reorders the table. The typescript is a diff stream, so the
+    // footer's "sort traffic" → "sort name" arrives as the bare word; the
+    // ordering itself is a unit test (`the_sort_puts_the_busy_link_first`).
+    // What this case proves is that the key reaches the tile and the run
+    // survives it.
+    s.keys("s");
+    let seen = s.wait_for(Duration::from_secs(2), |t| t.contains("name"));
+    assert!(seen.is_some(), "`s` drew nothing: {:?}", s.screen());
+    s.keys("\x1b");
+    std::thread::sleep(Duration::from_millis(300));
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}
