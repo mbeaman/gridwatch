@@ -92,6 +92,7 @@ Fable 5 builds the foundation — arc 1a's core seam, the schemas and testkit, t
 - `BACKLOG.md` — pre-flight steps, unscheduled wants, and recorded won't-dos; the only place deferred work lives.
 - `MODELS.md` — the Fable/Opus division of labor and handoff protocol.
 - `REVIEW.md` — the canonical review-gate templates and per-arc checklist.
+- `TESTING.md` — the testing contract: five layers, why the harness has a user-facing axis (D46).
 - `briefs/` — decision-complete implementation briefs, one per arc half (1a, 1b written).
 - `MACHINE.md` — verified inventory of torch: hardware, OS, terminal, audio, permissions, toolchain, what is missing.
 - `research/` — ten research digests with verified facts, exact API names and command lines (ratatui 0.30, audio/FFT, MPRIS, htop, nvtop, network, astral-watch + sensors, themes, grid engine, prior art).
