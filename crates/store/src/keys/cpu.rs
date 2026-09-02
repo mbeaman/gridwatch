@@ -33,7 +33,8 @@ pub const PSI_MEM: Key<f64> = Key::new("psi.mem");
 pub const PSI_IO: Key<f64> = Key::new("psi.io");
 
 /// Temperatures: use `.named(&label)` with `chip:label` (e.g. `k10temp:Tccd1`).
-/// Produced by the cpu source until the sensors source takes the key over (§8).
+/// The catalogue row lives under `keys::sensors` (arc 5b, §16): the sensors
+/// source publishes it when its feature is on, the cpu source otherwise.
 pub const TEMP_C: Key<f64> = Key::new("sensor.temp_c");
 
 /// The process table record (arc 2 producer). Latest-only (§4.1).
@@ -211,11 +212,6 @@ pub static METAS: &[KeyMeta] = &[
     scalar!("psi.cpu", Percent, "PSI some avg10, cpu"),
     scalar!("psi.mem", Percent, "PSI some avg10, memory"),
     scalar!("psi.io", Percent, "PSI some avg10, io"),
-    scalar!(
-        "sensor.temp_c",
-        Celsius,
-        "temperature {chip:label}; cpu source owns k10temp until arc 5"
-    ),
     KeyMeta {
         name: "cpu.topology",
         unit: Unit::None,

@@ -5,6 +5,7 @@ mod audio;
 mod gpu;
 mod pins;
 mod procs;
+mod sensors;
 mod synth;
 
 pub use audio::{AudioSynth, audio_demo, audio_info, audio_sink, band_of};
@@ -13,4 +14,5 @@ pub use pins::{
     OVERLOAD_RAISE_S, OVERLOAD_RESOLVE_S, PinsSynth, pins_demo, pins_info, pins_source_info,
 };
 pub use procs::{KERNEL_THREADS, proc_table};
+pub use sensors::{SensorsSynth, sensors_demo, sensors_info, sensors_info_static};
 pub use synth::{CpuSynth, XorShift, cpu_demo, cpu_info};

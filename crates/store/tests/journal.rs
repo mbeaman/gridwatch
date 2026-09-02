@@ -29,6 +29,7 @@ fn exemplar(name: &str) -> Option<Arc<dyn RecordValue>> {
         "gpu.info" => Arc::new(gridwatch_store::demo::GpuSynth::info_exemplar()),
         "gpu.procs" => Arc::new(demo::gpu_procs(3, 3)),
         "pins.info" => Arc::new(demo::pins_info()),
+        "sensor.info" => Arc::new(demo::sensors_info()),
         "audio.sink" => Arc::new(demo::audio_sink()),
         "audio.sinks" => Arc::new(audio::AudioSinks {
             sinks: vec![demo::audio_sink()],

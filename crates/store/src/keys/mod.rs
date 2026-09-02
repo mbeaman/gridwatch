@@ -5,4 +5,5 @@ pub mod audio;
 pub mod cpu;
 pub mod gpu;
 pub mod pins;
+pub mod sensors;
 pub mod sys;
