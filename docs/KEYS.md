@@ -33,3 +33,29 @@
 | `sensor.temp_c` | Scalar | Celsius | `cpu` | temperature {chip:label}; cpu source owns k10temp until arc 5 |
 | `cpu.topology` | Record | None | `cpu` | die/core map: die_of, core_of, per-die temp label; latest-only |
 | `proc.table` | Record | None | `cpu` | pid-level process scan (arc 2); latest-only |
+| `gpu.util_pct` | Scalar | Percent | `gpu` | SM utilisation {dev} (utilization_rates.gpu) |
+| `gpu.memctl_pct` | Scalar | Percent | `gpu` | memory-controller utilisation {dev} — not VRAM occupancy |
+| `gpu.vram_used_b` | Scalar | Bytes | `gpu` | VRAM used {dev} (memory_info v2, reserved excluded) |
+| `gpu.vram_total_b` | Scalar | Bytes | `gpu` | VRAM total {dev} |
+| `gpu.power_w` | Scalar | Watts | `gpu` | board power {dev} (NVML_FI_DEV_POWER_INSTANT) |
+| `gpu.power_limit_w` | Scalar | Watts | `gpu` | enforced power limit {dev} |
+| `gpu.power_trace` | Vector | Watts | `gpu` | 20 ms board-power samples {dev}, oldest first, one vector per slow tick; only while a gpu tile is visible |
+| `gpu.temp_c` | Scalar | Celsius | `gpu` | GPU temperature {dev} |
+| `gpu.temp_slowdown_c` | Scalar | Celsius | `gpu` | slowdown threshold {dev} |
+| `gpu.fan_pct` | Scalar | Percent | `gpu` | fan setpoint {dev:fan}; every 5 s |
+| `gpu.fan_rpm` | Scalar | Count | `gpu` | fan RPM {dev:fan}; every 5 s |
+| `gpu.clock_gfx_mhz` | Scalar | Megahertz | `gpu` | graphics clock {dev} |
+| `gpu.clock_mem_mhz` | Scalar | Megahertz | `gpu` | memory clock {dev} |
+| `gpu.clock_gfx_max_mhz` | Scalar | Megahertz | `gpu` | max graphics clock {dev}; static |
+| `gpu.clock_mem_max_mhz` | Scalar | Megahertz | `gpu` | max memory clock {dev}; static |
+| `gpu.pcie_rx_bps` | Scalar | BytesPerSec | `gpu` | PCIe receive rate {dev}, diffed byte counter (field 198) |
+| `gpu.pcie_tx_bps` | Scalar | BytesPerSec | `gpu` | PCIe transmit rate {dev}, diffed byte counter (field 197) |
+| `gpu.pcie_gen` | Scalar | Count | `gpu` | current PCIe generation {dev} |
+| `gpu.pcie_width` | Scalar | Count | `gpu` | current PCIe link width {dev} |
+| `gpu.enc_pct` | Scalar | Percent | `gpu` | encoder utilisation {dev} |
+| `gpu.dec_pct` | Scalar | Percent | `gpu` | decoder utilisation {dev} |
+| `gpu.pstate` | Scalar | Count | `gpu` | performance state {dev}: 0–15, 32 = unknown |
+| `gpu.throttle` | Record | None | `gpu` | current clock-throttle reasons {dev} as NVML's bitmask; latest-only |
+| `gpu.info` | Record | None | `gpu` | static probe {dev}: name, driver, cuda, arch, uuid, pci id, bus id, vbios, cores, bus width, spec row; once per generation |
+| `gpu.procs` | Record | None | `gpu` | GPU process rows {dev} (v3 lists merged by PID, utilisation overlaid); only at Detail::Table; latest-only |
+| `gpu.nvml_ms` | Scalar | Milliseconds | `gpu` | NVML wall ms per second per call class {fast\|slow\|procs} (P11 evidence) |

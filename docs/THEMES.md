@@ -29,7 +29,7 @@ column drift on the lines that follow.
 | eighth blocks (vertical) | U+2581–U+2588 | every bar, sparkline and core block | DejaVu Sans | **pending Matt** |
 | eighth blocks (horizontal) | U+258F–U+2588 | `GlyphSet::partial_h` — **no caller yet**: the gauge renderer draws whole cells today, so this row is checked ahead of the first partial-width gauge | DejaVu Sans | **pending Matt** |
 | shade | U+2591–U+2593 | empty-bar fill | DejaVu Sans | **pending Matt** |
-| braille | U+2800–U+28FF | charts from arc 2 (`chart_marker`) | DejaVu Sans | **pending Matt** |
+| braille | U+2800–U+28FF | the gpu charts (arc 2b; `[glyphs] chart_marker = "braille"` is the default, `"block"` and `"dot"` are the alternatives, the `ascii` tier always gets `*`) | DejaVu Sans | **pending Matt** |
 | octants | U+1CD00–U+1CDE5 | `chart_marker = "octant_if_vte"` | Noto Sans — **VTE 0.84 draws these itself**, which is why the setting is conditional | **pending Matt** |
 | half-width katakana | U+FF66–U+FF9D | the `matrix` rain (arc 4) | Noto Sans CJK JP | **pending Matt** |
 

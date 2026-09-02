@@ -72,7 +72,7 @@ gridwatch/
     │       ├── lib.rs · registry.rs        # SourceDef table by feature
     │       ├── supervisor.rs · backoff.rs  # spawn_source (catch_unwind, restart counter), spawn_async_runtime (current_thread tokio)
     │       ├── cpu/{mod,stat,mem,psi,procs,topology,freq,k10temp}.rs   # k10temp Tccd by label until sensors exists
-    │       ├── gpu/{mod,nvml,fields,specs,smi_fallback,procs}.rs
+    │       ├── gpu/{mod,probe,poller,nvml,smi,specs,procs}.rs   # probe = the backend seam; poller = tiers/pruning over it (arc 2b)
     │       ├── pins/{mod,i2c,exporter,csv,lifecycle_bridge}.rs
     │       ├── net/{mod,dev,link,addrs,route,dns,conns,probe,wifi}.rs
     │       ├── audio/{mod,pwrecord,supervisor,dsp,bands,scope,vu,pwdump}.rs   # dsp: dual FFT 8192/2048
@@ -84,7 +84,7 @@ gridwatch/
     │       ├── clock.rs                    # 60-line template (Chrome::Borderless)
     │       ├── sources.rs · alerts.rs      # debugging tiles
     │       ├── htop/{mod,manifest,options,state,tiers,keys,actions}.rs
-    │       ├── gpu/{mod,manifest,tiers,charts,procs}.rs
+    │       ├── gpu/{mod,view,table,format}.rs     # arc 2b
     │       ├── pins/{mod,manifest,tiers,log}.rs
     │       ├── net/{mod,manifest,options,tiers,conns}.rs
     │       ├── audio/{mod,manifest,ballistics,tiers}.rs
@@ -166,4 +166,4 @@ proptest         = "1.11"
 criterion        = "0.8"
 ```
 
-Per-crate features: `gridwatch-sources` and `gridwatch-components` expose `cpu, gpu, pins, net, net-probe, net-rdns, net-dns, net-wifi, audio, audio-lufs, mpris, sensors` — **each feature arrives with its module** (arc 2a landed `cpu`/`htop` and declared `gpu` ahead of session 2b; the workspace root declares the gridwatch crates `default-features = false` so `gridwatch-app` and the bin can forward them, D47 seam 5); `gridwatch` (bin) `default = ["cpu", "gpu", "pins", "net", "net-probe", "audio", "mpris", "sensors"]` (demo is always built — it lives in the store; today `default = ["cpu", "gpu"]`); `gridwatch-ui` exposes `testkit = ["dep:insta", "dep:proptest"]`. Deliberately absent: sysinfo (MSRV 1.95, no class breakdown), cpal/pipewire/libpulse (headers missing), `mpris` crate (libdbus), ratatui-image (halfblocks are 30 lines; default feature needs libchafa), figment (toml 0.8 duplicate), notify (1 Hz stat instead), enum-map (3.x needs 1.95), ansi_colours (LGPL), prometheus-parse (50-line parser in-tree). crossterm never appears below `gridwatch-app`.
+Per-crate features: `gridwatch-sources` and `gridwatch-components` expose `cpu, gpu, pins, net, net-probe, net-rdns, net-dns, net-wifi, audio, audio-lufs, mpris, sensors` — **each feature arrives with its module** (arc 2a landed `cpu`/`htop`, 2b `gpu` with `nvml-wrapper` behind it; the workspace root declares the gridwatch crates `default-features = false` so `gridwatch-app` and the bin can forward them, D47 seam 5); `gridwatch` (bin) `default = ["cpu", "gpu", "pins", "net", "net-probe", "audio", "mpris", "sensors"]` (demo is always built — it lives in the store; today `default = ["cpu", "gpu"]`); `gridwatch-ui` exposes `testkit = ["dep:insta", "dep:proptest"]`. Deliberately absent: sysinfo (MSRV 1.95, no class breakdown), cpal/pipewire/libpulse (headers missing), `mpris` crate (libdbus), ratatui-image (halfblocks are 30 lines; default feature needs libchafa), figment (toml 0.8 duplicate), notify (1 Hz stat instead), enum-map (3.x needs 1.95), ansi_colours (LGPL), prometheus-parse (50-line parser in-tree). crossterm never appears below `gridwatch-app`.

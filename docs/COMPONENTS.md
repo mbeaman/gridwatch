@@ -5,6 +5,7 @@
 | kind | name | sources | default footprint | tiers | summary |
 |---|---|---|---|---|---|
 | `clock` | Clock | — | 2x1 | mini → big | wall-clock time |
+| `gpu` | GPU | `gpu`, `cpu`? | 6x3 | badge → gauges → header → charts → procs → full | nvtop's header, gauges, ten-minute charts and the GPU process table over NVML |
 | `htop` | CPU | `cpu` | 6x3 | tiny → big-number → meters → cores → table | htop's meters, per-core CCD blocks, memory, load and pressure |
 | `sources` | Sources | — | 4x1 | list → table | source health: state, generation, age, drops, restarts |
 
@@ -20,6 +21,32 @@ wall-clock time
 |---|---|---|---|---|
 | `mini` | 8×3 | Meters | — | non-blank |
 | `big` | 26×6 | Meters | big digits | non-blank |
+
+## `gpu` — GPU
+
+nvtop's header, gauges, ten-minute charts and the GPU process table over NVML
+
+- contract 1 · chrome Themed · footprints 1x1 2x1 4x2 6x3 · default 6x3
+- requires none · optional Nvml
+- sources `gpu` · optional sources `cpu`
+- example `options = { table_rows = 10, sort = "gpu_mem", series = ["util", "vram", "power"] }`
+
+| tier | min | demand | adds | signature |
+|---|---|---|---|---|
+| `badge` | 8×3 | Meters | GPU%, °C, util sparkline | `%` |
+| `gauges` | 24×5 | Meters | GPU / VRAM / MEMCTL gauges, MHz · W/limit · °C · fan, throttle chip | `GPU` `VRAM` |
+| `header` | 56×8 | Meters | nvtop's three header lines, PCIe gen@width RX/TX, ENC/DEC auto-hidden after 30 s idle, 20 ms power sparkline | `PCIe` `POW` |
+| `charts` | 56×12 | Meters | ten-minute charts (util, vram, temp, power, clock, load), GPU-Z spec column at ≥ 100 wide | `PCIe` `POW` |
+| `procs` | 56×18 | Table | top-N GPU process table | `PID` `GPU MEM` |
+| `full` (zoom) | 100×24 | Table | every process row, USER, the Power sub-panel (pins, arc 3) | `PID` `GPU MEM` |
+
+Keys once captured with `Enter`:
+
+- `↑/↓ j/k PgUp/PgDn Home/End` — select a process
+- `< > F6` — sort column
+- `I` — invert the sort
+- `1-6` — toggle a chart series (util, vram, temp, power, clock, load)
+- `r` — reverse the chart (recent on the left, nvtop -r)
 
 ## `htop` — CPU
 

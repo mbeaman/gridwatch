@@ -1,3 +1,4 @@
+<!-- Correction (2026-09-01, arc 2b review): nvtop 3.2.0 has no "effective load" metric — the sentence below attributing it to extract_gpuinfo.c is wrong; gridwatch keeps it as its own series (D49 §17). The PCIe byte-counter fields 197/198 are 32-bit and wrap (D49 §13). process_utilization_stats measured 2.2 ms and utilization_rates 0.65 ms on an idle card in P8 (D49 §6). -->
 <!-- Research digest. Generated 2026-08-30 by the opsTui design workflow (research agents ran read-only against this machine and docs.rs). Version numbers and API names were verified on that date; re-check before pinning.  -->
 
 # Reproducing nvtop 3.2 for the RTX 5090 via NVML (nvml-wrapper 0.12.1), plus GPU-Z-style static specs from the gpuwatch reference — API mapping, verified behaviour on driver 610.57.04, polling costs, size-class plan, nvidia-smi fallback

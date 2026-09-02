@@ -2,7 +2,7 @@
 
 A modular, themeable ops dashboard for the terminal — a grid of components that each render from a 1x1 tile to full screen, in themes like `retrowave` and `modern`, reproducing the behaviour of htop, nvtop and [astral-watch](https://github.com/mbeaman/astral-watch) alongside network, audio-visualizer and Winamp-style now-playing tiles. Rust + ratatui 0.30, built for a single Linux workstation first.
 
-**Status:** arc 1 (`v0.1.0`) — the grid lights up — plus arc 2's first half: the core seam, the 12×6 layout engine, three themes, the cpu source with htop's meters, CCD core bars **and the top-N process table**, journal record/replay, and CI-regenerated screenshots. The GPU tile is next (arc 2b); pins, network, audio and Winamp follow (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+**Status:** arc 1 (`v0.1.0`) — the grid lights up — and arc 2 (`v0.2.0`, untagged): the core seam, the 12×6 layout engine, three themes, the cpu source with htop's meters, CCD core bars and the top-N process table, **the gpu source over NVML with nvtop's header, ten-minute charts and GPU process table**, journal record/replay, and CI-regenerated screenshots. Pins, network, audio and Winamp follow (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 
 [![the Overview at 250×70 in retrowave](docs/img/overview-retrowave.svg)](docs/img/overview-retrowave.svg)
 
@@ -11,21 +11,21 @@ A modular, themeable ops dashboard for the terminal — a grid of components tha
 ```
  gridwatch  1 Overview  2 Audio   retrowave · configured
 ┏ CPU ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ ╔ GPU ══════════════════════════════════════════════════════════╗
-┃CPU [||||||||||||||||||||||                             ] 43.5%┃ ║                                                               ║
-┃MEM [|||||||||||||||||||                          ] 17.5G/91.0G┃ ║                                                               ║
-┃SWP [                                             ] 0.00K/16.0G┃ ║                                                               ║
-┃209, 1798 thr, 431 kthr; 3 running · load 4.48 4.16 3.49       ┃ ║                                                               ║
-┃CCD0  4.9 GHz  61.5 °C         CCD1  5.4 GHz  55.0 °C          ┃ ║                                                               ║
+┃CPU [||||||||||||||||||||||                             ] 43.9%┃ ║Device 0 [GeForce R…]  PCIe GEN 5@16x RX: 36 MiB/s TX: 11 MiB/s║
+┃MEM [|||||||||||||||||||                          ] 16.7G/91.0G┃ ║GPU 2769MHz MEM 14001MHz TEMP 44°C FAN 29% POW 386/600W        ║
+┃SWP [                                             ] 0.00K/16.0G┃ ║GPU ━━━─────────────────── 14%  MEM ━━━━━━━━━━───────────── 42%║
+┃210, 1792 thr, 431 kthr; 3 running · load 4.51 4.20 3.52       ┃ ║ENC ─────────────────────── 0%  DEC ──────────────────────── 0%║
+┃CCD0  4.9 GHz  61.8 °C         CCD1  5.4 GHz  53.6 °C          ┃ ║POW 20 ms                                                      ║
 ┃                                                               ┃ ║                                                               ║
-┃ ▁  ▁ ▂   ▇     ▁                                              ┃ ║                                                               ║
-┃▇█ ▂█ ██  █    ▃█ ▃▇ █▄                                        ┃ ║ ▪ gpu                                                         ║
-┃██ ██ ██ ▆█ ▃▅ ██ ██ ██                                        ┃ ║ arrives in a later arc                                        ║
+┃   ▁      ▄ ▆▃       ▆                                         ┃ ║             ▇███████▇▇▇▇▇▇▇▇▇▇▇█████▇▇▇▇▇▇▇▇▇▇▇█████▇▇▇▇▇▇▇▇▇▇║
+┃▃▇ █  ▅▃  █ ██ ▅  ▇▂ █▂                                        ┃ ║             ██████████████████████████████████████████████████║
+┃██ █▆ ██ ▇█ ██ ██ ██ ██                                        ┃ ║1:util 14%  2:vram 42%  4:power 64%  1m ⟶                      ║
 ┃██ ██ ██ ██ ██ ██ ██ ██                                        ┃ ║                                                               ║
-┃██ ██ ██ ██ ██ ██ ██ ██               ▂              ▅         ┃ ║                                                               ║
-┃██ ██ ██ ██ ██ ██ ██ ██        ▃   ▅  █ ▁▁  ▄ █▁ ▆   █         ┃ ║                                                               ║
-┃██ ██ ██ ██ ██ ██ ██ ██        █▄ ██ ▅█ ██ ▄█ ██ █▇ ▄█         ┃ ║                                                               ║
-┃0  1  2  3  4  5  6  7         8  9  10 11 12 13 14 15         ┃ ║                                                               ║
-┃PSI cpu 1.39 · mem 0.25 · io 0.13                              ┃ ║                                                               ║
+┃██ ██ ██ ██ ██ ██ ██ ██                       ▄▂               ┃ ║                                                               ║
+┃██ ██ ██ ██ ██ ██ ██ ██        ▄▅ ▄▅    ▇▆    ██     ▃         ┃ ║ ⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠒⠒⠉⠑⠒⠒⠊⠉⠒⠊⠉⠑⠒⠒⠒⠉⠑⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠊⠉⠑⠒⠉⠉⠉⠒⠊⠉ ║
+┃██ ██ ██ ██ ██ ██ ██ ██        ██ ██ ▆█ ██ ██ ██ ▄▄ ▁█         ┃ ║ ⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒ ║
+┃0  1  2  3  4  5  6  7         8  9  10 11 12 13 14 15         ┃ ║      ⢀⣀     ⣀⣀⣀                                               ║
+┃PSI cpu 1.37 · mem 0.19 · io 1.09                              ┃ ║ ⠉⠉⠉⠉⠉⠁ ⠉⠉⠉⠉⠉   ⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉ ║
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ╚═══════════════════════════════════════════════════════════════╝
 
 ╔ PINS ═══════════════════════════════════╗ ╔ NET ════════════════════════════════════╗ ╔ AUDIO ══════════════════════════════════╗
@@ -42,14 +42,13 @@ A modular, themeable ops dashboard for the terminal — a grid of components tha
 
 ╔ SOURCES ════════════════════════════════╗ ╔ SENSORS ══════════════════════════════════════════════════════╗
 ║cpu ok                                   ║ ║                                                               ║  00:00
-║                                         ║ ║ ▪ sensors                                                     ║
+║gpu ok                                   ║ ║ ▪ sensors                                                     ║
 ║                                         ║ ║ arrives in a later arc                                        ║
 ╚═════════════════════════════════════════╝ ╚═══════════════════════════════════════════════════════════════╝
  q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · space pause · S shot · F12 hud
-
 ```
 
-*`gridwatch shot --format ansi --size 131x37 --theme retrowave`, colour stripped for this page — the real frame is a truecolor synthwave palette with gradient-coloured core bars; at 131 columns the cpu tile is one row short of its process table, which the SVGs above show. A PNG from a real Ptyxis window still needs a human.*
+*`gridwatch shot --format ansi --size 131x37 --theme retrowave`, colour stripped for this page — the real frame is a truecolor synthwave palette with gradient-coloured core bars and braille chart lines; at 131 columns both 6x3 tiles are one row short of their process tables, which the SVGs above show. A PNG from a real Ptyxis window still needs a human.*
 
 ## Run it
 
@@ -66,8 +65,9 @@ cargo run --release -- config default > ~/.config/gridwatch/config.toml
 cargo run --release -- doctor       # what this machine can feed
 ```
 
-Keys: `1`–`9` pages, `Tab`/`hjkl` focus, `Enter` capture (then, in the cpu tile,
-`↑/↓ PgUp/PgDn Home/End` select, `<`/`>`/`F6` sort, `I` invert), `z` zoom, `d` dense,
+Keys: `1`–`9` pages, `Tab`/`hjkl` focus, `Enter` capture (then, in the cpu and gpu tiles,
+`↑/↓ PgUp/PgDn Home/End` select, `<`/`>`/`F6` sort, `I` invert; in the gpu tile `1`–`6`
+toggle chart series and `r` reverses them), `z` zoom, `d` dense,
 `t` theme, `space` pause, `r` pause/resume a `--record`, `F12` stats HUD, `?` help,
 `q` (or `Ctrl-q`) quit.
 
@@ -78,6 +78,14 @@ Keys: `1`–`9` pages, `Tab`/`hjkl` focus, `Enter` capture (then, in the cpu til
   32 gradient core bars grouped into real CCD blocks from sysfs `die_id`, per-CCD
   frequency and `Tccd` temperature, load, tasks and PSI — from an 8×3 chip to a
   full screen. Parity is tracked row by row in [`docs/PARITY.md`](docs/PARITY.md).
+- **`gpu` tile** — nvtop 3.2.0's header (`Device 0 [name] PCIe GEN 5@16x RX/TX`,
+  clocks, temperature, fan, power against the limit, GPU/MEM/ENC/DEC bars), a
+  20 ms board-power trace, ten-minute braille charts of util / VRAM / temperature /
+  power / clock / effective load, the GPU-Z spec column, and nvtop's process table
+  joined with the cpu scan (`PID TYPE GPU GPU MEM CPU HOST MEM Command`) — over
+  nvml-wrapper on its own thread, ≈ 4.3 ms of NVML time per second with the
+  table on, never `pcie_throughput`, never a GPU client itself. Falls back to
+  `nvidia-smi` when the library will not load.
 - **`clock` and `sources` tiles**, the second of which shows every source's
   state, generation, age, drops and restarts.
 - **Themes** `retrowave`, `modern`, `mono` — components never name a colour.
