@@ -23,6 +23,7 @@ pub fn demo_store_at(seed: u64, ticks: usize, detail: gridwatch_store::Detail) -
     let mut synth = demo::CpuSynth::new(seed);
     let mut gpu = demo::GpuSynth::new(seed);
     let mut pins = demo::PinsSynth::new(seed);
+    let mut audio = demo::AudioSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let batch: Batch = synth.tick_at(at, detail);
@@ -37,6 +38,8 @@ pub fn demo_store_at(seed: u64, ticks: usize, detail: gridwatch_store::Detail) -
         for a in tick.alerts {
             store.apply(&Msg::Control(gridwatch_store::ControlMsg::Alert(a)));
         }
+        // The audio synth (arc 5a): silent for its first 1.5 s, then the song.
+        store.apply(&Msg::Batch(audio.tick_at(at)));
     }
     store
 }
