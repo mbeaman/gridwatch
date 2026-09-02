@@ -1,5 +1,6 @@
 # gridwatch built-in theme: terminal — the user's own sixteen colours by name
-# (D52). `default` for the backgrounds keeps the terminal's own; gradients
+# (D52). `default` for the backgrounds *and* the body text keeps the
+# terminal's own pair, so a light palette stays readable (review); gradients
 # step through the palette instead of interpolating (nothing to interpolate).
 [meta]
 name = "terminal"
@@ -12,8 +13,8 @@ surface = "default"
 panel = "default"
 border = "bright-black"
 border_focused = "bright-cyan"
-title = "bright-white"
-text = "white"
+title = "default"
+text = "default"
 text_muted = "bright-black"
 text_ghost = "bright-black"
 cursor = "bright-cyan"

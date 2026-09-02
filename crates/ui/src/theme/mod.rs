@@ -9,7 +9,7 @@ pub use color::{
     ColorMode, contrast_ratio, nearest_16, nearest_256, parse_color, relative_luminance,
 };
 pub use file::{
-    BUILTIN_THEMES, ThemeFile, WCAG_MUTED_MIN, WCAG_TEXT_MIN, build_theme, builtin,
+    BUILTIN_THEMES, ThemeFile, WCAG_MUTED_MIN, WCAG_TEXT_MIN, build_theme, builtin, builtin_file,
     contrast_report, load_builtin, load_theme_file, merge, wcag_warnings,
 };
 pub use gradient::Gradient;

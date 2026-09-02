@@ -175,7 +175,21 @@ pub struct ComponentSect {
 }
 
 pub fn load_theme_file(text: &str) -> Result<ThemeFile, ThemeError> {
-    toml::from_str(text).map_err(|e| ThemeError(e.to_string()))
+    toml::from_str(text).map_err(|e| {
+        // `line:col: message`, like the config loader (§9) — a toast has one
+        // row, not toml's three-line rendering.
+        let at = e
+            .span()
+            .map(|s| {
+                let byte = s.start.min(text.len());
+                let before = &text[..byte];
+                let line = before.matches('\n').count() + 1;
+                let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+                format!("{line}:{col}: ")
+            })
+            .unwrap_or_default();
+        ThemeError(format!("{at}{}", e.message()))
+    })
 }
 
 /// Built-in themes, embedded at compile time (§7).
@@ -248,11 +262,15 @@ pub fn merge(child: &ThemeFile, parent: &ThemeFile) -> ThemeFile {
     for (kind, sect) in &child.components {
         let e = components.entry(kind.clone()).or_default();
         e.gradients.extend(sect.gradients.clone());
-        e.extra = sect.extra.clone();
+        e.extra.extend(sect.extra.clone());
     }
     let (c, p) = (&child.colors, &parent.colors);
     ThemeFile {
-        meta: child.meta.clone(),
+        // `class` selects the performance ceilings: inherited unless set.
+        meta: Meta {
+            class: or(&child.meta.class, &parent.meta.class),
+            ..child.meta.clone()
+        },
         palette,
         colors: ColorsSect {
             bg: or(&c.bg, &p.bg),
@@ -319,6 +337,14 @@ fn check_inherits(file: &ThemeFile, parent: Option<&ThemeFile>) -> Result<(), Th
         (Some(name), None) => Err(ThemeError(format!(
             "'{}' inherits '{name}' but no parent was resolved",
             file.meta.name
+        ))),
+        (Some(name), Some(p)) if p.meta.name == file.meta.name => Err(ThemeError(format!(
+            "'{}' cannot inherit itself ('{name}')",
+            file.meta.name
+        ))),
+        (Some(_), Some(p)) if p.meta.schema != 1 => Err(ThemeError(format!(
+            "parent '{}' has unsupported theme schema {}",
+            p.meta.name, p.meta.schema
         ))),
         (Some(name), Some(p)) => match &p.meta.inherits {
             Some(grand) => Err(ThemeError(format!(
@@ -668,18 +694,32 @@ fn role_key(r: Role) -> &'static str {
     }
 }
 
-/// Load a built-in theme by name at a mode. A built-in may inherit another
-/// built-in (`phosphor-green` inherits `mono`), never a file.
-pub fn load_builtin(name: &str, mode: ColorMode) -> Result<Theme, ThemeError> {
+/// A built-in, **flattened**: a built-in may inherit another built-in
+/// (`phosphor-green` inherits `mono`), and the result is merged here with
+/// `inherits` cleared, so a user file may inherit any built-in — the one
+/// level of `inherits` is the user's (D52).
+pub fn builtin_file(name: &str) -> Result<ThemeFile, ThemeError> {
     let text = builtin(name).ok_or_else(|| ThemeError(format!("no built-in theme '{name}'")))?;
-    let file = load_theme_file(text)?;
-    let parent = match &file.meta.inherits {
-        None => None,
-        Some(p) => Some(load_theme_file(builtin(p).ok_or_else(|| {
+    let mut file =
+        load_theme_file(text).map_err(|e| ThemeError(format!("built-in {name}: {e}")))?;
+    if let Some(p) = file.meta.inherits.clone() {
+        let parent = load_theme_file(builtin(&p).ok_or_else(|| {
             ThemeError(format!(
                 "built-in '{name}' inherits '{p}', which is not a built-in"
             ))
-        })?)?),
-    };
-    build_theme(&file, parent.as_ref(), mode)
+        })?)?;
+        if parent.meta.inherits.is_some() {
+            return Err(ThemeError(format!(
+                "built-in '{name}' inherits '{p}', which inherits in turn — not supported"
+            )));
+        }
+        file = merge(&file, &parent);
+        file.meta.inherits = None;
+    }
+    Ok(file)
+}
+
+/// Load a built-in theme by name at a mode.
+pub fn load_builtin(name: &str, mode: ColorMode) -> Result<Theme, ThemeError> {
+    build_theme(&builtin_file(name)?, None, mode)
 }

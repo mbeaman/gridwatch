@@ -494,20 +494,102 @@ mod loader_v2 {
     fn terminal_theme_uses_the_palette_by_name() {
         let t = load_builtin("terminal", ColorMode::TrueColor).unwrap();
         assert_eq!(t.color(Role::Bg), Color::Reset);
-        assert_eq!(t.color(Role::Text), Color::Gray);
+        assert_eq!(t.color(Role::Text), Color::Reset, "the terminal's own pair");
+        assert_eq!(t.color(Role::TextMuted), Color::DarkGray);
         assert_eq!(t.color(Role::Crit), Color::Red);
         let g = t.gradient(GradientId::Load);
         assert_eq!(g.sample(0.0), Color::Green);
         assert_eq!(g.sample(1.0), Color::Red);
         // Downsampling never touches a named colour; mono blanks it.
         let t16 = load_builtin("terminal", ColorMode::Ansi16).unwrap();
-        assert_eq!(t16.color(Role::Text), Color::Gray);
+        assert_eq!(t16.color(Role::Crit), Color::Red);
         let mono = load_builtin("terminal", ColorMode::Mono).unwrap();
-        assert_eq!(mono.color(Role::Text), Color::Reset);
+        assert_eq!(mono.color(Role::Crit), Color::Reset);
         assert_eq!(
             gridwatch_ui::theme::parse_color("ansi:208").unwrap(),
             Color::Indexed(208)
         );
         assert!(gridwatch_ui::theme::parse_color("ansi:300").is_err());
+    }
+
+    /// A built-in that inherits (phosphor-green → mono) is flattened, so a
+    /// user file may inherit it; `class` is inherited unless set.
+    #[test]
+    fn builtins_are_flattened_and_class_is_inherited() {
+        let parent = gridwatch_ui::theme::builtin_file("phosphor-green").unwrap();
+        assert!(parent.meta.inherits.is_none());
+        let child = load_theme_file(
+            "[meta]\nname = \"dull\"\nschema = 1\ninherits = \"phosphor-green\"\n[colors]\ntext = \"#ffffff\"\n",
+        )
+        .unwrap();
+        let t = build_theme(&child, Some(&parent), ColorMode::TrueColor).unwrap();
+        assert_eq!(t.color(Role::Text), Color::Rgb(255, 255, 255));
+        assert_eq!(t.color(Role::Bg), Color::Rgb(0x0a, 0x0f, 0x0a));
+        assert_eq!(
+            t.widgets.gauge,
+            GaugeStyle::Bar,
+            "mono's, through phosphor-green"
+        );
+        let showcase = load_theme_file(&MODERN.replace(
+            "variant = \"dark\"",
+            "variant = \"dark\"\nclass = \"showcase\"",
+        ))
+        .unwrap();
+        let kid =
+            load_theme_file("[meta]\nname = \"kid\"\nschema = 1\ninherits = \"modern\"\n").unwrap();
+        let t = build_theme(&kid, Some(&showcase), ColorMode::TrueColor).unwrap();
+        assert_eq!(t.class, gridwatch_ui::PerfClass::Showcase);
+        // Self-inheritance is refused by name.
+        let me = load_theme_file("[meta]\nname = \"me\"\nschema = 1\ninherits = \"me\"\n").unwrap();
+        let Err(err) = build_theme(&me, Some(&me), ColorMode::TrueColor) else {
+            panic!("self-inheritance built")
+        };
+        assert!(err.to_string().contains("cannot inherit itself"), "{err}");
+        // A parse error names line and column.
+        let Err(err) = load_theme_file("[meta]\nname = 3\n") else {
+            panic!("parsed")
+        };
+        assert!(err.to_string().starts_with("theme: 2:8: "), "{err}");
+    }
+
+    /// `overlay::dim` really strips BOLD/REVERSED and adds DIM (review: the
+    /// first version used `set_style`, which only adds), and the badge sets
+    /// its own modifiers over whatever it covers.
+    #[test]
+    fn dim_strips_modifiers_and_the_badge_owns_its_style() {
+        use gridwatch_ui::overlay::{dim, stale_badge};
+        use ratatui_core::buffer::Buffer;
+        use ratatui_core::layout::Rect;
+        use ratatui_core::style::{Modifier, Style};
+        let t = load_builtin("terminal", ColorMode::TrueColor).unwrap();
+        let area = Rect::new(0, 0, 20, 2);
+        let mut buf = Buffer::empty(area);
+        buf.set_string(
+            0,
+            0,
+            "PID USER CPU% MEM%  ",
+            Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+        );
+        dim(area, &t, &mut buf);
+        let c = buf.cell((1, 0)).unwrap();
+        assert!(!c.modifier.contains(Modifier::REVERSED));
+        assert!(!c.modifier.contains(Modifier::BOLD));
+        assert!(c.modifier.contains(Modifier::DIM));
+        assert_eq!(c.fg, t.color(Role::TextMuted));
+        buf.set_string(
+            0,
+            1,
+            "header header header",
+            Style::new().add_modifier(Modifier::REVERSED),
+        );
+        stale_badge(837, Rect::new(0, 1, 20, 1), &t, &mut buf);
+        let text: String = (0..20)
+            .map(|x| buf.cell((x, 1)).unwrap().symbol().to_string())
+            .collect();
+        assert!(text.ends_with("STALE 13m"), "{text}");
+        let b = buf.cell((19, 1)).unwrap();
+        assert_eq!(b.modifier, Modifier::BOLD, "no inherited REVERSED");
+        assert_eq!(gridwatch_ui::overlay::stale_age_text(119), "119s");
+        assert_eq!(gridwatch_ui::overlay::stale_age_text(7200), "2h");
     }
 }

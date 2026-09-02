@@ -7,8 +7,8 @@ expression: "gridwatch_ui::testkit::role_swatch(&t)"
 - Panel Reset
 - Border DarkGray
 - BorderFocused LightCyan
-- Title White
-- Text Gray
+- Title Reset
+- Text Reset
 - TextMuted DarkGray
 - TextGhost DarkGray
 - AccentPrimary LightCyan

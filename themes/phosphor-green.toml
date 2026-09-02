@@ -47,14 +47,16 @@ info = "$mint"
 fg = "$void"
 bg = "$neon"
 
+# Every ramp starts at $moss (3.6:1 on $void): a low bar must not sit at the
+# empty track's own level ($ember is text_ghost — review).
 [gradients]
-load = ["$ember", "$moss", "$bright", "$neon", "$mint"]
+load = ["$moss", "$leaf", "$bright", "$neon", "$mint"]
 temp = ["$moss", "$bright", "$neon", "$amber", "$pill"]
 power = ["$moss", "$bright", "$neon", "$mint"]
-mem = ["$ember", "$leaf", "$neon"]
+mem = ["$moss", "$leaf", "$neon"]
 netrx = ["$moss", "$neon"]
 nettx = ["$leaf", "$mint"]
-audio = ["$ember", "$moss", "$bright", "$neon", "$mint", "$paper"]
+audio = ["$moss", "$leaf", "$bright", "$neon", "$mint", "$paper"]
 title = ["$paper", "$mint", "$neon"]
 
 [borders]

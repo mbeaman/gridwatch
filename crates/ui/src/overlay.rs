@@ -111,17 +111,32 @@ pub fn stale_badge(age_s: u64, area: Rect, theme: &Theme, buf: &mut Buffer) {
     if area.height == 0 {
         return;
     }
-    let text = format!("STALE {age_s}s");
+    let text = format!("STALE {}", stale_age_text(age_s));
     let w = text.chars().count() as u16;
     if area.width < w {
         return;
     }
-    buf.set_string(
-        area.x + area.width - w,
-        area.y,
-        &text,
-        theme.style(Role::Warn).add_modifier(Modifier::BOLD),
-    );
+    let x0 = area.x + area.width - w;
+    // An explicit style per cell: `set_string` would keep whatever modifiers
+    // the covered cells had (a REVERSED table header split the badge in two).
+    for (i, ch) in text.chars().enumerate() {
+        if let Some(cell) = buf.cell_mut((x0 + i as u16, area.y)) {
+            cell.set_char(ch);
+            cell.modifier = Modifier::BOLD;
+            cell.set_fg(theme.color(Role::Warn));
+        }
+    }
+}
+
+/// `12s` under two minutes, `14m` after — the age of a stale tile.
+pub fn stale_age_text(age_s: u64) -> String {
+    if age_s < 120 {
+        format!("{age_s}s")
+    } else if age_s < 3600 * 2 {
+        format!("{}m", age_s / 60)
+    } else {
+        format!("{}h", age_s / 3600)
+    }
 }
 
 /// Dim every cell of `area` to `Role::TextMuted` (a stale tile), keeping
@@ -132,13 +147,11 @@ pub fn dim(area: Rect, theme: &Theme, buf: &mut Buffer) {
         for x in area.x..area.x + area.width {
             if let Some(cell) = buf.cell_mut((x, y)) {
                 cell.set_fg(fg);
-                let m = cell.modifier;
-                cell.set_style(
-                    ratatui_core::style::Style::new()
-                        .fg(fg)
-                        .bg(cell.bg)
-                        .add_modifier(m & !(Modifier::BOLD | Modifier::REVERSED)),
-                );
+                // `set_style` only adds; the modifiers are edited directly.
+                // `DIM` gives mono and the terminal palette — where
+                // `TextMuted` may be the same colour as `Text` — a cue too.
+                cell.modifier.remove(Modifier::BOLD | Modifier::REVERSED);
+                cell.modifier.insert(Modifier::DIM);
             }
         }
     }

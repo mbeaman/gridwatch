@@ -46,13 +46,76 @@
       "type": "object",
       "properties": {
         "accent": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "primary": {
+              "$ref": "#/$defs/color"
+            },
+            "secondary": {
+              "$ref": "#/$defs/color"
+            },
+            "tertiary": {
+              "$ref": "#/$defs/color"
+            }
+          }
         },
         "severity": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "ok": {
+              "$ref": "#/$defs/color"
+            },
+            "warn": {
+              "$ref": "#/$defs/color"
+            },
+            "crit": {
+              "$ref": "#/$defs/color"
+            },
+            "info": {
+              "$ref": "#/$defs/color"
+            }
+          }
         },
         "selection": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "fg": {
+              "$ref": "#/$defs/color"
+            },
+            "bg": {
+              "$ref": "#/$defs/color"
+            }
+          }
+        },
+        "bg": {
+          "$ref": "#/$defs/color"
+        },
+        "surface": {
+          "$ref": "#/$defs/color"
+        },
+        "panel": {
+          "$ref": "#/$defs/color"
+        },
+        "border": {
+          "$ref": "#/$defs/color"
+        },
+        "border_focused": {
+          "$ref": "#/$defs/color"
+        },
+        "title": {
+          "$ref": "#/$defs/color"
+        },
+        "text": {
+          "$ref": "#/$defs/color"
+        },
+        "text_muted": {
+          "$ref": "#/$defs/color"
+        },
+        "text_ghost": {
+          "$ref": "#/$defs/color"
+        },
+        "cursor": {
+          "$ref": "#/$defs/color"
         }
       }
     },
