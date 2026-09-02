@@ -196,8 +196,9 @@ pub fn pump<R: Read>(
         }
         let whole = bytes.len() / 4 * 4;
         let before = total;
-        for c in bytes[..whole].chunks_exact(4) {
-            let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+        let (chunks, _) = bytes[..whole].as_chunks::<4>();
+        for c in chunks {
+            let v = f32::from_le_bytes(*c);
             if ring.push(v).is_ok() {
                 total += 1;
             }
