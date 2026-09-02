@@ -14,6 +14,8 @@ pub mod htop;
 #[cfg(feature = "pins")]
 pub mod pins;
 pub mod registry;
+#[cfg(feature = "sensors")]
+pub mod sensors;
 pub mod sources_tile;
 
 pub use registry::builtin_components;

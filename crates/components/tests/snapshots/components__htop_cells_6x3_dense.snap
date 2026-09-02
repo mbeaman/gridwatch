@@ -1,12 +1,13 @@
 ---
 source: crates/components/tests/components.rs
+assertion_line: 220
 expression: "gridwatch_ui::dump::cells(&buf)"
 ---
 [#a6adc8/-/NONE]CPU[-/-/NONE] [#a6adc8/-/NONE][[#a6e3a1/-/NONE]||||||||||||||||[#f38ba8/-/NONE]|||||[#313244/-/NONE]                          [#a6adc8/-/NONE]][-/-/NONE] [#cdd6f4/-/NONE]44.6%
 [#a6adc8/-/NONE]MEM[-/-/NONE] [#a6adc8/-/NONE][[#a6e3a1/-/NONE]|||||||[#89b4fa/-/NONE]|[#f9e2af/-/NONE]|||||||||[#313244/-/NONE]                        [#a6adc8/-/NONE]][-/-/NONE] [#cdd6f4/-/NONE]17.6G/91.0G
 [#a6adc8/-/NONE]SWP[-/-/NONE] [#a6adc8/-/NONE][[#313244/-/NONE]                                         [#a6adc8/-/NONE]][-/-/NONE] [#cdd6f4/-/NONE]0.00K/16.0G
 [#cdd6f4/-/NONE]207, 1792 thr, 431 kthr; 4 running[#313244/-/NONE] · [#a6adc8/-/NONE]load [#cdd6f4/-/NONE]4.57 4.25 3.57[-/-/NONE]   
-[#94e2d5/-/BOLD]CCD0[#313244/-/NONE]  [#a6adc8/-/NONE]4.9 GHz[#313244/-/NONE]  [#a6adc8/-/NONE]62.3 °C[-/-/NONE]       [#94e2d5/-/BOLD]CCD1[#313244/-/NONE]  [#a6adc8/-/NONE]5.4 GHz[#313244/-/NONE]  [#a6adc8/-/NONE]55.3 °C[-/-/NONE]        
+[#94e2d5/-/BOLD]CCD0[#313244/-/NONE]  [#a6adc8/-/NONE]4.9 GHz[#313244/-/NONE]  [#a6adc8/-/NONE]50.2 °C[-/-/NONE]       [#94e2d5/-/BOLD]CCD1[#313244/-/NONE]  [#a6adc8/-/NONE]5.4 GHz[#313244/-/NONE]  [#a6adc8/-/NONE]48.0 °C[-/-/NONE]        
 [-/-/NONE]       [#f69e99/-/NONE]▂[-/-/NONE]          [#f5989e/-/NONE]▃[-/-/NONE]                                        
 [#fab78a/-/NONE]▁[#fab588/-/NONE]▂[-/-/NONE] [#f9ad8c/-/NONE]▅[#f7a495/-/NONE]█[-/-/NONE] [#f9ad8c/-/NONE]▅[#f69e99/-/NONE]█[-/-/NONE] [#f7a495/-/NONE]█[#f9af8a/-/NONE]▄[-/-/NONE]  [#f7a495/-/NONE]█[-/-/NONE]  [#f7a296/-/NONE]█[-/-/NONE] [#f5989e/-/NONE]█[#f7a693/-/NONE]▇[-/-/NONE] [#f9af8a/-/NONE]▄[#f8a990/-/NONE]▆[-/-/NONE]                                    
 [#fab78a/-/NONE]█[#fab588/-/NONE]█[-/-/NONE] [#f9ad8c/-/NONE]█[#f7a495/-/NONE]█[-/-/NONE] [#f9ad8c/-/NONE]█[#f69e99/-/NONE]█[-/-/NONE] [#f7a495/-/NONE]█[#f9af8a/-/NONE]█[-/-/NONE] [#fac092/-/NONE]▇[#f7a495/-/NONE]█[-/-/NONE] [#fabe90/-/NONE]█[#f7a296/-/NONE]█[-/-/NONE] [#f5989e/-/NONE]█[#f7a693/-/NONE]█[-/-/NONE] [#f9af8a/-/NONE]█[#f8a990/-/NONE]█[-/-/NONE]                                    

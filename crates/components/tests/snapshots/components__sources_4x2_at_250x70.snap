@@ -1,6 +1,6 @@
 ---
 source: crates/components/tests/components.rs
-assertion_line: 76
+assertion_line: 81
 expression: "view_snapshot(s.as_mut(), &store, &th, size)"
 ---
 size: 80x20
@@ -44,6 +44,13 @@ view:
         - "0"
         - "0"
         - read 4.0 ms · ≤2 tx/s
+      - - sensors
+        - starting
+        - "3"
+        - 0s
+        - "0"
+        - "0"
+        - walk 0.6 ms
     scroll: 0
     selected: ~
     sort: ~

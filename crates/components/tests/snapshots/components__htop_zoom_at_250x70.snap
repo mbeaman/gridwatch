@@ -1,5 +1,6 @@
 ---
 source: crates/components/tests/components.rs
+assertion_line: 88
 expression: "view_snapshot(h.as_mut(), &history, &th, size)"
 ---
 size: 248x66
@@ -263,7 +264,7 @@ view:
                                         s: "  "
                                       - bold: false
                                         role: TextMuted
-                                        s: 62.3 °C
+                                        s: 50.2 °C
                               - - Fill(1)
                                 - bars:
                                     gradient: Load
@@ -382,7 +383,7 @@ view:
                                         s: "  "
                                       - bold: false
                                         role: TextMuted
-                                        s: 55.3 °C
+                                        s: 48.0 °C
                               - - Fill(1)
                                 - bars:
                                     gradient: Load

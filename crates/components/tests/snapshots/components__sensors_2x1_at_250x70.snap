@@ -1,0 +1,58 @@
+---
+source: crates/components/tests/components.rs
+assertion_line: 117
+expression: "view_snapshot(se.as_mut(), &history, &th, size)"
+---
+size: 38x8
+tier: strip
+view:
+  stack:
+    children:
+      - - Len(2)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "spd5118 "
+              - bold: true
+                role: Text
+                s: 41°
+              - bold: false
+                role: TextMuted
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: "spd5118#2 "
+              - bold: true
+                role: Text
+                s: 41°
+              - bold: false
+                role: TextMuted
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: "nvme "
+              - bold: true
+                role: Text
+                s: 50°
+            - - bold: false
+                role: TextMuted
+                s: "nvme#2 "
+              - bold: true
+                role: Text
+                s: 47°
+              - bold: false
+                role: TextMuted
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: "nvme#3 "
+              - bold: true
+                role: Text
+                s: 37°
+      - - Len(1)
+        - gauge:
+            gradient: Temp
+            label: spd5118 temp1
+            text: 41° / max 55°
+            value: 0.7431818246841431
+    dir: V

@@ -17,11 +17,12 @@ toml.workspace = true
 [features]
 # One feature per component (WORKSPACE.md §15, D47 seam 5); `clock` and
 # `sources` are always built. `gpu` is declared now, its module lands in 2b.
-default = ["htop", "gpu", "pins", "audio"]
+default = ["htop", "gpu", "pins", "audio", "sensors"]
 htop = []
 gpu = []
 pins = []
 audio = []
+sensors = []
 
 [dev-dependencies]
 gridwatch-ui = { workspace = true, features = ["testkit"] }

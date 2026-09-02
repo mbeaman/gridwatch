@@ -106,6 +106,15 @@ fn note(cx: &RenderCx<'_>, s: &gridwatch_store::SourceOverview<'_>) -> String {
         }
         out.push_str(&format!("dsp {ms:.1} ms"));
     }
+    // The sensors source's hwmon walk (arc 5b): `walk 0.4 ms`.
+    if s.id == gridwatch_store::keys::sensors::SOURCE
+        && let Some((_, ms)) = cx.store.last(&gridwatch_store::keys::sensors::WALK_MS)
+    {
+        if !out.is_empty() {
+            out.push_str(" · ");
+        }
+        out.push_str(&format!("walk {ms:.1} ms"));
+    }
     // The pins source's read cost and transactions per second (P14's
     // evidence): one block read is one transaction, at the sample cadence.
     if s.id == gridwatch_store::keys::pins::SOURCE

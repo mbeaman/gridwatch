@@ -1,0 +1,93 @@
+---
+source: crates/components/tests/components.rs
+assertion_line: 117
+expression: "view_snapshot(se.as_mut(), &history, &th, size)"
+---
+size: 59x18
+tier: table
+view:
+  stack:
+    children:
+      - - Fill(1)
+        - table:
+            columns:
+              - chip
+              - sensor
+              - value
+              - max
+              - of max
+            rows:
+              - - spd5118
+                - temp1
+                - 40.9°C
+                - 55°
+                - " 74 %"
+              - - "spd5118#2"
+                - temp1
+                - 40.6°C
+                - 55°
+                - " 74 %"
+              - - nvme
+                - Composite
+                - 50.1°C
+                - 82°
+                - " 61 %"
+              - - "nvme#2"
+                - Composite
+                - 46.8°C
+                - 84°
+                - " 56 %"
+              - - "nvme#3"
+                - Composite
+                - 37.2°C
+                - 75°
+                - " 50 %"
+              - - "r8169_0_c00:00"
+                - temp1
+                - 55.2°C
+                - 110°
+                - " 50 %"
+              - - "r8169_0_b00:00"
+                - temp1
+                - 58.2°C
+                - 120°
+                - " 49 %"
+              - - k10temp
+                - Tctl
+                - 52.9°C
+                - —
+                - ""
+              - - nvme
+                - Sensor 2
+                - 52.8°C
+                - —
+                - ""
+              - - nvme
+                - Sensor 1
+                - 51.4°C
+                - —
+                - ""
+              - - mt7925_phy0
+                - temp1
+                - 50.6°C
+                - —
+                - ""
+              - - k10temp
+                - Tccd1
+                - 50.2°C
+                - —
+                - ""
+              - - k10temp
+                - Tccd2
+                - 48.0°C
+                - —
+                - ""
+            scroll: 0
+            selected: ~
+            sort: ~
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "RAPL: needs a udev rule — see doctor"
+    dir: V
