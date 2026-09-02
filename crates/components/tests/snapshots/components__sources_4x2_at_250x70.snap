@@ -1,6 +1,6 @@
 ---
 source: crates/components/tests/components.rs
-assertion_line: 88
+assertion_line: 92
 expression: "view_snapshot(s.as_mut(), &store, &th, size)"
 ---
 size: 80x20
@@ -50,7 +50,7 @@ view:
         - 0s
         - "0"
         - "0"
-        - ""
+        - scan 3.0 ms · 87/103 attributed
       - - pins
         - starting
         - "3"

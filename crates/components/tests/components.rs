@@ -43,10 +43,14 @@ fn winamp() -> Box<dyn Component> {
     Box::new(gridwatch_components::winamp::Winamp::default())
 }
 
+fn net() -> Box<dyn Component> {
+    Box::new(gridwatch_components::net::Net::default())
+}
+
 #[test]
 fn tiers_are_well_formed() {
     for mk in [
-        clock, sources, htop, gpu, pins, alerts, audio, sensors, winamp,
+        clock, sources, htop, gpu, pins, alerts, audio, sensors, winamp, net,
     ] {
         let c = mk();
         assert_tiers_well_formed(c.tiers());

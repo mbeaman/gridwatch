@@ -11,6 +11,8 @@ pub mod clock;
 pub mod gpu;
 #[cfg(feature = "htop")]
 pub mod htop;
+#[cfg(feature = "net")]
+pub mod net;
 #[cfg(feature = "pins")]
 pub mod pins;
 pub mod registry;

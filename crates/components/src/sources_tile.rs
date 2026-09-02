@@ -106,6 +106,18 @@ fn note(cx: &RenderCx<'_>, s: &gridwatch_store::SourceOverview<'_>) -> String {
         }
         out.push_str(&format!("dsp {ms:.1} ms"));
     }
+    // The net source's connection scan (arc 7): `scan 3.2 ms`.
+    if s.id == gridwatch_store::keys::net::SOURCE {
+        if let Some((_, ms)) = cx.store.last(&gridwatch_store::keys::net::SCAN_MS) {
+            if !out.is_empty() {
+                out.push_str(" · ");
+            }
+            out.push_str(&format!("scan {ms:.1} ms"));
+        }
+        if let Some((_, c)) = cx.store.record(&gridwatch_store::keys::net::CONNS) {
+            out.push_str(&format!(" · {}/{} attributed", c.attributed, c.scanned));
+        }
+    }
     // The sensors source's hwmon walk (arc 5b): `walk 0.4 ms`.
     if s.id == gridwatch_store::keys::sensors::SOURCE
         && let Some((_, ms)) = cx.store.last(&gridwatch_store::keys::sensors::WALK_MS)
