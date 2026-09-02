@@ -48,8 +48,10 @@ is the one row of this arc a machine cannot tick for itself.
 | `mono` | quiet | no colour at all — the real theme `NO_COLOR` loads, because crossterm 0.29 emits no colour SGR in that mode | severity survives as glyph + `BOLD`/`REVERSED` |
 | `terminal` | quiet | the terminal's own sixteen colours by name (`red`, `bright-cyan`, …) with `default` backgrounds — whatever palette Ptyxis is set to, gridwatch wears it (arc 3b, D52) | gradients *step* through named stops (nothing to interpolate); the WCAG gate cannot judge it and says nothing |
 | `phosphor-green` | quiet | one P1-phosphor hue on near black, roles as luminance steps; `inherits = "mono"` for its glyph/border/title/widget tables and paints everything itself (arc 3b, D52) | text 16.7:1, muted 4.3:1 on the panel; `plain` borders, `double` when focused |
+| `phosphor-amber` | quiet | the P3 phosphor: one amber hue (`#ffb000` on `#100c00`), roles as luminance steps; `inherits = "phosphor-green"` (flattened through mono) and re-paints everything (arc 4b, D54) | text 14:1, muted 4.6:1 on the panel |
+| `matrix` | **showcase** | the rain-lit renderer (D28/D31/D34): the finished frame is a mold and the falling katakana rain is the only thing that draws it — modules fade to black between falls, a dense sweep re-prints the page every 20 s, changed values re-light at once; the focused tile, alerting tiles, the banner, toasts and the key bar are always lit; `V` re-lights the page, `L` locks everything lit; frozen on focus loss and pause; a governor steps fps → density → sweep → gutters-only when the terminal cannot keep up (arc 4b, D54) | `class = "showcase"` (the S-ceilings apply while focused), `[ambient]`, a ninth `rain` gradient, `[glyphs] rain = "katakana"` (Noto Sans Mono CJK JP on torch — the glyph check row is Matt's), `[effects]` hooks |
 
-`phosphor-amber` and the showcase-class `matrix` arrive in arc 4.
+Every built-in is in the `t` cycle in this order: retrowave, modern, mono, terminal, phosphor-green, phosphor-amber, matrix.
 
 ## Loader v2 (arc 3b, D52)
 
@@ -58,6 +60,13 @@ is the one row of this arc a machine cannot tick for itself.
 - **Colour values:** `#rrggbb`, `default`, the sixteen names (`black red green yellow blue magenta cyan white`, each also `bright-…`), `ansi:N`, and `$palette` references.
 - **The WCAG gate** warns at load — toasted at start, in the log, and in full with `gridwatch config check --theme NAME` — when `text` on `panel` or `surface` is below 4.5:1 or `text_muted` below 3:1. `text_ghost` is the decorative role (the empty-bar fill and the gauge track are drawn in it) and has no floor; never put a label in it (arc 1b review).
 - **Hot reload:** a `.toml` theme and the sibling it inherits are watched once per second; `T` reloads on demand; a broken file keeps the old theme and toasts why.
+
+## Effects, flourishes, the ambient layer (arc 4b, D54)
+
+- **`[effects]`** — hooks `startup`, `theme_swap`, `focus`, `alert`, each `{ kind, duration_ms, motion?, lightness?, period_ms?, target? }`. Kinds this build maps to tachyonfx: `sweep_in` (startup; `motion = left_to_right | right_to_left | up_to_down | down_to_up`), `fade_in` (startup), `fade` (theme_swap: from the old theme's colours; focus: from the focused border colour over the tile), `dissolve` (theme_swap: the new frame coalesces), `hsl_pulse` (alert: the banner row's lightness pulses by `lightness` every `period_ms`; while a theme declares it, the 3a heartbeat reverse is off). Event effects are bounded to 600 ms and area-scoped. `[effects] budget_ms` in `config.toml` (default 4) is a watchdog: a 60-frame average above it switches effects off for the run, once, with a toast. `--no-effects` or `[effects] enabled = false` short-circuits everything, the ambient layer included. Unknown kinds warn at load.
+- **`[flourish]`** — `grid_floor` and `sun` draw perspective lines and a stacked-block sun in the page's **empty units** (never over a tile; nothing in stack mode); `big_clock = { pixel = "quadrant" | "sextant" | "full" }` overrides the clock kind's `big_number`; `marquee` is arc 6's. On in `retrowave` only.
+- **`[contrast] autofix = true`** — lifts `text` / `text_muted` toward their WCAG floor in Oklab lightness steps at load, each fix a warning. Off by default; no shipped theme turns it on.
+- **`[ambient]`** (showcase class only, with a `rain` gradient) — `kind = "matrix_rain"`, `fps`, `density`, `speed`, `reveal`, `reveal_ms`, `governor`, and `[ambient.light]` `fade_s`, `trail_ms`, `sweep_s`, `head`, `floor`, `relight_on_update`. D35 (12) reserved these numbers for tuning; change them with a D-entry line, never the pins or the freeze rule.
 
 ## What a theme may decide (and what it may not)
 
@@ -69,6 +78,6 @@ why the htop tile looks like htop in every theme without naming a single colour
 — its CPU meter asks for `Ok`, `Crit`, `AccentTertiary` and `Info`, and each
 theme answers in its own palette.
 
-Role swatches for all five built-ins are pinned by
+Role swatches for all seven built-ins are pinned by
 `crates/ui/tests/ui.rs::role_swatches_pin_the_palettes`, so a palette edit shows
 up as a reviewable diff rather than a surprise on screen.

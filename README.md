@@ -2,7 +2,7 @@
 
 A modular, themeable ops dashboard for the terminal — a grid of components that each render from a 1x1 tile to full screen, in themes like `retrowave` and `modern`, reproducing the behaviour of htop, nvtop and [astral-watch](https://github.com/mbeaman/astral-watch) alongside network, audio-visualizer and Winamp-style now-playing tiles. Rust + ratatui 0.30, built for a single Linux workstation first.
 
-**Status:** arc 1 (`v0.1.0`) — the grid lights up — and arc 2 (`v0.2.0`, untagged): the core seam, the 12×6 layout engine, three themes, the cpu source with htop's meters, CCD core bars and the top-N process table, **the gpu source over NVML with nvtop's header, ten-minute charts and GPU process table**, journal record/replay, CI-regenerated screenshots — and arc 3: **the astral-watch pins tile with the cross-page alert banner**, hot reload of the config files and themes, the theme loader v2 with `terminal` and `phosphor-green`, `STALE` badges and `gridwatch doctor`. Network, audio and Winamp follow (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+**Status:** arc 1 (`v0.1.0`) — the grid lights up — and arc 2 (`v0.2.0`, untagged): the core seam, the 12×6 layout engine, three themes, the cpu source with htop's meters, CCD core bars and the top-N process table, **the gpu source over NVML with nvtop's header, ten-minute charts and GPU process table**, journal record/replay, CI-regenerated screenshots — and arc 3: **the astral-watch pins tile with the cross-page alert banner**, hot reload of the config files and themes, the theme loader v2 with `terminal`, `phosphor-green` and `phosphor-amber`, `STALE` badges and `gridwatch doctor`, in-app layout editing, tachyonfx effects, and **`matrix`** — the showcase theme whose rain prints the dashboard (`--theme matrix`). Network, audio and Winamp follow (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 
 [![the Overview at 250×70 in retrowave](docs/img/overview-retrowave.svg)](docs/img/overview-retrowave.svg)
 
@@ -55,6 +55,8 @@ A modular, themeable ops dashboard for the terminal — a grid of components tha
 ```sh
 cargo run --release                 # live: the Overview against this machine
 cargo run --release -- run --demo   # synthetic data, no hardware needed
+cargo run --release -- run --demo --theme matrix   # the rain-lit showcase theme (V re-lights, L locks lit)
+cargo run --release -- run --no-effects            # no theme effects, no rain (P20)
 cargo run --release -- shot --format ansi --size 250x70 --theme retrowave
 cargo run --release -- run --record session.jsonl      # journal every message (tables off; --tables on, --record-input)
 cargo run --release -- run --replay session.jsonl --speed 4   # replay it; nothing downstream can tell
@@ -70,7 +72,7 @@ Keys: `1`–`9` pages, `Tab`/`hjkl` focus, `Enter` capture (then, in the cpu and
 `↑/↓ PgUp/PgDn Home/End` select, `<`/`>`/`F6` sort, `I` invert; in the gpu tile `1`–`6`
 toggle chart series and `r` reverses them; in the pins tile `p` freezes, `r` resets
 peaks, `+`/`-` change the interval), `a` ack the alert banner, `A` alerts, `z` zoom, `d` dense,
-`t` cycle theme, `T` reload theme, `space` pause, `r` pause/resume a `--record`, `e` edit the layout and `Esc`/`e` leave it (`HJKL` move, `Ctrl-hjkl` resize, `s` footprint, `S`+dir swap, `a` add, `x` remove, `u`/`Ctrl-r` undo, `w` save `layout.toml`, drag with the mouse), `F12` stats HUD, `?` help,
+`t` cycle theme, `T` reload theme, `space` pause, `r` pause/resume a `--record`, `e` edit the layout and `Esc`/`e` leave it (`HJKL` move, `Ctrl-hjkl` resize, `s` footprint, `S`+dir swap, `a` add, `x` remove, `u`/`Ctrl-r` undo, `w` save `layout.toml`, drag with the mouse), `V` re-light / `L` lock lit (matrix), `F12` stats HUD, `?` help,
 `q` (or `Ctrl-q`) quit.
 
 ## What is here today
