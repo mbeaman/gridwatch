@@ -70,7 +70,7 @@ Keys: `1`–`9` pages, `Tab`/`hjkl` focus, `Enter` capture (then, in the cpu and
 `↑/↓ PgUp/PgDn Home/End` select, `<`/`>`/`F6` sort, `I` invert; in the gpu tile `1`–`6`
 toggle chart series and `r` reverses them; in the pins tile `p` freezes, `r` resets
 peaks, `+`/`-` change the interval), `a` ack the alert banner, `A` alerts, `z` zoom, `d` dense,
-`t` cycle theme, `T` reload theme, `space` pause, `r` pause/resume a `--record`, `F12` stats HUD, `?` help,
+`t` cycle theme, `T` reload theme, `space` pause, `r` pause/resume a `--record`, `e` edit the layout (`HJKL` move, `Ctrl-hjkl` resize, `s` footprint, `S`+dir swap, `a` add, `x` remove, `u`/`Ctrl-r` undo, `w` save `layout.toml`, drag with the mouse), `F12` stats HUD, `?` help,
 `q` (or `Ctrl-q`) quit.
 
 ## What is here today
