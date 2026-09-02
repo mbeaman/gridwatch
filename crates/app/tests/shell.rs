@@ -1821,3 +1821,148 @@ fn lock_keeps_rain_in_gutters_and_flourishes_stay_in_holes() {
         assert!(art > 0, "no flourish in the hole at {w}x{h}");
     }
 }
+
+// ───────────────────── arc 5a: seam 5, the Animated plumbing ─────────────────────
+
+/// A visible audio tile with sound makes the shell animate at the tile's fps
+/// (capped by `fps_max`); a silent, settled tile drops the cause; `FocusLost`
+/// drops the rate to `unfocused_fps`.
+#[test]
+fn an_animated_tile_drives_the_frame_rate_and_silence_drops_it() {
+    use gridwatch_store::keys::audio;
+    let mut sh = shell_with_theme(config::DEFAULT_LAYOUT, 2, "mono");
+    assert!(!sh.animated_visible(), "nothing drawn yet");
+    let _ = shot_frame(&mut sh, 250, 70);
+    assert!(sh.animated_visible(), "the audio tile is drawn with sound");
+    assert_eq!(sh.effective_fps(), 30, "the tile's fps");
+    // Unfocused: the throttle wins whatever animates.
+    sh.handle_input(InputEvent::FocusLost);
+    let _ = shot_frame(&mut sh, 250, 70);
+    assert_eq!(sh.effective_fps(), 2);
+    sh.handle_input(InputEvent::FocusGained);
+    // Silence: the level Record says so and the bands are zeros; the
+    // ballistics decay on the run clock, then the cause drops.
+    let at = Ts(sh.store.latest().0 + 1);
+    let zeros: gridwatch_store::Vec32 = std::sync::Arc::from(vec![0f32; audio::BANDS]);
+    sh.store.apply(&Msg::Batch(gridwatch_store::Batch {
+        source: audio::SOURCE,
+        at,
+        samples: vec![
+            gridwatch_store::Sample {
+                id: audio::BANDS_KEY.idx(0).id,
+                datum: gridwatch_store::Datum::Vector(zeros.clone()),
+            },
+            gridwatch_store::Sample {
+                id: audio::BANDS_KEY.idx(1).id,
+                datum: gridwatch_store::Datum::Vector(zeros),
+            },
+            gridwatch_store::Sample {
+                id: audio::LEVEL.id.clone(),
+                datum: gridwatch_store::Datum::Record(std::sync::Arc::new(audio::AudioLevel {
+                    silent: true,
+                    since: at,
+                })),
+            },
+        ],
+    }));
+    let mut t = at;
+    for _ in 0..200 {
+        t = Ts(t.0 + 33_000_000);
+        sh.set_clock(t);
+        let _ = shot_frame(&mut sh, 250, 70);
+    }
+    assert!(!sh.animated_visible(), "silent and settled");
+    // The cap: a config with `fps_max = 20` holds a 30 fps tile at 20.
+    let cfg = config::DEFAULT_CONFIG.replace("fps_max = 60", "fps_max = 20");
+    assert!(
+        cfg.contains("fps_max = 20"),
+        "the default config names fps_max"
+    );
+    let loaded = config::load_texts(&cfg, config::DEFAULT_LAYOUT).unwrap();
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    let theme = load_builtin("mono", ColorMode::TrueColor).unwrap();
+    let mut capped = Shell::new(
+        reg,
+        &loaded,
+        theme,
+        probe::probe(),
+        0,
+        Clock::new_virtual(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        false,
+    );
+    capped.set_page(1);
+    gridwatch_app::feed_synth(&mut capped, 42, 40);
+    let _ = shot_frame(&mut capped, 250, 70);
+    assert!(capped.animated_visible());
+    assert_eq!(capped.effective_fps(), 20, "capped by fps_max");
+}
+
+/// The animation-frame term re-renders the animated tile every frame while a
+/// quiet neighbour's cache holds: the audio tile's cells change between two
+/// consecutive frames on the run clock, the clock tile's do not.
+#[test]
+fn the_cache_re_renders_only_the_animated_tile() {
+    use gridwatch_store::keys::audio;
+    let mut sh = shell_with_theme(config::DEFAULT_LAYOUT, 2, "mono");
+    let _ = shot_frame(&mut sh, 250, 70);
+    // The bands drop to zero (not silent): the bars fall on the run clock
+    // over the next frames with no further batch — only the tick's clock
+    // and the cache's animation term can make consecutive frames differ.
+    let at = Ts(sh.store.latest().0 + 1);
+    let zeros: gridwatch_store::Vec32 = std::sync::Arc::from(vec![0f32; audio::BANDS]);
+    sh.store.apply(&Msg::Batch(gridwatch_store::Batch {
+        source: audio::SOURCE,
+        at,
+        samples: vec![
+            gridwatch_store::Sample {
+                id: audio::BANDS_KEY.idx(0).id,
+                datum: gridwatch_store::Datum::Vector(zeros.clone()),
+            },
+            gridwatch_store::Sample {
+                id: audio::BANDS_KEY.idx(1).id,
+                datum: gridwatch_store::Datum::Vector(zeros),
+            },
+        ],
+    }));
+    sh.set_clock(Ts(at.0 + 33_000_000));
+    let a = shot_frame(&mut sh, 250, 70);
+    // Two seconds on (a tick advances at most 0.5 s): the caps have fallen
+    // to the floor and the bars are gone.
+    let mut b = a.clone();
+    for i in 1..=4u64 {
+        sh.set_clock(Ts(at.0 + 33_000_000 + i * 500_000_000));
+        b = shot_frame(&mut sh, 250, 70);
+    }
+    let tile = |f: &ratatui::buffer::Buffer| -> String {
+        (1..21u16)
+            .map(|y| {
+                (124..248u16)
+                    .map(|x| f.cell((x, y)).unwrap().symbol().to_string())
+                    .collect::<String>()
+                    + "\n"
+            })
+            .collect()
+    };
+    assert_ne!(
+        tile(&a),
+        tile(&b),
+        "the audio tile moved between frames:\n{}",
+        tile(&a)
+    );
+    // The winamp placeholder tile (left half of the row) is byte-identical.
+    let row = |f: &ratatui::buffer::Buffer, y: u16| -> String {
+        (0..60u16)
+            .map(|x| f.cell((x, y)).unwrap().symbol().to_string())
+            .collect()
+    };
+    for y in 1..20u16 {
+        assert_eq!(
+            row(&a, y),
+            row(&b, y),
+            "a quiet tile re-rendered at row {y}"
+        );
+    }
+}

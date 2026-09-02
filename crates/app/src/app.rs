@@ -668,11 +668,40 @@ impl Shell {
 
     pub fn set_page(&mut self, p: usize) {
         if p < self.pages.len() {
+            let from = self.page;
             self.page = p;
             self.zoom = None;
             self.focus = Some(0);
             self.stack_scroll = 0;
             self.cache.clear();
+            if from != p {
+                self.notify_visibility(from, false);
+                self.notify_visibility(p, true);
+            }
+        }
+    }
+
+    /// `Component::on_visibility` for every instance placed on a page
+    /// (arc 5a, D55 amendment 18): a picker closes when its page is left.
+    fn notify_visibility(&mut self, page: usize, visible: bool) {
+        let keys: Vec<String> = self
+            .pages
+            .get(page)
+            .map(|pg| {
+                pg.place
+                    .iter()
+                    .map(|pl| self.instance_key(&pl.target))
+                    .collect()
+            })
+            .unwrap_or_default();
+        for k in keys {
+            if let Some(c) = self
+                .instances
+                .get_mut(&k)
+                .and_then(|i| i.component.as_mut())
+            {
+                c.on_visibility(visible);
+            }
         }
     }
 
@@ -1435,6 +1464,11 @@ impl Shell {
             self.focus == Some(cell.index) && self.zoom.is_none() || self.zoom == Some(cell.index);
         let theme_name = self.theme.name.clone();
         let now = self.store.latest();
+        // Ticks run on the run clock (virtual under replay), so an animated
+        // tile's ballistics advance at its fps, not at the batch cadence
+        // (review, D55 amendment 14); the render context keeps the store's
+        // time for ages and wall-clock text.
+        let tick_now = self.now();
         let wall = SystemTime::UNIX_EPOCH + Duration::from_nanos(wall_ns(&self.clock));
 
         // An id no [[components]] entry defines: chip, never a silent hole (§6).
@@ -1466,7 +1500,7 @@ impl Shell {
             let inst = &self.instances[&key];
             let tick_cx = gridwatch_ui::component::TickCx {
                 store: &self.store,
-                now,
+                now: tick_now,
                 visible: true,
                 tier: 0,
             };
@@ -1569,7 +1603,7 @@ impl Shell {
         let viewed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let tick_cx = gridwatch_ui::component::TickCx {
                 store: &self.store,
-                now,
+                now: tick_now,
                 visible: true,
                 tier,
             };
@@ -1780,8 +1814,10 @@ impl Shell {
                 .store
                 .record(&gridwatch_store::keys::audio::LEVEL)
                 .is_some_and(|(_, l)| l.silent);
+            // Silent: 3 × max(period, 1 s) — one dropped 500 ms tick must
+            // not flicker the badge (review).
             return Some(if silent {
-                fps.max(Duration::from_millis(500))
+                fps.max(Duration::from_secs(1))
             } else {
                 fps
             });
@@ -1897,8 +1933,13 @@ impl Shell {
             return self.edit_key(k);
         }
         if self.captured {
+            // The component sees `Esc` first (a picker closes on it —
+            // review: the shell released capture and the picker stayed);
+            // only an ignored `Esc` releases the capture.
             if k.code == KeyCode::Esc {
-                self.captured = false;
+                if !self.forward_key(k) {
+                    self.captured = false;
+                }
                 return true;
             }
             return self.forward_key(k);
