@@ -1716,7 +1716,7 @@ fn frozen_matrix_still_shows_toasts_pages_and_new_alerts() {
     sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('2'))));
     let text = page_text(&mut sh, 250, 70);
     assert!(
-        text.contains(" 2 audio ") && text.contains("winamp"),
+        text.contains(" 2 audio ") && text.contains("now playing"),
         "{text}"
     );
     sh.apply_control(ControlMsg::Alert(AlertEvent {
@@ -1841,7 +1841,8 @@ fn an_animated_tile_drives_the_frame_rate_and_silence_drops_it() {
     assert_eq!(sh.effective_fps(), 2);
     sh.handle_input(InputEvent::FocusGained);
     // Silence: the level Record says so and the bands are zeros; the
-    // ballistics decay on the run clock, then the cause drops.
+    // ballistics decay on the run clock, then the cause drops. The winamp
+    // tile on the same page animates too (arc 6), so its player stops.
     let at = Ts(sh.store.latest().0 + 1);
     let zeros: gridwatch_store::Vec32 = std::sync::Arc::from(vec![0f32; audio::BANDS]);
     sh.store.apply(&Msg::Batch(gridwatch_store::Batch {
@@ -1864,6 +1865,19 @@ fn an_animated_tile_drives_the_frame_rate_and_silence_drops_it() {
                 })),
             },
         ],
+    }));
+    sh.store.apply(&Msg::Batch(gridwatch_store::Batch {
+        source: gridwatch_store::keys::media::SOURCE,
+        at,
+        samples: vec![gridwatch_store::Sample {
+            id: gridwatch_store::keys::media::NOW.id.clone(),
+            datum: gridwatch_store::Datum::Record(std::sync::Arc::new(
+                gridwatch_store::keys::media::NowPlaying {
+                    status: gridwatch_store::keys::media::PlayStatus::Paused,
+                    ..gridwatch_store::demo::MediaSynth::now_at(at)
+                },
+            )),
+        }],
     }));
     let mut t = at;
     for _ in 0..200 {

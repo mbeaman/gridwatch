@@ -830,3 +830,85 @@ fn demo_shows_the_sensors_tile_and_doctor_lists_the_chips() {
         "the walker's row: {text}"
     );
 }
+
+/// C.21 (arc 6) — `--demo --page 2` shows the winamp tile with the track
+/// the synthetic player is on, and the tile animates: the stats log counts
+/// animation-caused frames while it plays. `q` exits 0.
+#[test]
+fn demo_winamp_draws_and_animates() {
+    if skip("demo_winamp_draws_and_animates") {
+        return;
+    }
+    let stats = std::env::temp_dir().join(format!("gridwatch-winamp-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&stats);
+    let args = format!("run --demo --page 2 --stats-log {}", stats.display());
+    let mut s = Session::start("winamp", 70, 250, &args);
+    // The theme decides the case of a title, so match either.
+    let seen = s.wait_for(Duration::from_secs(4), |t| {
+        let t = t.to_lowercase();
+        t.contains("crate of many") || t.contains("interlude") || t.contains("groove salad")
+    });
+    assert!(
+        seen.is_some(),
+        "no track on the tile; screen: {:?}",
+        s.screen()
+    );
+    let screen = s.screen().to_lowercase();
+    assert!(screen.contains("now playing"), "the tile's title");
+    assert!(screen.contains("vol"), "the volume row");
+    std::thread::sleep(Duration::from_millis(2500));
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+    let text = std::fs::read_to_string(&stats).unwrap_or_default();
+    let last = text.lines().last().unwrap_or("");
+    let anim: u64 = last
+        .split("\"redraw_anim\":")
+        .nth(1)
+        .and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0);
+    assert!(anim > 10, "the tile animates: {last}");
+    let _ = std::fs::remove_file(&stats);
+}
+
+/// C.22 (arc 6) — the transport keys reach the tile: capture it, press `c`
+/// (pause) and `x` (play). The demo player ignores them (it is a synth), so
+/// the test asserts the keys are consumed — the key bar stays the tile's and
+/// nothing is logged as an error.
+#[test]
+fn demo_winamp_transport_keys_are_consumed() {
+    if skip("demo_winamp_transport_keys_are_consumed") {
+        return;
+    }
+    let mut s = Session::start("winampkeys", 70, 250, "run --demo --page 2");
+    let seen = s.wait_for(Duration::from_secs(4), |t| {
+        t.to_lowercase().contains("now playing")
+    });
+    assert!(seen.is_some(), "no winamp tile; screen: {:?}", s.screen());
+    // Focus the tile and capture it: the key bar becomes the component's.
+    s.keys("\r");
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
+        t.to_lowercase().contains("esc release")
+    });
+    assert!(seen.is_some(), "no capture; screen: {:?}", s.screen());
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
+        t.to_lowercase().contains("play pause stop")
+    });
+    assert!(
+        seen.is_some(),
+        "the transport hints are not in the key bar: {:?}",
+        s.screen()
+    );
+    s.keys("cxb");
+    std::thread::sleep(Duration::from_millis(400));
+    // Esc alone, then a pause: `Esc` immediately followed by `q` reads as
+    // Alt+q to a terminal parser, and nothing would quit.
+    s.keys("\x1b");
+    std::thread::sleep(Duration::from_millis(300));
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}
