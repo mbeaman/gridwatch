@@ -128,6 +128,7 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 2026-09-02 | 7b | — | **P18** rules cost: ten rules over a batch of 40 scalars, in `Store::apply` (`ten_rules_cost_microseconds_per_batch`) | no | — | — | — | — | — | — | — | — | **24 µs** release / 149 µs debug per batch | — |
 | 2026-09-02 | 7 (post-review) | quiet | **live** overview 250x70 (pty), every source, the probes now on their own thread, 40 s window (**P1/P5/P6/P13**) | no | **2.60%** (render 0.43 · gw-gpu 0.88 · gw-cpu 0.65 · gw-net 0.53 · gw-net-probe **0.00** · gw-sensors 0.07) | 33 | 3.9 KB/s | 2.17 | — | — | — | — | — / 2.25 ms | 50468 kB |
 | 2026-09-02 | 8a | — | **P15 with the gated files** — the pid scan plus one `/proc/<pid>/io` per process, 638 rows, release (`live_scan_with_the_gated_files_is_inside_p15`) | no | — | — | — | — | — | — | — | scan **3.5 ms** mean / 4.1 ms worst (173 of 638 readable) | — | — |
+| 2026-09-02 | 8a (post-review) | quiet | **P19** — one render of the zoomed htop `full` tier, 632 rows, tree on, release (`zoomed_full_tier_render_is_inside_p19`); and the live frame cost with that tier drawing | no | — | — | — | 18.2 | — | — | — | — | **0.04 ms** p50 / 0.05 ms p95 live · **605 µs** per tile render | — |
 
 
 
@@ -135,6 +136,9 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 
 
 
+
+
+**Arc 8a post-review note (2026-09-02).** The review found the tree's per-row depth being recomputed inside `view` — a fresh map over every row, once per row, which at torch's 638 processes is ~407 000 inserts a frame — against §8.1's "`view` never sorts". The filter and the tree order now run in `tick` and `view` reads an index list, and the depth is one pass over the set. Measured after the fix: **605 µs** for one render of the zoomed `full` tier at 632 rows with the tree on, and **0.04 ms p50 / 0.05 ms p95** for the whole frame in a live 30 s run with that tier drawing (the render cache means most frames are blits, which is the point of it). P19's ceiling is 8 ms p95 for the frame.
 
 **Arc 8a notes (2026-09-02).** The gated pass — htop's `H` and its I/O screen — costs **3.5 ms mean, 4.1 ms worst** over 638 processes, against P15's 12 ms ceiling and the 6.05 ms the plain pid-level pass measures in the same run. (The gated number is lower because the plain pass ran first and warmed the dentry cache; the honest reading is that opening one more small file per process is not what makes this scan expensive.) 173 of 638 `/proc/<pid>/io` files were readable as the user, and the tile marks the other 465 `n/a` rather than drawing zeroes. Both are behind `Detail::Columns`, which only the zoomed `full` tier asks for, and only once a person presses `H` or switches to the I/O screen. The executor thread is idle unless an action is queued and never touches the render thread; the confirm bar is a line of text.
 

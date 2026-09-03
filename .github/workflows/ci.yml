@@ -100,5 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: pip install jsonschema
+      # `referencing` is what resolves exec.schema.json's $refs to the
+      # manifest and view schemas (arc 8b).
+      - run: pip install jsonschema referencing
       - run: python3 scripts/check-schemas.py
