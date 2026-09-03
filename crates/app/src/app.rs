@@ -249,7 +249,15 @@ impl Shell {
         // At startup there is nothing to resolve; the events are only
         // non-empty on a reload that removed a rule.
         let _ = store.set_rules(gridwatch_store::rules::Rules::new(loaded.rules.clone()));
-        let instances = build_instances(&registry, loaded, &caps, None, None);
+        let instances = build_instances(
+            &registry,
+            loaded,
+            &caps,
+            None,
+            // Nothing is known about plugins yet: `attach_plugins` runs after
+            // this and re-chips any placement that turns out to be one.
+            &std::collections::BTreeSet::new(),
+        );
         let view_warnings = view_warnings(loaded, &instances);
         let theme_ref = theme.name.clone();
         Shell {
@@ -526,7 +534,7 @@ impl Shell {
             loaded,
             &self.caps,
             Some(&old),
-            Some(&self.plugin_ids),
+            &self.plugin_ids,
         );
         for (key, inst) in old {
             match fresh.get_mut(&key) {
@@ -3115,7 +3123,7 @@ impl Shell {
                         &item.kind,
                         &toml::Table::new(),
                         &self.caps,
-                        Some(&self.plugin_ids),
+                        &self.plugin_ids,
                     );
                     self.instances.insert(key, inst);
                 }
@@ -3295,7 +3303,11 @@ fn build_instance(
     kind: &str,
     options: &toml::Table,
     caps: &CapSet,
-    plugin_ids: Option<&std::collections::BTreeSet<String>>,
+    // The configured plugin ids, so a placement of `<id>.<kind>` whose plugin
+    // never sent a manifest is told that (§6). Empty is the honest answer
+    // before `attach_plugins` has run, and it is deliberately not an `Option`:
+    // a caller that forgot would silently chip "arrives in a later arc".
+    plugin_ids: &std::collections::BTreeSet<String>,
 ) -> Instance {
     let mk = |component, reason: String, hint: String| Instance {
         animated: false,
@@ -3307,15 +3319,11 @@ fn build_instance(
         chip_hint: hint,
     };
     match registry.component(kind) {
-        None if plugin_ids
-            .is_some_and(|ids| crate::plugin::host::looks_like_plugin_kind(kind, ids)) =>
-        {
-            mk(
-                None,
-                "this plugin sent no manifest".into(),
-                "check the plugin's own log lines, and `gridwatch config check`".into(),
-            )
-        }
+        None if crate::plugin::host::looks_like_plugin_kind(kind, plugin_ids) => mk(
+            None,
+            "this plugin sent no manifest".into(),
+            "check the plugin's own log lines, and `gridwatch config check`".into(),
+        ),
         None => mk(None, "arrives in a later arc".into(), String::new()),
         Some(def) => {
             if let Some(missing) = caps.missing(def.manifest.requires).first() {
@@ -3345,7 +3353,7 @@ fn build_instances(
     loaded: &Loaded,
     caps: &CapSet,
     previous: Option<&BTreeMap<String, Instance>>,
-    plugin_ids: Option<&std::collections::BTreeSet<String>>,
+    plugin_ids: &std::collections::BTreeSet<String>,
 ) -> BTreeMap<String, Instance> {
     let build = |instance: &str, kind: &str, options: &toml::Table| {
         build_instance(registry, instance, kind, options, caps, plugin_ids)

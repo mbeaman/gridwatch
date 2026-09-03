@@ -5,7 +5,16 @@
 set -euo pipefail
 LABEL="${1:?usage: measure.sh <label> [seconds]}"
 SECS="${2:-60}"
-PID="$(pidof gridwatch | awk '{print $1}')" || { echo "gridwatch not running"; exit 1; }
+# Exactly one, or none of this means anything: two gridwatch processes
+# appending to the same --stats-log produced alternating negative frame deltas
+# and a fake frame rate that cost an arc-8b session real time to chase.
+PIDS="$(pidof gridwatch || true)"
+case "$(printf '%s' "$PIDS" | wc -w)" in
+  0) echo "gridwatch not running"; exit 1 ;;
+  1) ;;
+  *) echo "more than one gridwatch is running ($PIDS) — measure one, or the numbers are two runs added together"; exit 1 ;;
+esac
+PID="$PIDS"
 PTYXIS="$(pgrep -x ptyxis | head -1 || true)"
 DATE="$(date +%F)"
 SIZE="$(stty size 2>/dev/null | awk '{print $2"x"$1}' || echo '?')"
