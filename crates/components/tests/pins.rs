@@ -100,6 +100,8 @@ fn cx<'a>(store: &'a Store, caps: &'a gridwatch_store::CapSet) -> InputCx<'a> {
         inner: Rect::new(0, 0, 80, 20),
         caps,
         readonly: false,
+        zoomed: false,
+        tier: 0,
     }
 }
 

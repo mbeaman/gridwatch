@@ -306,9 +306,10 @@ impl Gpu {
         (self.sort, self.desc)
     }
 
-    /// Is this instance big enough to be the zoom-only `full` tier?
+    /// Is this instance *drawing* the zoom-only `full` tier? The shell
+    /// says so; size cannot (arc 8a review, D58 amendment 7).
     fn zoomed(&self, cx: &InputCx<'_>) -> bool {
-        cx.inner.width >= TIERS[TIER_FULL].min.w && cx.inner.height >= TIERS[TIER_FULL].min.h
+        cx.tier >= TIER_FULL
     }
 
     pub fn col_scroll(&self) -> usize {

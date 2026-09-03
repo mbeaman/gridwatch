@@ -6,7 +6,7 @@
 //! No test here touches a process. The actions are inspected as data.
 
 use gridwatch_components::htop::{Htop, Menu, Options, SIGNALS, Screen, TIER_FULL, Typing};
-use gridwatch_store::{Detail, KeyCode, KeyEvent, Mods, Store};
+use gridwatch_store::{Detail, KeyCode, KeyEvent, Mods, Msg, Store, Ts};
 use gridwatch_ui::actions::{IoClass, ProcAction};
 use gridwatch_ui::component::{Command, Component, InputCx, Outcome, Size, pick_tier};
 use gridwatch_ui::testkit::{demo_store_at, plain_text, render_component, theme, tick};
@@ -19,12 +19,29 @@ fn store() -> Store {
 /// The zoomed body on this machine: 250x70 minus the chrome.
 const ZOOM: Size = Size::new(248, 66);
 
+/// The zoomed tile, which is where these keys live.
 fn cx<'a>(store: &'a Store, caps: &'a gridwatch_store::CapSet) -> InputCx<'a> {
     InputCx {
         store,
         inner: Rect::new(0, 0, ZOOM.w, ZOOM.h),
         caps,
         readonly: false,
+        zoomed: true,
+        tier: TIER_FULL,
+    }
+}
+
+/// A 6x3 tile on this screen: 122x31, which is **larger** than the `full`
+/// tier's 100x24 minimum and is still the `table` tier, because it is not
+/// zoomed. The shell says which tier is drawn; size cannot.
+fn grid_cx<'a>(store: &'a Store, caps: &'a gridwatch_store::CapSet) -> InputCx<'a> {
+    InputCx {
+        store,
+        inner: Rect::new(0, 0, 122, 31),
+        caps,
+        readonly: false,
+        zoomed: false,
+        tier: 4, // TIER_TABLE
     }
 }
 
@@ -173,7 +190,7 @@ fn tags_collect_and_an_action_applies_to_all_of_them() {
         text.contains(&first.to_string()) && text.contains(&second.to_string()),
         "both tagged pids: {text}"
     );
-    assert_eq!(action.pids().len(), 2);
+    assert_eq!(action.pids().expect("it says which pids").len(), 2);
     assert!(
         action.confirm().is_some_and(|q| q.contains("2 processes")),
         "it asks first"
@@ -214,7 +231,7 @@ fn the_pickers_build_the_action_they_advertise() {
         panic!("no io action");
     };
     assert!(format!("{action:?}").contains("BestEffort"));
-    assert_eq!(action.pids(), vec![pid]);
+    assert_eq!(action.pids(), Some(vec![pid]));
 
     // The affinity picker: Space chooses, Enter applies.
     h.on_key(ch('a'), &cx(&store, &caps));
@@ -352,12 +369,217 @@ fn an_action_without_a_handler_does_nothing() {
         class: IoClass::Idle,
         level: 0,
     };
-    assert_eq!(Action::pids(&action), vec![424_242]);
+    assert_eq!(Action::pids(&action), Some(vec![424_242]));
     assert!(action.confirm().is_some());
     // Running it here says so rather than pretending.
     let r = Box::new(action).run();
     assert!(
         r.is_err() || r.is_ok(),
         "it answers either way, never silently"
+    );
+}
+
+/// Arc 8a review (D58 amendment 7): the `full` tier's keys must not answer
+/// on the grid. A 6x3 cpu tile at 250x70 is 122x31 — bigger than the
+/// `full` tier's minimum — so a size comparison had `F8` renicing a
+/// process from a tile that draws no F-key bar, no pickers and no
+/// indication that anything had happened.
+#[test]
+fn the_action_keys_are_silent_on_the_grid() {
+    let store = store();
+    let caps = gridwatch_store::CapSet::default();
+    let mut h = tile(&store);
+    // Give it a cursor the way the shared table keys do.
+    h.on_key(key(KeyCode::Down), &grid_cx(&store, &caps));
+    assert!(h.selected().is_some(), "the shared keys still work");
+
+    for k in [
+        key(KeyCode::F(7)),
+        key(KeyCode::F(8)),
+        key(KeyCode::F(9)),
+        ch('a'),
+        ch('i'),
+        ch('t'),
+        ch('/'),
+        ch('\\'),
+        ch(' '),
+        ch('F'),
+        ch('H'),
+        ch('K'),
+        key(KeyCode::Tab),
+    ] {
+        let out = h.on_key(k, &grid_cx(&store, &caps));
+        assert!(
+            !matches!(out, Outcome::Command(_)),
+            "{k:?} produced a command from an un-zoomed tile"
+        );
+    }
+    // And nothing was switched on behind the person's back.
+    assert!(h.menu().is_none());
+    assert!(h.typing().is_none());
+    assert!(!h.tree() && !h.follow() && h.tags().is_empty());
+    assert_eq!(h.screen(), Screen::Main);
+    assert_eq!(
+        h.demand(4),
+        Detail::Table,
+        "and no gated files were asked for"
+    );
+
+    // Zoomed, the same keys work.
+    let out = h.on_key(key(KeyCode::F(8)), &cx(&store, &caps));
+    assert!(matches!(out, Outcome::Command(_)), "F8 works when zoomed");
+}
+
+/// Arc 8a review (D58 amendment 10): `K` and `H` toggled a flag the row
+/// filter never read, so `K` could not reveal a kernel thread even though
+/// the scan flags every one of them. PARITY ticked it as done.
+#[test]
+fn the_thread_toggles_change_which_rows_are_there() {
+    let store = store();
+    let caps = gridwatch_store::CapSet::default();
+    let mut h = tile(&store);
+    let kthreads = |h: &Htop| h.visible_rows().iter().filter(|r| r.kthread).count();
+    let threads = |h: &Htop| h.visible_rows().iter().filter(|r| r.tgid != r.pid).count();
+    // htop's defaults: neither is shown.
+    assert_eq!(kthreads(&h), 0, "kernel threads are hidden by default");
+    assert_eq!(threads(&h), 0, "so are userland threads");
+    let base = h.visible_rows().len();
+
+    h.on_key(ch('K'), &cx(&store, &caps));
+    assert!(h.show_kernel());
+    assert!(
+        kthreads(&h) > 0,
+        "`K` must reveal the kernel threads the scan flagged"
+    );
+    assert!(h.visible_rows().len() > base);
+
+    h.on_key(ch('K'), &cx(&store, &caps));
+    assert_eq!(kthreads(&h), 0, "and hide them again");
+    assert_eq!(h.visible_rows().len(), base);
+
+    // `H` is the same switch for userland threads. The demo table is
+    // pid-level (the `task/` walk is still owed, BACKLOG), so what this
+    // pins is that the toggle reaches the filter rather than a count.
+    h.on_key(ch('H'), &cx(&store, &caps));
+    assert!(h.show_userland());
+    assert!(h.visible_rows().len() >= base);
+}
+
+/// Arc 8a review (D58 amendment 12): three things the screen or the docs
+/// claimed and the code did not do.
+#[test]
+fn esc_clears_a_standing_filter_f5_is_the_tree_and_a_menu_owns_every_key() {
+    let store = store();
+    let caps = gridwatch_store::CapSet::default();
+    let mut h = tile(&store);
+
+    // A filter in force says "Esc to clear" on screen. It now does.
+    h.on_key(ch('\\'), &cx(&store, &caps));
+    for c in "firefox".chars() {
+        h.on_key(ch(c), &cx(&store, &caps));
+    }
+    h.on_key(key(KeyCode::Enter), &cx(&store, &caps));
+    assert_eq!(h.typing(), None);
+    let filtered = h.visible_rows().len();
+    let out = h.on_key(key(KeyCode::Esc), &cx(&store, &caps));
+    assert!(
+        matches!(out, Outcome::Consumed),
+        "Esc must not fall through and release the capture"
+    );
+    assert_eq!(h.filter(), None);
+    assert!(h.visible_rows().len() > filtered);
+
+    // The F-key bar says F5 is the tree, so F5 is the tree.
+    assert!(!h.tree());
+    h.on_key(key(KeyCode::F(5)), &cx(&store, &caps));
+    assert!(h.tree(), "F5 is advertised on the bar and must work");
+    h.on_key(key(KeyCode::F(5)), &cx(&store, &caps));
+    assert!(!h.tree());
+
+    // A menu owns every key: with a picker open, a key that would move
+    // the selection must not change what the picker will act on.
+    h.on_key(key(KeyCode::Down), &cx(&store, &caps));
+    let target = h.action_targets();
+    h.on_key(key(KeyCode::F(9)), &cx(&store, &caps));
+    for k in [key(KeyCode::PageDown), key(KeyCode::End), ch('>'), ch('I')] {
+        let out = h.on_key(k, &cx(&store, &caps));
+        assert!(matches!(out, Outcome::Consumed), "{k:?} escaped the menu");
+    }
+    assert_eq!(
+        h.action_targets(),
+        target,
+        "the picker's target moved under it"
+    );
+    h.on_key(key(KeyCode::Esc), &cx(&store, &caps));
+}
+
+/// P19 for the zoomed `full` tier (arc 8a): what one render of the tool's
+/// own tier costs with the tree on, over a process table the size of the
+/// real one. The review found the depth being recomputed per row inside
+/// `view` — 638 rows meant ~407 000 map inserts a frame — so this is the
+/// number that would have caught it.
+///
+/// `cargo test -p gridwatch-components --all-features --release --test
+/// htop_full -- --ignored --nocapture`
+#[test]
+#[ignore = "timing; run in release"]
+fn zoomed_full_tier_render_is_inside_p19() {
+    use std::time::Instant;
+    let mut store = store();
+    // Grow the demo table to torch's size, keeping its parent structure so
+    // the tree has real work to do.
+    let (at, table) = store
+        .record(&gridwatch_store::keys::cpu::PROC_TABLE)
+        .expect("the demo table");
+    let mut rows = table.rows.clone();
+    let base = rows.len();
+    let mut next_pid = 40_000;
+    while rows.len() < 638 {
+        let mut r = rows[rows.len() % base].clone();
+        // A child of the row it was copied from, and a process in its own
+        // right (a clone that kept its `tgid` would be filtered out as a
+        // thread).
+        r.ppid = r.pid;
+        r.pid = next_pid;
+        r.tgid = next_pid;
+        r.kthread = false;
+        next_pid += 1;
+        rows.push(r);
+    }
+    store.apply(&Msg::Batch(gridwatch_store::Batch {
+        source: gridwatch_store::SourceId("cpu"),
+        at: Ts(at.0 + 1_000_000_000),
+        samples: vec![gridwatch_store::Sample {
+            id: gridwatch_store::keys::cpu::PROC_TABLE.id.clone(),
+            datum: gridwatch_store::Datum::Record(std::sync::Arc::new(
+                gridwatch_store::keys::cpu::ProcTable {
+                    rows,
+                    pid_digits: table.pid_digits,
+                },
+            )),
+        }],
+    }));
+    let caps = gridwatch_store::CapSet::default();
+    let th = theme("modern");
+    let mut h = tile(&store);
+    h.on_key(ch('t'), &cx(&store, &caps));
+    assert!(h.tree());
+    assert!(h.visible_rows().len() > 600, "{}", h.visible_rows().len());
+
+    let n = 50;
+    let t0 = Instant::now();
+    for _ in 0..n {
+        let (_, _buf) = render_component(&mut h, &store, &th, ZOOM, true);
+    }
+    let per = t0.elapsed() / n;
+    println!(
+        "zoomed full tier, {} rows, tree on: {per:?} per render",
+        h.visible_rows().len()
+    );
+    // P19's frame budget is 8 ms p95 for the whole frame; one tile's
+    // render has to be a fraction of that.
+    assert!(
+        per < std::time::Duration::from_millis(4),
+        "one render took {per:?}"
     );
 }

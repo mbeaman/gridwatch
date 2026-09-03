@@ -188,7 +188,21 @@ pub struct InputCx<'a> {
     pub store: &'a Store,
     pub inner: Rect,
     pub caps: &'a CapSet,
+    /// `--readonly` or `readonly = true`: the shell refuses every action,
+    /// and a component that offers one should say so rather than pretend.
     pub readonly: bool,
+    /// Whether this tile is zoomed, and which tier it is therefore
+    /// drawing (arc 8a review, D58 amendment 7).
+    ///
+    /// A component cannot infer either from `inner`: a 6x3 tile on a big
+    /// screen is 122x31, which clears every `zoom_only` tier's minimum, so
+    /// size alone told htop it was zoomed when it was not — and the
+    /// zoom-only tier's *keys* (which include renicing a process) answered
+    /// on the grid, where its F-key bar and its pickers were not drawn.
+    /// `view` and `demand` were always given the real tier; now `on_key`
+    /// is too.
+    pub zoomed: bool,
+    pub tier: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,12 +235,16 @@ pub trait Action: std::any::Any + fmt::Debug + Send {
         Some(format!("{self:?}?"))
     }
 
-    /// The processes this action will act on. The executor's test fence
-    /// reads it (D58): no test in this project may touch a process it did
-    /// not spawn. An action that changes nothing outside this process
-    /// returns nothing.
-    fn pids(&self) -> Vec<u32> {
-        Vec::new()
+    /// The processes this action will act on, and whether it knows.
+    ///
+    /// `None` means "this action does not say", which the executor's
+    /// fence treats as **refusable** — the same direction `confirm()`
+    /// fails in. An action that forgets to implement this must not slip
+    /// past a fence that exists to stop exactly that (arc 8a review, D58
+    /// amendment 9); an action that genuinely touches nothing outside
+    /// this process says so with `Some(vec![])`.
+    fn pids(&self) -> Option<Vec<u32>> {
+        None
     }
 }
 

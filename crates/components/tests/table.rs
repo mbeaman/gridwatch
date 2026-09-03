@@ -211,6 +211,8 @@ fn keys_select_sort_and_invert() {
         inner: ratatui_core::layout::Rect::new(0, 0, 122, 31),
         caps: &caps,
         readonly: false,
+        zoomed: false,
+        tier: 0,
     };
     let mut h = Htop::default();
     tick(&mut h, &store, 4);

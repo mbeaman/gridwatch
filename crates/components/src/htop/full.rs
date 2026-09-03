@@ -12,7 +12,7 @@ use gridwatch_ui::theme::Role;
 use gridwatch_ui::view::{ColWidth, Column, Constraint, Dir, Line, Span, View};
 
 use super::format::{kbytes, percentage, state, time_plus};
-use super::{Htop, IO_CLASSES, Menu, SIGNALS, Screen, Typing, tree_depth};
+use super::{Htop, IO_CLASSES, Menu, SIGNALS, Screen, Typing};
 
 /// The function keys, in htop's order. `F1`/`F2`/`F3`/`F4` are its help,
 /// setup, search and filter; the ones this tile answers are marked.
@@ -392,7 +392,9 @@ pub fn render(h: &Htop, cx: &RenderCx<'_>) -> View {
                 .iter()
                 .enumerate()
                 .map(|(i, r)| {
-                    let depth = if h.tree() { tree_depth(&rows, i) } else { 0 };
+                    // The depth was computed in `tick`; `view` only reads
+                    // it (§8.1: `view` never sorts).
+                    let depth = h.depths().get(i).copied().unwrap_or(0);
                     row_cells(h, r, depth, h.screen(), cx.inner.width, h.search())
                 })
                 .collect(),

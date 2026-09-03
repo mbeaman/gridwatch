@@ -112,8 +112,8 @@ impl Action for ProcAction {
         }
     }
 
-    fn pids(&self) -> Vec<u32> {
-        ProcAction::pids(self)
+    fn pids(&self) -> Option<Vec<u32>> {
+        Some(ProcAction::pids(self))
     }
 }
 
@@ -148,7 +148,7 @@ mod tests {
             names: vec!["firefox".into()],
         };
         assert_eq!(one.confirm().as_deref(), Some("sigterm firefox (4242)?"));
-        assert_eq!(Action::pids(&one), vec![4242]);
+        assert_eq!(Action::pids(&one), Some(vec![4242]));
         let many = ProcAction::Signal {
             pids: vec![1, 2, 3],
             signal: 9,

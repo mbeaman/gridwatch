@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use gridwatch_components::gpu::table::{Col, fit_columns};
-use gridwatch_components::gpu::{Gpu, OPTION_NAMES, Options, TIER_CHARTS, TIER_PROCS};
+use gridwatch_components::gpu::{Gpu, OPTION_NAMES, Options, TIER_CHARTS, TIER_FULL, TIER_PROCS};
 use gridwatch_store::keys::cpu::ProcTable;
 use gridwatch_store::keys::gpu::{GpuProcKind, GpuProcRow, GpuProcs};
 use gridwatch_store::keys::{cpu, gpu};
@@ -200,6 +200,8 @@ fn keys_select_sort_invert_and_toggle_series() {
         inner: Rect::new(0, 0, 122, 31),
         caps: &caps,
         readonly: false,
+        zoomed: false,
+        tier: 0,
     };
     let key = |c: KeyCode| KeyEvent {
         code: c,
@@ -345,6 +347,8 @@ fn clock_series_has_points_despite_its_static_ceiling() {
         inner: Rect::new(0, 0, 122, 31),
         caps: &caps,
         readonly: false,
+        zoomed: false,
+        tier: 0,
     };
     g.on_key(
         KeyEvent {
@@ -412,40 +416,44 @@ fn the_full_tier_scrolls_columns_and_offers_the_signal_menu() {
     let mut g = Gpu::new(Options::default());
     tick(&mut g, &store);
     let zoom = Size::new(248, 66);
-    let cx = |inner: Rect| InputCx {
+    // The shell tells a component which tier it is drawing; these keys
+    // answer only at the zoom-only `full` tier (arc 8a review).
+    let cx = |inner: Rect, tier: usize| InputCx {
         store: &store,
         inner,
         caps: &caps,
         readonly: false,
+        zoomed: tier >= TIER_FULL,
+        tier,
     };
     let big = Rect::new(0, 0, zoom.w, zoom.h);
     let small = Rect::new(0, 0, 80, 20);
 
     // On the grid the keys do nothing: a 4x2 tile has nowhere to scroll.
     assert!(matches!(
-        g.on_key(KeyEvent::plain(KeyCode::Char('l')), &cx(small)),
+        g.on_key(KeyEvent::plain(KeyCode::Char('l')), &cx(small, TIER_PROCS)),
         Outcome::Ignored
     ));
     assert_eq!(g.col_scroll(), 0);
     assert!(matches!(
-        g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(small)),
+        g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(small, TIER_PROCS)),
         Outcome::Ignored
     ));
 
     // Zoomed, `l` scrolls four columns and `h` comes back.
-    g.on_key(KeyEvent::plain(KeyCode::Char('l')), &cx(big));
+    g.on_key(KeyEvent::plain(KeyCode::Char('l')), &cx(big, TIER_FULL));
     assert_eq!(g.col_scroll(), 4);
     let (_, buf) = render_component(&mut g, &store, &th, zoom, true);
     let text = plain_text(&buf);
     assert!(text.contains("PID"), "PID always survives a scroll: {text}");
     assert!(text.contains("Command"), "and so does Command: {text}");
-    g.on_key(KeyEvent::plain(KeyCode::Char('h')), &cx(big));
+    g.on_key(KeyEvent::plain(KeyCode::Char('h')), &cx(big, TIER_FULL));
     assert_eq!(g.col_scroll(), 0);
 
     // `F9` needs a selected row, then offers htop's signal list.
-    g.on_key(KeyEvent::plain(KeyCode::Down), &cx(big));
+    g.on_key(KeyEvent::plain(KeyCode::Down), &cx(big, TIER_FULL));
     assert!(g.selected().is_some());
-    g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(big));
+    g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(big, TIER_FULL));
     assert_eq!(g.signal_menu(), Some(0));
     let (_, buf) = render_component(&mut g, &store, &th, zoom, true);
     let text = plain_text(&buf);
@@ -453,19 +461,19 @@ fn the_full_tier_scrolls_columns_and_offers_the_signal_menu() {
     assert!(text.contains("SIGTERM") && text.contains("SIGKILL"));
 
     // Enter hands the shell an action naming that pid, and asks first.
-    let out = g.on_key(KeyEvent::plain(KeyCode::Enter), &cx(big));
+    let out = g.on_key(KeyEvent::plain(KeyCode::Enter), &cx(big, TIER_FULL));
     let Outcome::Command(Command::Run(_, action)) = out else {
         panic!("no action from the gpu signal menu");
     };
     assert!(format!("{action:?}").contains("SIGTERM"));
-    assert_eq!(action.pids().len(), 1);
+    assert_eq!(action.pids().map(|p| p.len()), Some(1));
     assert!(action.confirm().is_some());
     assert!(g.signal_menu().is_none());
 
     // Esc closes it without building anything.
-    g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(big));
+    g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(big, TIER_FULL));
     assert!(matches!(
-        g.on_key(KeyEvent::plain(KeyCode::Esc), &cx(big)),
+        g.on_key(KeyEvent::plain(KeyCode::Esc), &cx(big, TIER_FULL)),
         Outcome::Consumed
     ));
     assert!(g.signal_menu().is_none());

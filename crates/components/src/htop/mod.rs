@@ -132,58 +132,65 @@ pub fn matches_row(r: &cpu::ProcRow, needle: &str) -> bool {
 }
 
 /// Depth-first by parent pid, keeping each level in the current sort order
-/// (htop's tree view is a re-ordering, not a different set).
-pub fn tree_order(rows: Vec<&cpu::ProcRow>) -> Vec<&cpu::ProcRow> {
+/// (htop's tree view is a re-ordering, not a different set). `visible` is
+/// indices into `rows`; the result is the same indices, reordered.
+pub fn tree_order(rows: &[cpu::ProcRow], visible: Vec<usize>) -> Vec<usize> {
     use std::collections::BTreeMap;
-    let present: std::collections::BTreeSet<i32> = rows.iter().map(|r| r.pid).collect();
-    let mut children: BTreeMap<i32, Vec<&cpu::ProcRow>> = BTreeMap::new();
-    let mut roots: Vec<&cpu::ProcRow> = Vec::new();
-    for r in &rows {
+    let present: std::collections::BTreeSet<i32> = visible.iter().map(|i| rows[*i].pid).collect();
+    let mut children: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
+    let mut roots: Vec<usize> = Vec::new();
+    for &i in &visible {
+        let r = &rows[i];
         // A row whose parent is not in the set is a root here, which keeps
         // a filtered tree readable instead of empty.
         if present.contains(&r.ppid) && r.ppid != r.pid {
-            children.entry(r.ppid).or_default().push(r);
+            children.entry(r.ppid).or_default().push(i);
         } else {
-            roots.push(r);
+            roots.push(i);
         }
     }
-    let mut out = Vec::with_capacity(rows.len());
-    let mut stack: Vec<&cpu::ProcRow> = roots.into_iter().rev().collect();
-    let mut guard = rows.len() * 2 + 8;
-    while let Some(r) = stack.pop() {
-        out.push(r);
+    let mut out = Vec::with_capacity(visible.len());
+    let mut stack: Vec<usize> = roots.into_iter().rev().collect();
+    let mut guard = visible.len() * 2 + 8;
+    while let Some(i) = stack.pop() {
+        out.push(i);
         guard -= 1;
         if guard == 0 {
             break; // a cycle in ppid: stop rather than spin
         }
-        if let Some(kids) = children.get(&r.pid) {
+        if let Some(kids) = children.get(&rows[i].pid) {
             for k in kids.iter().rev() {
-                stack.push(k);
+                stack.push(*k);
             }
         }
     }
     out
 }
 
-/// How deep a row sits in the tree, for its indent.
-pub fn tree_depth(rows: &[&cpu::ProcRow], i: usize) -> usize {
-    let by_pid: std::collections::BTreeMap<i32, i32> =
-        rows.iter().map(|r| (r.pid, r.ppid)).collect();
-    let mut depth = 0;
-    let mut pid = rows[i].pid;
-    let mut guard = 64;
-    while let Some(&parent) = by_pid.get(&pid) {
-        if parent == pid || guard == 0 {
-            break;
-        }
-        if !by_pid.contains_key(&parent) {
-            break;
-        }
-        depth += 1;
-        pid = parent;
-        guard -= 1;
-    }
-    depth
+/// Every visible row's depth, in one pass over the set rather than one map
+/// per row (arc 8a review: this was O(n²) inside `view`).
+pub fn tree_depths(rows: &[cpu::ProcRow], visible: &[usize]) -> Vec<usize> {
+    let parent_of: std::collections::BTreeMap<i32, i32> = visible
+        .iter()
+        .map(|i| (rows[*i].pid, rows[*i].ppid))
+        .collect();
+    visible
+        .iter()
+        .map(|i| {
+            let mut depth = 0;
+            let mut pid = rows[*i].pid;
+            let mut guard = 64;
+            while let Some(&parent) = parent_of.get(&pid) {
+                if parent == pid || guard == 0 || !parent_of.contains_key(&parent) {
+                    break;
+                }
+                depth += 1;
+                pid = parent;
+                guard -= 1;
+            }
+            depth
+        })
+        .collect()
 }
 
 /// Rows the tiers below the table occupy inside it (§8.1 `rows_above`).
@@ -310,6 +317,10 @@ pub struct Htop {
     show_userland: bool,
     /// An open menu (`F9`, `a`, `i`) and where its cursor is.
     menu: Option<Menu>,
+    /// Indices into `derived.rows`, in draw order, and each one's depth in
+    /// the tree — both computed in `tick`, never in `view`.
+    visible: Vec<usize>,
+    depths: Vec<usize>,
 }
 
 /// htop's screens, as tabs. Its user-configurable screen set is a config
@@ -388,6 +399,8 @@ impl Htop {
             show_kernel: !options.hide_kernel_threads,
             show_userland: !options.hide_userland_threads,
             menu: None,
+            visible: Vec::new(),
+            depths: Vec::new(),
             options,
         }
     }
@@ -449,26 +462,74 @@ impl Htop {
         self.show_kernel
     }
 
+    /// Re-derive the rows from the store, whatever the table stamp says —
+    /// what a filter change needs, since the derived set has already had
+    /// the old filter applied to it.
+    fn rederive(&mut self, cx: &InputCx<'_>) {
+        let Some((at, table)) = cx.store.record(&cpu::PROC_TABLE) else {
+            return;
+        };
+        self.table_seen = Some(at);
+        self.derived
+            .rebuild(table, &self.options, self.threads(), self.sort, self.desc);
+        self.rebuild_visible();
+        // A followed process that exits releases follow on the next scan,
+        // not on the next keystroke (arc 8a review).
+        self.keep_followed();
+    }
+
+    /// What the row filter should hide right now.
+    fn threads(&self) -> table::Threads {
+        table::Threads {
+            hide_kernel: !self.show_kernel,
+            hide_userland: !self.show_userland,
+        }
+    }
+
     pub fn menu(&self) -> Option<&Menu> {
         self.menu.as_ref()
     }
 
-    /// The rows the `full` tier draws: the filter applied, and the tree
-    /// order if it is on. The grid tiers use `rows()` unchanged.
-    pub fn visible_rows(&self) -> Vec<&cpu::ProcRow> {
-        let mut rows: Vec<&cpu::ProcRow> = self
+    /// The rows the `full` tier draws — the filter applied and the tree
+    /// order if it is on — as indices into `derived.rows`, computed in
+    /// `tick` and whenever a key changes them.
+    ///
+    /// It used to be computed in `view`, where the per-row depth rebuilt a
+    /// map over every row: 638 rows in tree mode cost ~407 000 map inserts
+    /// a frame, and §8.1 says plainly that `view` never sorts (arc 8a
+    /// review, D58 amendment 11).
+    fn rebuild_visible(&mut self) {
+        let mut idx: Vec<usize> = self
             .derived
             .rows
             .iter()
-            .filter(|r| match self.filter.as_deref() {
+            .enumerate()
+            .filter(|(_, r)| match self.filter.as_deref() {
                 Some(f) if !f.is_empty() => matches_row(r, f),
                 _ => true,
             })
+            .map(|(i, _)| i)
             .collect();
         if self.tree {
-            rows = tree_order(rows);
+            idx = tree_order(&self.derived.rows, idx);
+            self.depths = tree_depths(&self.derived.rows, &idx);
+        } else {
+            self.depths = vec![0; idx.len()];
         }
-        rows
+        self.visible = idx;
+    }
+
+    /// The rows the `full` tier draws. The grid tiers use `rows()`.
+    pub fn visible_rows(&self) -> Vec<&cpu::ProcRow> {
+        self.visible
+            .iter()
+            .filter_map(|i| self.derived.rows.get(*i))
+            .collect()
+    }
+
+    /// How deep each visible row sits in the tree, in the same order.
+    pub fn depths(&self) -> &[usize] {
+        &self.depths
     }
 
     /// The processes an action applies to: every tagged row, or the one
@@ -501,6 +562,19 @@ impl Htop {
             return self.typing_key(key, mode);
         }
         match key.code {
+            // A filter in force says "Esc to clear" on screen; before
+            // this, Esc fell through and released the capture instead
+            // (arc 8a review, D58 amendment 12).
+            KeyCode::Esc if self.filter.as_deref().is_some_and(|f| !f.is_empty()) => {
+                self.filter = None;
+                self.rebuild_visible();
+            }
+            // htop's F5 is the tree, and the F-key bar says so; `t` is the
+            // same switch for a keyboard without function keys.
+            KeyCode::F(5) => {
+                self.tree = !self.tree;
+                self.rebuild_visible();
+            }
             KeyCode::Char('/') => {
                 self.typing = Some(Typing::Search);
                 self.search = Some(String::new());
@@ -509,7 +583,10 @@ impl Htop {
                 self.typing = Some(Typing::Filter);
                 self.filter = Some(String::new());
             }
-            KeyCode::Char('t') => self.tree = !self.tree,
+            KeyCode::Char('t') => {
+                self.tree = !self.tree;
+                self.rebuild_visible();
+            }
             KeyCode::Char(' ') => {
                 if let Some(pid) = self.selected
                     && !self.tags.insert(pid)
@@ -522,8 +599,18 @@ impl Htop {
             }
             KeyCode::Char('U') => self.tags.clear(),
             KeyCode::Char('F') => self.follow = !self.follow,
-            KeyCode::Char('K') => self.show_kernel = !self.show_kernel,
-            KeyCode::Char('H') => self.show_userland = !self.show_userland,
+            // `resort` works on the rows already derived, which is no use
+            // for a filter that must *add* rows back: forget the table
+            // stamp instead, and the next tick re-derives from the store
+            // (arc 8a review, D58 amendment 10).
+            KeyCode::Char('K') => {
+                self.show_kernel = !self.show_kernel;
+                self.rederive(cx);
+            }
+            KeyCode::Char('H') => {
+                self.show_userland = !self.show_userland;
+                self.rederive(cx);
+            }
             KeyCode::Tab => {
                 self.screen = match self.screen {
                     Screen::Main => Screen::Io,
@@ -606,6 +693,11 @@ impl Htop {
             }
             _ => return Outcome::Ignored,
         }
+        // The filter decides which rows exist, so the set is rebuilt here
+        // rather than in `view`.
+        if mode == Typing::Filter {
+            self.rebuild_visible();
+        }
         // Search moves the cursor to the first match; filter changes the
         // row set, so the cursor is clamped by `visible_rows`.
         if mode == Typing::Search
@@ -665,7 +757,11 @@ impl Htop {
                 return Outcome::Consumed;
             }
             KeyCode::Enter => {}
-            _ => return Outcome::Ignored,
+            // A menu owns every key while it is open, as the docstring
+            // says: without this, PageDown moved the selection *under* an
+            // open picker and changed what it would act on (arc 8a
+            // review, D58 amendment 12).
+            _ => return Outcome::Consumed,
         }
         // Enter: build the action and hand it to the shell, which asks the
         // question and runs it (§4.6).
@@ -762,7 +858,8 @@ impl Htop {
             pid_digits: self.derived.pid_digits,
         };
         self.derived
-            .rebuild(&table, &self.options, self.sort, self.desc);
+            .rebuild(&table, &self.options, self.threads(), self.sort, self.desc);
+        self.rebuild_visible();
     }
 
     fn move_selection(&mut self, delta: isize) {
@@ -880,7 +977,8 @@ impl Component for Htop {
             .selected
             .and_then(|pid| self.derived.rows.iter().position(|r| r.pid == pid));
         self.derived
-            .rebuild(table, &self.options, self.sort, self.desc);
+            .rebuild(table, &self.options, self.threads(), self.sort, self.desc);
+        self.rebuild_visible();
         if let Some(pid) = self.selected
             && !self.derived.rows.iter().any(|r| r.pid == pid)
         {
@@ -903,7 +1001,12 @@ impl Component for Htop {
         self.keep_followed();
         // The zoom-only tier's keys, which the grid tiers never see: a
         // 4x2 htop tile is a dashboard, not a process manager (§4.6).
-        if cx.inner.height >= TIERS[TIER_FULL].min.h && cx.inner.width >= TIERS[TIER_FULL].min.w {
+        // This asks the shell which tier is being *drawn* — a 6x3 tile on
+        // a large screen is 122x31, which clears the `full` tier's
+        // minimum, so a size comparison had these keys (renice included)
+        // answering on the grid where none of their chrome was drawn
+        // (arc 8a review, D58 amendment 7).
+        if cx.tier >= TIER_FULL {
             match self.full_key(key, cx) {
                 Outcome::Ignored => {}
                 other => return other,

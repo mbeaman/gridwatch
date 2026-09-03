@@ -135,14 +135,32 @@ pub struct Derived {
     pub cpu_w: u16,
 }
 
+/// What the two thread toggles are set to *now*: the config's values,
+/// flipped by `K` and `H` in the zoomed `full` tier. Before this the
+/// filter read the static options and `K` did nothing at all (arc 8a
+/// review, D58 amendment 10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Threads {
+    pub hide_kernel: bool,
+    pub hide_userland: bool,
+}
+
 impl Derived {
-    pub fn rebuild(&mut self, table: &ProcTable, o: &Options, sort: Col, desc: bool) {
+    pub fn rebuild(
+        &mut self,
+        table: &ProcTable,
+        o: &Options,
+        threads: Threads,
+        sort: Col,
+        desc: bool,
+    ) {
+        let _ = o;
         self.pid_digits = table.pid_digits.clamp(5, 19);
         self.rows = table
             .rows
             .iter()
-            .filter(|r| !(o.hide_kernel_threads && r.kthread))
-            .filter(|r| !(o.hide_userland_threads && r.tgid != r.pid))
+            .filter(|r| !(threads.hide_kernel && r.kthread))
+            .filter(|r| !(threads.hide_userland && r.tgid != r.pid))
             .cloned()
             .collect();
         let max_cpu = self.rows.iter().map(|r| r.cpu_pct).fold(0.0f32, f32::max);
