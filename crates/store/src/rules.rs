@@ -192,8 +192,6 @@ struct State {
     /// The instant it first stopped holding (the `clear_s` hold).
     clear_since: Option<Ts>,
     raised: bool,
-    /// The last sample's time, for `absent`.
-    seen: Option<Ts>,
 }
 
 /// What labels a rule's key currently has, and when each last arrived —
@@ -243,18 +241,6 @@ impl Rules {
     /// ran a store walk every frame even when no rule wanted one).
     pub fn has_absent(&self) -> bool {
         self.rules.iter().any(|r| r.op == Op::Absent)
-    }
-
-    /// The exact labels the `absent` rules name (a pattern with no `*`).
-    /// A key that has **never** arrived has no series for the store to
-    /// enumerate, so these are asked for by name — which is what makes
-    /// "link down" fire for an interface that was missing at startup.
-    pub fn absent_exact_labels(&self) -> Vec<(String, String)> {
-        self.rules
-            .iter()
-            .filter(|r| r.op == Op::Absent && !r.label.contains('*'))
-            .map(|r| (r.key.clone(), r.label.clone()))
-            .collect()
     }
 
     pub fn list(&self) -> &[Rule] {
@@ -328,7 +314,6 @@ impl Rules {
                     .states
                     .entry((rule.name.clone(), label.clone()))
                     .or_default();
-                st.seen = Some(at);
                 if let Some(ev) = step(rule, st, holds, at, &label, *value, threshold, source) {
                     out.push(ev);
                 }
@@ -366,16 +351,20 @@ impl Rules {
             }
             for (label, last) in labels {
                 // `for_s` is how long the key may be missing before this
-                // counts as absent; it is not a *second* hold on top.
+                // counts as absent; it is not a *second* hold on top, so
+                // the state machine sees zero holds. Only the two
+                // durations differ, so this borrows the rule rather than
+                // cloning its four strings per label per frame.
                 let gone = at.since(last) > rule.for_s;
-                let mut immediate = rule.clone();
-                immediate.for_s = Duration::ZERO;
-                immediate.clear_s = Duration::ZERO;
+                let immediate = Rule {
+                    for_s: Duration::ZERO,
+                    clear_s: Duration::ZERO,
+                    ..rule.clone()
+                };
                 let st = self
                     .states
                     .entry((rule.name.clone(), label.clone()))
                     .or_default();
-                st.seen = Some(last);
                 if let Some(ev) = step(&immediate, st, gone, at, &label, 0.0, 0.0, source) {
                     out.push(ev);
                 }

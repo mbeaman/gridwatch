@@ -263,7 +263,7 @@ pub static METAS: &[KeyMeta] = &[
     ),
     scalar!(
         "net.speed_mbps",
-        Count,
+        MegabitsPerSec,
         "negotiated link speed per {iface} in Mb/s; -1 when the driver cannot say (never guessed)"
     ),
     scalar!(

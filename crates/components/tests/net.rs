@@ -247,3 +247,87 @@ fn the_connection_table_shows_the_local_address_too() {
         "local must come before remote: {row}"
     );
 }
+
+/// Arc 7a review: `↑/↓` is advertised as "scroll" and only the connection
+/// table moved. Given more interfaces than the tile has rows, the cursor
+/// has to reach the ones below the fold.
+#[test]
+fn the_interface_table_scrolls_to_the_rows_below_the_fold() {
+    let caps = gridwatch_store::CapSet::default();
+    let th = theme("modern");
+    // Thirty interfaces, none of them on the hide list — more than any
+    // tile has rows.
+    let mut store = Store::default();
+    let names: Vec<String> = (0..30).map(|i| format!("eth{i:02}")).collect();
+    store.apply(&Msg::Batch(gridwatch_store::Batch {
+        source: net::SOURCE,
+        at: Ts(1_000_000_000),
+        samples: names
+            .iter()
+            .enumerate()
+            .flat_map(|(i, n)| {
+                let name = std::sync::Arc::from(n.as_str());
+                [
+                    gridwatch_store::Sample {
+                        id: net::RX_BPS.named(&name).id,
+                        datum: gridwatch_store::Datum::Scalar(1000.0 - i as f64),
+                    },
+                    gridwatch_store::Sample {
+                        id: net::TX_BPS.named(&name).id,
+                        datum: gridwatch_store::Datum::Scalar(0.0),
+                    },
+                ]
+            })
+            .collect(),
+    }));
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    assert_eq!(c.model().ifaces.len(), 30);
+    let last = names.last().expect("an interface").clone();
+    let size = Size::new(80, 14);
+    let (_, buf) = render_component(&mut c, &store, &th, size, false);
+    let before = plain_text(&buf);
+    assert!(
+        !before.contains(&last),
+        "the fixture must not fit: {before}"
+    );
+    for _ in 0..30 {
+        c.on_key(
+            KeyEvent {
+                code: KeyCode::Down,
+                mods: Mods::NONE,
+            },
+            &cx(&store, &caps),
+        );
+    }
+    let (_, buf) = render_component(&mut c, &store, &th, size, false);
+    let after = plain_text(&buf);
+    assert!(
+        after.contains(&last),
+        "the last interface ({last}) never came into view: {after}"
+    );
+    // The cursor stops at the end rather than running past it.
+    for _ in 0..50 {
+        c.on_key(
+            KeyEvent {
+                code: KeyCode::Down,
+                mods: Mods::NONE,
+            },
+            &cx(&store, &caps),
+        );
+    }
+    let (_, buf) = render_component(&mut c, &store, &th, size, false);
+    assert!(plain_text(&buf).contains(&last));
+    // And `↑` walks back to the first.
+    for _ in 0..60 {
+        c.on_key(
+            KeyEvent {
+                code: KeyCode::Up,
+                mods: Mods::NONE,
+            },
+            &cx(&store, &caps),
+        );
+    }
+    let (_, buf) = render_component(&mut c, &store, &th, size, false);
+    assert!(plain_text(&buf).contains("eth00"));
+}

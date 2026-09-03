@@ -97,7 +97,7 @@
 | `net.tx_drop` | Scalar | Count | `net` | transmit drops per second per {iface} |
 | `net.rx_err` | Scalar | Count | `net` | receive errors per second per {iface} |
 | `net.tx_err` | Scalar | Count | `net` | transmit errors per second per {iface} |
-| `net.speed_mbps` | Scalar | Count | `net` | negotiated link speed per {iface} in Mb/s; -1 when the driver cannot say (never guessed) |
+| `net.speed_mbps` | Scalar | MegabitsPerSec | `net` | negotiated link speed per {iface} in Mb/s; -1 when the driver cannot say (never guessed) |
 | `net.rtt_ms` | Scalar | Milliseconds | `net` | round-trip time per probe {target} (unprivileged ICMP, or a TCP connect) |
 | `net.loss_pct` | Scalar | Percent | `net` | loss per probe {target} over its ring |
 | `net.scan_ms` | Scalar | Milliseconds | `net` | wall ms of the last /proc/*/fd socket scan (the sources tile's note) |

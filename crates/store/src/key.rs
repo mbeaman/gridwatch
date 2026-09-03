@@ -144,6 +144,9 @@ pub enum Unit {
     Amps,
     Volts,
     Megahertz,
+    /// Link speed as the driver reports it (arc 7a): `net.speed_mbps` was
+    /// carrying `Count`, which `KEYS.md` then printed as a bare number.
+    MegabitsPerSec,
     Count,
     Seconds,
     Milliseconds,

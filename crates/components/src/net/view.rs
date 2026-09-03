@@ -245,7 +245,11 @@ fn iface_rows(n: &Net, with_errors: bool) -> Vec<Vec<Line>> {
         .collect()
 }
 
-fn iface_table(n: &Net, cx: &RenderCx<'_>) -> View {
+/// The interface table. It scrolls with the same cursor the connection
+/// table uses: with `a` pressed, torch shows nine interfaces and the tier
+/// gives this table a few rows, so `↑/↓` has to reach the ones below the
+/// fold — the key was advertised and did nothing here (arc 7a review).
+fn iface_table(n: &Net, cx: &RenderCx<'_>, body: usize) -> View {
     let with_errors = cx.inner.width >= 60;
     let mut columns = vec![
         Column {
@@ -281,12 +285,18 @@ fn iface_table(n: &Net, cx: &RenderCx<'_>) -> View {
             right: true,
         });
     }
+    let rows = iface_rows(n, with_errors);
+    let body = body.max(1);
+    let cursor = n.scroll().min(rows.len().saturating_sub(1));
+    let top = cursor
+        .saturating_sub(body.saturating_sub(1))
+        .min(rows.len().saturating_sub(body.min(rows.len())));
     View::Table {
         columns,
-        rows: iface_rows(n, with_errors),
-        selected: None,
+        selected: (cx.captured && rows.len() > body).then_some(cursor),
+        rows,
         sort: None,
-        scroll: 0,
+        scroll: top,
     }
 }
 
@@ -384,7 +394,14 @@ fn footer(n: &Net) -> Line {
 }
 
 fn table_tier(n: &Net, cx: &RenderCx<'_>, with_conns: bool) -> View {
-    let mut children = vec![(Constraint::Fill(2), iface_table(n, cx))];
+    // The iface table takes two fifths of the body at `table`, a fifth
+    // once the connection table is under it; minus the header row.
+    let body = usize::from(cx.inner.height);
+    let share = if with_conns { body / 5 } else { body * 2 / 5 };
+    let mut children = vec![(
+        Constraint::Fill(2),
+        iface_table(n, cx, share.saturating_sub(1)),
+    )];
     if let Some(p) = probe_line(n) {
         children.push((Constraint::Len(1), View::Text(vec![p])));
     }
@@ -499,7 +516,7 @@ fn full(n: &Net, cx: &RenderCx<'_>) -> View {
         children: vec![
             (
                 Constraint::Len(ifaces.min(cx.inner.height)),
-                iface_table(n, cx),
+                iface_table(n, cx, n.model().ifaces.len()),
             ),
             (Constraint::Len(3), View::Text(route_lines(n))),
             (
