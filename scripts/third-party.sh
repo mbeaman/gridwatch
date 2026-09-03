@@ -18,12 +18,19 @@ TARGET="${TARGET:-x86_64-unknown-linux-gnu}"
 OUT=THIRD_PARTY.md
 
 deps() {
+  # `--color never`: CI sets CARGO_TERM_COLOR=always, and a coloured `(*)`
+  # dedupe marker made the same crate look like two entries — 57 phantom
+  # crates in the CI table that never appeared locally.
+  # `LC_ALL=C`: GNU sort's default collation ignores `-`, so `anstyle` sorts
+  # after `anstyle-parse` under one locale and before it under another. A
+  # generated file has to be byte-identical everywhere or the drift check is
+  # a coin toss.
   cargo tree --locked --all-features --target "$TARGET" -e normal --prefix none \
-    --format "{p}|{l}" 2>/dev/null |
-    sed 's/ (proc-macro)//' |
+    --color never --format "{p}|{l}" 2>/dev/null |
+    sed 's/ (proc-macro)//; s/ (\*)//' |
     grep -v '^gridwatch' |
     grep -v '^$' |
-    sort -u
+    LC_ALL=C sort -u
 }
 
 {
@@ -53,15 +60,27 @@ HEADER
   printf '## Crates (%s)\n\n' "$(deps | wc -l)"
   printf '| crate | version | licence |\n|---|---|---|\n'
   deps | while IFS='|' read -r pkg lic; do
-    name="${pkg% *}"
-    ver="${pkg##* }"
-    printf '| `%s` | %s | %s |\n' "$name" "${ver#v}" "${lic:-(unstated)}"
+    # `{p}` is `name vX.Y.Z` for a registry crate and
+    # `name vX.Y.Z (https://…#rev)` for a git one, so take the first two
+    # fields rather than splitting on the last space — which put a whole
+    # git URL in astral-watch's version column.
+    name="${pkg%% *}"
+    rest="${pkg#* }"
+    ver="${rest%% *}"
+    src=""
+    case "$pkg" in
+      *"("*)
+        url="${pkg#*(}"
+        src=" (git \`${url%)}\`)"
+        ;;
+    esac
+    printf '| `%s` | %s%s | %s |\n' "$name" "${ver#v}" "$src" "${lic:-(unstated)}"
   done
   printf '\n## Licences in use\n\n'
   # `MIT OR Apache-2.0` and the older `MIT/Apache-2.0` are the same two
   # licences; split on both so the histogram counts licences, not spellings.
   deps | cut -d'|' -f2 | tr ' /' '\n\n' | grep -vE '^(OR|AND|WITH)$' |
-    sed 's/[()]//g' | grep -v '^$' | sort | uniq -c | sort -rn |
+    sed 's/[()]//g' | grep -v '^$' | LC_ALL=C sort | uniq -c | sort -rn |
     while read -r n lic; do
       if [ "$n" = 1 ]; then printf -- '- %s — 1 crate\n' "$lic"
       else printf -- '- %s — %s crates\n' "$lic" "$n"; fi

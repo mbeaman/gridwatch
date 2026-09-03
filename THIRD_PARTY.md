@@ -27,68 +27,68 @@ Two notes for anyone auditing this:
 | `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
 | `allocator-api2` | 0.2.21 | MIT OR Apache-2.0 |
 | `anstream` | 1.0.0 | MIT OR Apache-2.0 |
+| `anstyle` | 1.0.14 | MIT OR Apache-2.0 |
 | `anstyle-parse` | 1.0.0 | MIT OR Apache-2.0 |
 | `anstyle-query` | 1.1.5 | MIT OR Apache-2.0 |
-| `anstyle` | 1.0.14 | MIT OR Apache-2.0 |
 | `anyhow` | 1.0.104 | MIT OR Apache-2.0 |
 | `approx` | 0.5.1 | Apache-2.0 |
-| `astral-watch v0.7.0` | (https://github.com/mbeaman/astral-watch?rev=dce7eee77676268c66b3624c7a2870ed9d84eb9c#dce7eee7) | MIT |
+| `astral-watch` | 0.7.0 (git `https://github.com/mbeaman/astral-watch?rev=dce7eee77676268c66b3624c7a2870ed9d84eb9c#dce7eee7`) | MIT |
 | `async-broadcast` | 0.7.2 | MIT OR Apache-2.0 |
 | `async-recursion` | 1.1.1 | MIT OR Apache-2.0 |
 | `async-trait` | 0.1.92 | MIT OR Apache-2.0 |
 | `backtrace` | 0.3.76 | MIT OR Apache-2.0 |
 | `base64` | 0.23.1 | MIT OR Apache-2.0 |
-| `bitflags` | 1.3.2 | MIT/Apache-2.0 |
-| `bitflags` | 2.13.1 | MIT OR Apache-2.0 |
 | `bit-set` | 0.8.0 | Apache-2.0 OR MIT |
 | `bit-vec` | 0.8.0 | Apache-2.0 OR MIT |
-| `bon-macros` | 3.10.0 | MIT OR Apache-2.0 |
+| `bitflags` | 1.3.2 | MIT/Apache-2.0 |
+| `bitflags` | 2.13.1 | MIT OR Apache-2.0 |
 | `bon` | 3.10.0 | MIT OR Apache-2.0 |
+| `bon-macros` | 3.10.0 | MIT OR Apache-2.0 |
 | `by_address` | 1.2.1 | MIT OR Apache-2.0 |
 | `bytemuck` | 1.25.2 | Zlib OR Apache-2.0 OR MIT |
-| `byteorder-lite` | 0.1.0 | Unlicense OR MIT |
 | `byteorder` | 1.5.0 | Unlicense OR MIT |
+| `byteorder-lite` | 0.1.0 | Unlicense OR MIT |
 | `bytes` | 1.12.1 | MIT |
 | `castaway` | 0.2.4 | MIT |
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 |
 | `chrono` | 0.4.45 | MIT OR Apache-2.0 |
+| `clap` | 4.6.6 | MIT OR Apache-2.0 |
 | `clap_builder` | 4.6.6 | MIT OR Apache-2.0 |
 | `clap_derive` | 4.6.4 | MIT OR Apache-2.0 |
 | `clap_lex` | 1.1.0 | MIT OR Apache-2.0 |
-| `clap` | 4.6.6 | MIT OR Apache-2.0 |
-| `colorchoice` | 1.0.5 | MIT OR Apache-2.0 |
 | `color-eyre` | 0.6.5 | MIT OR Apache-2.0 |
 | `color-spantrace` | 0.3.0 | MIT OR Apache-2.0 |
+| `colorchoice` | 1.0.5 | MIT OR Apache-2.0 |
 | `compact_str` | 0.9.1 | MIT |
 | `console` | 0.16.4 | MIT |
 | `convert_case` | 0.10.0 | MIT |
 | `crc32fast` | 1.5.1 | MIT OR Apache-2.0 |
 | `critical-section` | 1.2.0 | MIT OR Apache-2.0 |
 | `crossterm` | 0.29.0 | MIT |
+| `darling` | 0.20.11 | MIT |
+| `darling` | 0.24.1 | MIT |
 | `darling_core` | 0.20.11 | MIT |
 | `darling_core` | 0.24.1 | MIT |
 | `darling_macro` | 0.20.11 | MIT |
 | `darling_macro` | 0.24.1 | MIT |
-| `darling` | 0.20.11 | MIT |
-| `darling` | 0.24.1 | MIT |
 | `dasp_frame` | 0.11.0 | MIT OR Apache-2.0 |
 | `dasp_sample` | 0.11.0 | MIT OR Apache-2.0 |
 | `deranged` | 0.5.8 | MIT OR Apache-2.0 |
+| `derive_builder` | 0.20.2 | MIT OR Apache-2.0 |
 | `derive_builder_core` | 0.20.2 | MIT OR Apache-2.0 |
 | `derive_builder_macro` | 0.20.2 | MIT OR Apache-2.0 |
-| `derive_builder` | 0.20.2 | MIT OR Apache-2.0 |
-| `derive_more-impl` | 2.1.1 | MIT |
 | `derive_more` | 2.1.1 | MIT |
+| `derive_more-impl` | 2.1.1 | MIT |
 | `document-features` | 0.2.12 | MIT OR Apache-2.0 |
 | `ebur128` | 0.1.10 | MIT |
 | `either` | 1.18.0 | MIT OR Apache-2.0 |
 | `endi` | 1.1.1 | MIT |
-| `enumflags2_derive` | 0.7.12 | MIT OR Apache-2.0 |
 | `enumflags2` | 0.7.12 | MIT OR Apache-2.0 |
+| `enumflags2_derive` | 0.7.12 | MIT OR Apache-2.0 |
 | `equivalent` | 1.0.2 | Apache-2.0 OR MIT |
 | `errno` | 0.3.14 | MIT OR Apache-2.0 |
-| `event-listener-strategy` | 0.5.4 | Apache-2.0 OR MIT |
 | `event-listener` | 5.4.2 | Apache-2.0 OR MIT |
+| `event-listener-strategy` | 0.5.4 | Apache-2.0 OR MIT |
 | `eyre` | 0.6.14 | MIT OR Apache-2.0 |
 | `fastrand` | 2.5.0 | Apache-2.0 OR MIT |
 | `fdeflate` | 0.3.7 | MIT OR Apache-2.0 |
@@ -107,8 +107,8 @@ Two notes for anyone auditing this:
 | `hashbrown` | 0.17.1 | MIT OR Apache-2.0 |
 | `heck` | 0.5.0 | MIT OR Apache-2.0 |
 | `hex` | 0.4.3 | MIT OR Apache-2.0 |
-| `httparse` | 1.10.1 | MIT OR Apache-2.0 |
 | `http` | 1.5.0 | MIT OR Apache-2.0 |
+| `httparse` | 1.10.1 | MIT OR Apache-2.0 |
 | `i2cdev` | 0.6.2 | MIT/Apache-2.0 |
 | `iana-time-zone` | 0.1.65 | MIT OR Apache-2.0 |
 | `ident_case` | 1.0.1 | MIT/Apache-2.0 |
@@ -117,8 +117,8 @@ Two notes for anyone auditing this:
 | `indenter` | 0.3.4 | MIT OR Apache-2.0 |
 | `indexmap` | 2.14.1 | Apache-2.0 OR MIT |
 | `indoc` | 2.0.7 | MIT OR Apache-2.0 |
-| `instability` | 0.3.13 | MIT |
 | `insta` | 1.48.0 | Apache-2.0 |
+| `instability` | 0.3.13 | MIT |
 | `is_terminal_polyfill` | 1.70.2 | MIT OR Apache-2.0 |
 | `itertools` | 0.14.0 | MIT OR Apache-2.0 |
 | `itertools` | 0.15.0 | MIT OR Apache-2.0 |
@@ -146,46 +146,46 @@ Two notes for anyone auditing this:
 | `num-complex` | 0.4.6 | MIT OR Apache-2.0 |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-integer` | 0.1.47 | MIT OR Apache-2.0 |
-| `num_threads` | 0.1.7 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
-| `nvml-wrapper-sys` | 0.9.1 | MIT OR Apache-2.0 |
+| `num_threads` | 0.1.7 | MIT OR Apache-2.0 |
 | `nvml-wrapper` | 0.12.1 | MIT OR Apache-2.0 |
+| `nvml-wrapper-sys` | 0.9.1 | MIT OR Apache-2.0 |
 | `object` | 0.37.3 | Apache-2.0 OR MIT |
 | `once_cell` | 1.21.4 | MIT OR Apache-2.0 |
 | `ordered-stream` | 0.2.0 | MIT OR Apache-2.0 |
 | `owo-colors` | 4.4.0 | MIT |
+| `palette` | 0.7.7 | MIT OR Apache-2.0 |
 | `palette_derive` | 0.7.7 | MIT OR Apache-2.0 |
 | `palette_math` | 0.7.7 | MIT OR Apache-2.0 |
-| `palette` | 0.7.7 | MIT OR Apache-2.0 |
-| `parking_lot_core` | 0.9.12 | MIT OR Apache-2.0 |
-| `parking_lot` | 0.12.5 | MIT OR Apache-2.0 |
 | `parking` | 2.2.1 | Apache-2.0 OR MIT |
+| `parking_lot` | 0.12.5 | MIT OR Apache-2.0 |
+| `parking_lot_core` | 0.9.12 | MIT OR Apache-2.0 |
 | `percent-encoding` | 2.3.2 | MIT OR Apache-2.0 |
-| `phf_shared` | 0.13.1 | MIT |
 | `phf` | 0.13.1 | MIT |
+| `phf_shared` | 0.13.1 | MIT |
 | `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT |
 | `png` | 0.18.1 | MIT OR Apache-2.0 |
 | `powerfmt` | 0.2.0 | MIT OR Apache-2.0 |
 | `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 |
 | `prettyplease` | 0.3.0 | MIT OR Apache-2.0 |
 | `primal-check` | 0.3.4 | MIT OR Apache-2.0 |
-| `procfs-core` | 0.18.0 | MIT OR Apache-2.0 |
-| `procfs` | 0.18.0 | MIT OR Apache-2.0 |
-| `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 |
 | `proc-macro-crate` | 3.5.0 | MIT OR Apache-2.0 |
+| `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 |
+| `procfs` | 0.18.0 | MIT OR Apache-2.0 |
+| `procfs-core` | 0.18.0 | MIT OR Apache-2.0 |
 | `proptest` | 1.11.0 | MIT OR Apache-2.0 |
 | `pxfm` | 0.1.30 | BSD-3-Clause OR Apache-2.0 |
 | `quick-error` | 1.2.3 | MIT/Apache-2.0 |
 | `quick-error` | 2.0.1 | MIT/Apache-2.0 |
 | `quote` | 1.0.47 | MIT OR Apache-2.0 |
+| `rand` | 0.9.5 | MIT OR Apache-2.0 |
 | `rand_chacha` | 0.9.0 | MIT OR Apache-2.0 |
 | `rand_core` | 0.9.5 | MIT OR Apache-2.0 |
-| `rand` | 0.9.5 | MIT OR Apache-2.0 |
 | `rand_xorshift` | 0.4.0 | MIT OR Apache-2.0 |
+| `ratatui` | 0.30.2 | MIT |
 | `ratatui-core` | 0.1.2 | MIT |
 | `ratatui-crossterm` | 0.1.2 | MIT |
 | `ratatui-macros` | 0.7.2 | MIT |
-| `ratatui` | 0.30.2 | MIT |
 | `ratatui-widgets` | 0.3.2 | MIT |
 | `realfft` | 3.5.0 | MIT |
 | `regex-automata` | 0.4.18 | MIT OR Apache-2.0 |
@@ -195,24 +195,24 @@ Two notes for anyone auditing this:
 | `rustc-demangle` | 0.1.28 | MIT/Apache-2.0 |
 | `rustfft` | 6.4.1 | MIT OR Apache-2.0 |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| `rustls-pki-types` | 1.15.1 | MIT OR Apache-2.0 |
 | `rustls` | 0.23.43 | Apache-2.0 OR ISC OR MIT |
+| `rustls-pki-types` | 1.15.1 | MIT OR Apache-2.0 |
 | `rustls-webpki` | 0.103.15 | ISC |
 | `rustversion` | 1.0.23 | MIT OR Apache-2.0 |
 | `rusty-fork` | 0.3.1 | MIT/Apache-2.0 |
 | `ryu` | 1.0.23 | Apache-2.0 OR BSL-1.0 |
 | `scopeguard` | 1.2.0 | MIT OR Apache-2.0 |
+| `serde` | 1.0.229 | MIT OR Apache-2.0 |
 | `serde_core` | 1.0.229 | MIT OR Apache-2.0 |
 | `serde_derive` | 1.0.229 | MIT OR Apache-2.0 |
 | `serde_json` | 1.0.151 | MIT OR Apache-2.0 |
 | `serde_repr` | 0.1.21 | MIT OR Apache-2.0 |
 | `serde_spanned` | 1.1.1 | MIT OR Apache-2.0 |
-| `serde` | 1.0.229 | MIT OR Apache-2.0 |
 | `sharded-slab` | 0.1.7 | MIT |
-| `signal-hook-mio` | 0.2.5 | MIT OR Apache-2.0 |
-| `signal-hook-registry` | 1.4.8 | MIT OR Apache-2.0 |
 | `signal-hook` | 0.3.18 | Apache-2.0/MIT |
 | `signal-hook` | 0.4.4 | MIT OR Apache-2.0 |
+| `signal-hook-mio` | 0.2.5 | MIT OR Apache-2.0 |
+| `signal-hook-registry` | 1.4.8 | MIT OR Apache-2.0 |
 | `simd-adler32` | 0.3.10 | MIT |
 | `similar` | 2.7.0 | Apache-2.0 |
 | `siphasher` | 1.0.3 | MIT/Apache-2.0 |
@@ -221,35 +221,35 @@ Two notes for anyone auditing this:
 | `static_assertions` | 1.1.0 | MIT OR Apache-2.0 |
 | `strength_reduce` | 0.2.4 | MIT OR Apache-2.0 |
 | `strsim` | 0.11.1 | MIT |
-| `strum_macros` | 0.28.0 | MIT |
 | `strum` | 0.28.0 | MIT |
+| `strum_macros` | 0.28.0 | MIT |
 | `subtle` | 2.6.1 | BSD-3-Clause |
 | `syn` | 2.0.119 | MIT OR Apache-2.0 |
 | `syn` | 3.0.4 | MIT OR Apache-2.0 |
 | `tachyonfx` | 0.25.1 | MIT |
 | `tempfile` | 3.27.0 | MIT OR Apache-2.0 |
-| `thiserror-impl` | 1.0.69 | MIT OR Apache-2.0 |
-| `thiserror-impl` | 2.0.20 | MIT OR Apache-2.0 |
 | `thiserror` | 1.0.69 | MIT OR Apache-2.0 |
 | `thiserror` | 2.0.20 | MIT OR Apache-2.0 |
+| `thiserror-impl` | 1.0.69 | MIT OR Apache-2.0 |
+| `thiserror-impl` | 2.0.20 | MIT OR Apache-2.0 |
 | `thread_local` | 1.1.10 | MIT OR Apache-2.0 |
-| `time-core` | 0.1.9 | MIT OR Apache-2.0 |
 | `time` | 0.3.55 | MIT OR Apache-2.0 |
-| `tokio-macros` | 2.7.2 | MIT |
+| `time-core` | 0.1.9 | MIT OR Apache-2.0 |
 | `tokio` | 1.53.1 | MIT |
+| `tokio-macros` | 2.7.2 | MIT |
+| `toml` | 0.9.12+spec-1.1.0 | MIT OR Apache-2.0 |
+| `toml` | 1.1.4+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_datetime` | 0.7.5+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_datetime` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_edit` | 0.25.13+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_parser` | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml` | 0.9.12+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml` | 1.1.4+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_writer` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
+| `tracing` | 0.1.44 | MIT |
 | `tracing-attributes` | 0.1.31 | MIT |
 | `tracing-core` | 0.1.36 | MIT |
 | `tracing-error` | 0.2.1 | MIT |
 | `tracing-log` | 0.2.0 | MIT |
 | `tracing-subscriber` | 0.3.23 | MIT |
-| `tracing` | 0.1.44 | MIT |
 | `transpose` | 0.2.3 | MIT OR Apache-2.0 |
 | `tui-big-text` | 0.8.9 | MIT OR Apache-2.0 |
 | `unarray` | 0.1.4 | MIT OR Apache-2.0 |
@@ -258,28 +258,28 @@ Two notes for anyone auditing this:
 | `unicode-truncate` | 2.0.1 | MIT OR Apache-2.0 |
 | `unicode-width` | 0.2.2 | MIT OR Apache-2.0 |
 | `untrusted` | 0.9.0 | ISC |
-| `ureq-proto` | 0.6.1 | MIT OR Apache-2.0 |
 | `ureq` | 3.4.0 | MIT OR Apache-2.0 |
-| `utf8parse` | 0.2.2 | Apache-2.0 OR MIT |
+| `ureq-proto` | 0.6.1 | MIT OR Apache-2.0 |
 | `utf8-zero` | 0.8.1 | MIT OR Apache-2.0 |
+| `utf8parse` | 0.2.2 | Apache-2.0 OR MIT |
 | `uuid` | 1.26.0 | Apache-2.0 OR MIT |
 | `wait-timeout` | 0.2.1 | MIT/Apache-2.0 |
 | `webpki-roots` | 1.0.9 | CDLA-Permissive-2.0 |
 | `winnow` | 0.7.15 | MIT |
 | `winnow` | 1.0.4 | MIT |
 | `wrapcenum-derive` | 0.4.1 | MIT/Apache-2.0 |
+| `zbus` | 5.19.0 | MIT |
 | `zbus_macros` | 5.19.0 | MIT |
 | `zbus_names` | 4.3.4 | MIT |
-| `zbus` | 5.19.0 | MIT |
 | `zcheapstr` | 1.1.0 | MIT |
 | `zerocopy` | 0.8.56 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | `zeroize` | 1.9.0 | Apache-2.0 OR MIT |
 | `zmij` | 1.0.23 | MIT |
 | `zune-core` | 0.5.3 | MIT OR Apache-2.0 OR Zlib |
 | `zune-jpeg` | 0.5.15 | MIT OR Apache-2.0 OR Zlib |
+| `zvariant` | 5.15.0 | MIT |
 | `zvariant_derive` | 5.15.0 | MIT |
 | `zvariant_utils` | 4.2.0 | MIT |
-| `zvariant` | 5.15.0 | MIT |
 
 ## Licences in use
 
