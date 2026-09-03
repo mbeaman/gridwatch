@@ -11,6 +11,7 @@ pub mod effects;
 pub mod exec;
 pub mod flourish;
 pub mod input;
+pub mod plugin;
 pub mod probe;
 pub mod proc_actions;
 pub mod save;
