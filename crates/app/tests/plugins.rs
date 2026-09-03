@@ -483,3 +483,59 @@ fn a_shot_without_a_config_is_unchanged() {
     let b = gridwatch_app::shot(registry(), 3, 120, 40, "mono", 1, "cells", None).unwrap();
     assert_eq!(a, b);
 }
+
+/// The runaway rule, as arithmetic and as a measurement — the two halves of
+/// the check that stops a plugin which simply spins (D58 seam 7). Testing the
+/// policy directly is what keeps a core from being burnt for ten seconds on
+/// every run; the live half was watched by hand and is recorded in
+/// PERFORMANCE.md.
+#[test]
+fn the_runaway_rule_stops_a_spinning_plugin() {
+    use gridwatch_app::plugin::supervise;
+    let ten = Duration::from_secs(10);
+    // Under the window: never, whatever it used.
+    assert!(supervise::runaway(Duration::from_secs(9), Duration::from_secs(9)).is_none());
+    // Under the share: a busy tenth of a core is a working plugin.
+    assert!(supervise::runaway(ten, Duration::from_secs(1)).is_none());
+    // At and over it: stopped, and the reason says the number.
+    let why = supervise::runaway(ten, Duration::from_secs(10)).expect("a full core is a runaway");
+    assert!(
+        why.contains("100%") && why.contains("the ceiling is 50%"),
+        "{why}"
+    );
+    assert!(supervise::runaway(ten, Duration::from_secs(5)).is_some());
+
+    // And the measurement the rule is fed: a child that spins really does
+    // read as most of a core, over a window short enough to be free.
+    let dir = workdir("cpu");
+    let argv = python_plugin(
+        &dir,
+        "cpu",
+        &format!(
+            r#"{PREAMBLE}
+x = 0
+while True:
+    x = (x * 31 + 7) % 1000003
+"#
+        ),
+    );
+    let mut plugin = gridwatch_app::plugin::Plugin::spawn(
+        gridwatch_app::plugin::PluginConfig::new("cpu", argv),
+        gridwatch_app::plugin::proto::Hello::new(Vec::new(), Vec::new()),
+    );
+    // Wait for the manifest, so the child is past its imports and spinning.
+    assert!(matches!(
+        plugin.next_report(Duration::from_secs(5)),
+        Some(gridwatch_app::plugin::Report::Ready(_))
+    ));
+    let before = plugin.cpu_used().expect("the child's CPU reads");
+    let window = Duration::from_millis(600);
+    std::thread::sleep(window);
+    let after = plugin.cpu_used().expect("the child's CPU reads");
+    let share = after.saturating_sub(before).as_secs_f64() / window.as_secs_f64();
+    plugin.stop();
+    assert!(
+        share > supervise::RUNAWAY_SHARE,
+        "a spinning child read as {share:.2} of a core, which the rule would not catch"
+    );
+}

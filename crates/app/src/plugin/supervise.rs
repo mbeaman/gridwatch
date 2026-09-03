@@ -27,6 +27,33 @@ pub const STRIKES: u32 = 3;
 /// plugin needs (the example publishes one) and far below what one can burn.
 pub const MAX_MSGS_PER_SEC: u32 = 500;
 
+/// A plugin over this share of one core, sustained for `RUNAWAY_WINDOW`, is
+/// stopped (D58 seam 7). The rate budget already stops one that *writes* too
+/// much; this is for one that simply spins. `RLIMIT_CPU` is the backstop
+/// underneath, but its default of 600 s is ten minutes of a core beside a
+/// game, which is not a limit anyone would call one.
+pub const RUNAWAY_SHARE: f64 = 0.50;
+pub const RUNAWAY_WINDOW: Duration = Duration::from_secs(10);
+
+/// The runaway decision, as arithmetic: `Some(why)` when a plugin that has
+/// used `used` of CPU over `elapsed` of wall time should be stopped. Split out
+/// so it can be tested without burning a core for ten seconds.
+pub fn runaway(elapsed: Duration, used: Duration) -> Option<String> {
+    if elapsed < RUNAWAY_WINDOW {
+        return None;
+    }
+    let share = used.as_secs_f64() / elapsed.as_secs_f64();
+    if share < RUNAWAY_SHARE {
+        return None;
+    }
+    Some(format!(
+        "stopped: {:.0}% of a core for {} s (the ceiling is {:.0}%)",
+        share * 100.0,
+        elapsed.as_secs(),
+        RUNAWAY_SHARE * 100.0
+    ))
+}
+
 /// The inbound queue's depth (D58 seam 7). Full, it **drops the oldest**: a
 /// reading nobody has read yet is worth less than the one after it, and a
 /// queue that grows instead is how a plugin becomes the host's memory leak.
@@ -330,6 +357,28 @@ impl Plugin {
 
     pub fn uptime(&self) -> Duration {
         self.started.elapsed()
+    }
+
+    /// The child's pid, while it is running.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.as_ref().map(|c| c.id())
+    }
+
+    /// CPU the child has used, from `/proc/<pid>/stat`'s `utime + stime`
+    /// (fields 14 and 15, after the comm field — which can itself contain
+    /// spaces and brackets, so the split is on the last `)`). `None` when the
+    /// process is gone or the file will not parse; the supervisor treats that
+    /// as "no reading", never as "zero".
+    pub fn cpu_used(&self) -> Option<Duration> {
+        let pid = self.pid()?;
+        let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let after_comm = text.rsplit_once(')')?.1;
+        let mut fields = after_comm.split_whitespace();
+        // The first field here is `state`, so utime is the 12th after it.
+        let utime: u64 = fields.nth(11)?.parse().ok()?;
+        let stime: u64 = fields.next()?.parse().ok()?;
+        let hz = 100; // CONFIG_HZ on every kernel this runs on; `getconf CLK_TCK`
+        Some(Duration::from_millis((utime + stime) * 1000 / hz))
     }
 
     /// How long to wait before the nth restart.

@@ -30,7 +30,7 @@ use gridwatch_ui::component::{Chrome, Footprint, KeyHint, Size as TileSize, Tier
 use gridwatch_ui::{Component, ComponentDef, Manifest};
 
 use super::proto::{self, Ask, Hello};
-use super::supervise::{Plugin, PluginConfig, Report};
+use super::supervise::{self, Plugin, PluginConfig, Report};
 use super::tile::{PluginTile, Tell};
 use crate::config::PluginSect;
 
@@ -365,6 +365,14 @@ struct PluginState {
     /// Metric names interned for this plugin, bounded by `MAX_METRIC_NAMES`.
     names: BTreeMap<String, &'static str>,
     capped: bool,
+    /// The runaway check's window: when it opened and the child's CPU then.
+    /// `None` until the first reading, and reset whenever the child drops
+    /// back under the share.
+    window: Option<(Instant, Duration)>,
+    stopped: bool,
+    /// How many reports the queue had dropped when we last said so, so the
+    /// warning is raised once per rise rather than once per second.
+    said_dropped: u64,
 }
 
 impl PluginState {
@@ -373,6 +381,9 @@ impl PluginState {
             source,
             names: BTreeMap::new(),
             capped: false,
+            window: None,
+            stopped: false,
+            said_dropped: 0,
         }
     }
 
@@ -412,6 +423,7 @@ struct Hosted {
 
 impl Hosted {
     fn run(&mut self, wishes: Receiver<Wish>) {
+        let mut supervised = Instant::now();
         loop {
             // Park rather than spin: a plugin's reports arrive on its own
             // channel and this loop is the only thing that reads them, so the
@@ -437,9 +449,65 @@ impl Hosted {
                     self.report(i, r);
                 }
             }
+            if supervised.elapsed() >= Duration::from_secs(1) {
+                supervised = Instant::now();
+                self.supervise();
+            }
         }
         for p in &mut self.plugins {
             p.stop();
+        }
+    }
+
+    /// Once a second: stop a plugin that is spinning, and say when the queue
+    /// has had to drop (D58 seam 7). The rate budget already makes a plugin
+    /// that *writes* too much free; this is the one that simply burns.
+    fn supervise(&mut self) {
+        for i in 0..self.plugins.len() {
+            if self.states[i].stopped {
+                continue;
+            }
+            let dropped = self.plugins[i].dropped();
+            if dropped > self.states[i].said_dropped {
+                self.states[i].said_dropped = dropped;
+                tracing::warn!(
+                    target: "gridwatch::plugin",
+                    "{}: {dropped} messages dropped to keep the queue bounded",
+                    self.states[i].source.0
+                );
+            }
+            let Some(used) = self.plugins[i].cpu_used() else {
+                self.states[i].window = None;
+                continue;
+            };
+            let now = Instant::now();
+            let (since, then) = *self.states[i].window.get_or_insert((now, used));
+            let elapsed = now.duration_since(since);
+            let Some(why) = supervise::runaway(elapsed, used.saturating_sub(then)) else {
+                // Back under the share (or the window is not up yet): open a
+                // fresh window rather than averaging a quiet minute against a
+                // busy second.
+                if elapsed >= supervise::RUNAWAY_WINDOW {
+                    self.states[i].window = Some((now, used));
+                }
+                continue;
+            };
+            tracing::warn!(target: "gridwatch::plugin", "{}: {why}", self.states[i].source.0);
+            self.plugins[i].stop();
+            self.states[i].stopped = true;
+            let _ = self.words.send(Word::Toast(
+                Severity::Crit,
+                format!("plugin '{}' {why}", self.states[i].source.0),
+            ));
+            self.status(i, proto::State::Stopped, Some(why.clone()), None);
+            self.tell_plugin(
+                i,
+                &Tell::Status {
+                    state: proto::State::Stopped,
+                    reason: Some(why),
+                    hint: Some("a plugin is stopped, not retried, when it runs away".into()),
+                },
+            );
         }
     }
 
@@ -586,6 +654,7 @@ impl Hosted {
                 );
             }
             Report::Stopped(why) => {
+                self.states[i].stopped = true;
                 self.status(
                     i,
                     proto::State::Stopped,
