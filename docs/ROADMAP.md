@@ -116,9 +116,9 @@ Each arc: implement → adversarial review → fix → report → user approves 
 **Goal:** packaging, docs and 1.0 readiness.
 **Deliverables**
 - [ ] `release.yml` gnu + musl tarballs, nfpm deb/rpm, AUR PKGBUILD, Nix flake, udev RAPL rule (optional)
-- [ ] `gridwatch theme import` (alacritty/wezterm/base16)
-- [ ] Docs complete (ARCHITECTURE, ADDING-A-COMPONENT, COMPONENTS, THEMES, LAYOUT, KEYBINDINGS, PERFORMANCE, PARITY, CONTRIBUTING), README with per-theme screenshots, THIRD_PARTY.md
+- [x] `gridwatch theme import` (alacritty/wezterm/base16) — 9a, 2026-09-02: reads the format from the file's contents, derives the roles a foreign scheme cannot carry, **loads what it wrote** and prints the WCAG report, writes a file and never applies one; a fixture per format renders a real frame in the tests
+- [x] Docs complete (ARCHITECTURE, ADDING-A-COMPONENT, COMPONENTS, THEMES, LAYOUT, KEYBINDINGS, PERFORMANCE, PARITY, CONTRIBUTING), README with per-theme screenshots, THIRD_PARTY.md — 9a, 2026-09-02. `KEYBINDINGS.md` and `THIRD_PARTY.md` are **generated** and drift-checked, as is the README's own embedded frame (it had been claiming four shipped tiles were still to come); `ADDING-A-COMPONENT.md` was written by following §15 against `sensors`, which turned up two wrong claims about the real API
 - [ ] crates.io publication path decided (blocked on astral-watch 0.8.0), `cargo install --git` documented
-- [ ] Bench suite (criterion) for apply/resample/full-frame render committed with baseline numbers
+- [x] Bench suite (criterion) for apply/resample/full-frame render committed with baseline numbers — 9a, 2026-09-02: `cargo bench -p gridwatch-app`, deliberately **not** a gate (D59 seam 3), baselines in PERFORMANCE.md — apply 2.48 µs, an uncached 250x70 frame 513 µs against P19's 8 ms, theme load 26.5 µs
 **Acceptance:** a fresh Ubuntu container with only build-essential + pkg-config builds every feature; packaged binary runs on torch with all seven components live.
 **Risks:** musl + NVML dlopen path (runtime test in release job).
