@@ -293,3 +293,40 @@ fn the_io_columns_are_read_only_when_asked_for() {
     );
     assert!(ours.write_bps >= 0.0 && ours.write_bps.is_finite());
 }
+
+/// P15 with the gated files on (arc 8a): the same pass, plus one
+/// `/proc/<pid>/io` open and read per process. This is what htop's `H` and
+/// its I/O screen cost, and the ceiling is the reason they are behind
+/// `Detail::Columns` rather than on by default.
+///
+/// `cargo test -p gridwatch-sources --release --test procs -- --ignored`.
+#[test]
+#[ignore = "timing; run in release on torch"]
+fn live_scan_with_the_gated_files_is_inside_p15() {
+    let mut sc = ProcScanner::new(PathBuf::from("/proc"), PathBuf::from("/etc/passwd"));
+    let total = total_ticks(Path::new("/proc"));
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let _ = sc.scan(total, cpus, 91 * 1024 * 1024, 7, true);
+    let mut worst = 0.0f64;
+    let mut sum = 0.0f64;
+    let n = 10;
+    let mut readable = 0;
+    for _ in 0..n {
+        let s = sc.scan(total, cpus, 91 * 1024 * 1024, 7, true);
+        readable = s.table.rows.iter().filter(|r| r.io_readable).count();
+        println!(
+            "columns scan: {} rows, {readable} readable io, {:.2} ms",
+            s.table.rows.len(),
+            s.ms
+        );
+        worst = worst.max(s.ms);
+        sum += s.ms;
+    }
+    println!("mean {:.2} ms, worst {worst:.2} ms", sum / n as f64);
+    assert!(readable > 0, "at least our own processes are readable");
+    // P15's ceiling is 12 ms; the pid-level pass measures ~6 ms, so the
+    // gated read has ~6 ms of room and this fails if it eats it.
+    assert!(worst < 12.0, "the gated pass took {worst:.2} ms");
+}

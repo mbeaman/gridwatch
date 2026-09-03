@@ -127,12 +127,16 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 2026-09-02 | 7a | quiet | **live** overview 250x70 (pty), every source incl. the new `net` with its connection scan, 40 s window (**P1/P5/P6/P13**) | no | **2.67%** (render 0.42 · gw-gpu 0.97 · gw-cpu 0.65 · gw-net **0.52** · gw-sensors 0.07) | 33 | 4.1 KB/s | 2.15 | — | — | — | scan 3.3 ms | — / 2.20 ms | 49828 kB |
 | 2026-09-02 | 7b | — | **P18** rules cost: ten rules over a batch of 40 scalars, in `Store::apply` (`ten_rules_cost_microseconds_per_batch`) | no | — | — | — | — | — | — | — | — | **24 µs** release / 149 µs debug per batch | — |
 | 2026-09-02 | 7 (post-review) | quiet | **live** overview 250x70 (pty), every source, the probes now on their own thread, 40 s window (**P1/P5/P6/P13**) | no | **2.60%** (render 0.43 · gw-gpu 0.88 · gw-cpu 0.65 · gw-net 0.53 · gw-net-probe **0.00** · gw-sensors 0.07) | 33 | 3.9 KB/s | 2.17 | — | — | — | — | — / 2.25 ms | 50468 kB |
+| 2026-09-02 | 8a | — | **P15 with the gated files** — the pid scan plus one `/proc/<pid>/io` per process, 638 rows, release (`live_scan_with_the_gated_files_is_inside_p15`) | no | — | — | — | — | — | — | — | scan **3.5 ms** mean / 4.1 ms worst (173 of 638 readable) | — | — |
 
 
 
 
 
 
+
+
+**Arc 8a notes (2026-09-02).** The gated pass — htop's `H` and its I/O screen — costs **3.5 ms mean, 4.1 ms worst** over 638 processes, against P15's 12 ms ceiling and the 6.05 ms the plain pid-level pass measures in the same run. (The gated number is lower because the plain pass ran first and warmed the dentry cache; the honest reading is that opening one more small file per process is not what makes this scan expensive.) 173 of 638 `/proc/<pid>/io` files were readable as the user, and the tile marks the other 465 `n/a` rather than drawing zeroes. Both are behind `Detail::Columns`, which only the zoomed `full` tier asks for, and only once a person presses `H` or switches to the I/O screen. The executor thread is idle unless an action is queued and never touches the render thread; the confirm bar is a line of text.
 
 **Arc 7 post-review note (2026-09-02).** Moving the latency probes off the source thread (D57 amendment 22) cost nothing measurable: the new `gw-net-probe` thread rounds to **0.00 %** — it spends its life blocked on a channel or in a socket timeout — and the process total came down slightly, to **2.60 %** with every source live. Wake-ups are unchanged at 33/s. What the change bought is that a silent probe target can no longer delay a rate sample: inline, two of them held the collector for up to 1.8 s a tick.
 
