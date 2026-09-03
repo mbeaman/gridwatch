@@ -75,8 +75,19 @@ impl Store {
     /// The only mutation (§4.2). Returns alert events for the overlay.
     /// Install the `[[rules]]` this run watches (§9, arc 7b). They are
     /// evaluated inside `apply`, over the keys a batch touched.
-    pub fn set_rules(&mut self, rules: crate::rules::Rules) {
+    /// Returns whatever the swap resolved: a rule that is gone cannot
+    /// clear its own alert, so replacing the set does it (arc 7b review).
+    /// The caller routes these like any other alert.
+    pub fn set_rules(&mut self, mut rules: crate::rules::Rules) -> SmallVec<[AlertEvent; 2]> {
+        let old = std::mem::take(&mut self.rules);
+        let events = rules.adopt(old, self.latest, crate::source::RULES);
         self.rules = rules;
+        let mut out = SmallVec::new();
+        for ev in events {
+            self.alerts.observe(&ev);
+            out.push(ev);
+        }
+        out
     }
 
     pub fn rules(&self) -> &crate::rules::Rules {

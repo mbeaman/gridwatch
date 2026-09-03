@@ -655,18 +655,33 @@ pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
             } else {
                 format!("{{{}}}", r.label)
             };
-            // `absent` has no right-hand side to print.
-            let cmp = if r.op == gridwatch_store::rules::Op::Absent {
-                "absent".to_string()
-            } else {
-                format!("{} {rhs}", r.op.symbol())
-            };
+            // `absent` has no right-hand side, and resolves the moment
+            // the key comes back rather than after `clear_s`.
+            if r.op == gridwatch_store::rules::Op::Absent {
+                lines.push(format!(
+                    "  {} — {}{} absent for {:.0}s, resolves as soon as it returns ({:?})",
+                    r.name,
+                    r.key,
+                    label,
+                    r.for_s.as_secs_f64(),
+                    r.severity,
+                ));
+                if r.label.contains('*') {
+                    lines.push(format!(
+                        "      note: `{}` is a pattern, so this can only fire for a label that \
+                         has been seen at least once; name one exactly to catch a key that \
+                         never arrives",
+                        r.label
+                    ));
+                }
+                continue;
+            }
             lines.push(format!(
-                "  {} — {}{} {} for {:.0}s, clears after {:.0}s ({:?})",
+                "  {} — {}{} {} {rhs} for {:.0}s, clears after {:.0}s ({:?})",
                 r.name,
                 r.key,
                 label,
-                cmp,
+                r.op.symbol(),
                 r.for_s.as_secs_f64(),
                 r.clear_s.as_secs_f64(),
                 r.severity,

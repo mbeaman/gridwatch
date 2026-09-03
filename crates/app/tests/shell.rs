@@ -2043,11 +2043,28 @@ message = "the gpu is at {value}°C""#,
     assert!(panel.contains("91.0"), "{panel}");
     sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Esc)));
     // `a` acknowledges it like any other alert.
+    // `a` takes the banner down and leaves the alert active: the key bar
+    // always carries the words "a ack", so the assertion has to be about
+    // the banner itself (arc 7b review).
+    // The banner is the row under the tab bar; the alerts tile keeps
+    // showing the alert either way, so the assertion is about that row.
+    let banner_row = |sh: &mut Shell| -> String {
+        page_text(sh, 250, 70)
+            .lines()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    assert!(banner_row(&mut sh).contains("gpu hot"), "no banner");
     sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('a'))));
-    let text = page_text(&mut sh, 250, 70);
     assert!(
-        !text.contains("gpu hot") || text.contains("acked") || text.contains("ack"),
-        "the banner survived the acknowledgement: {text}"
+        !banner_row(&mut sh).contains("gpu hot"),
+        "the banner survived the acknowledgement"
+    );
+    assert_eq!(
+        sh.store.alerts().active().count(),
+        1,
+        "acknowledging is not resolving"
     );
     // Cooling resolves it, and the alerts tile lets it go.
     let ev = sh.store.apply(&hot(63, 50.0));

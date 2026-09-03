@@ -63,13 +63,24 @@ kind = "sensors"
 #   op        > >= < <= == != , or `absent` (the key stopped arriving).
 #   value     a number, or another metric read at the same label — a drive
 #             compared against its own `sensor.crit_c` needs no hard-coding.
-#   for_s     how long it must hold before raising (`absent`: how long the
-#             key may be missing). clear_s defaults to for_s.
+#   for_s     how long it must hold before raising. An `absent` rule
+#             requires one: it says how long the key may be missing, and a
+#             rule without it would be true from the first frame. clear_s
+#             defaults to for_s, and an `absent` rule resolves as soon as
+#             its key comes back.
 #   message   {key} {label} {value} {threshold} {op} are substituted.
 #
 # `gridwatch config check` parses these and names any that are wrong; a rule
-# that does not parse is skipped, never guessed at. The examples below are
-# torch's, commented out — uncomment what you want.
+# that does not parse is skipped, never guessed at.
+#
+# Two things worth knowing. A threshold rule changes state only when a
+# sample arrives, so one that is raised when its source dies stays raised
+# until the source returns — the tile's STALE badge is what tells you the
+# data stopped. And an `absent` rule whose label is a pattern can only fire
+# for a label that has been seen at least once; name the label exactly
+# (`net.rx_bps{eno1}`) to catch a key that never arrives at all.
+#
+# The examples below are torch's, commented out — uncomment what you want.
 #
 # [[rules]]
 # name = "gpu hot"

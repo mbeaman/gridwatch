@@ -60,11 +60,25 @@ impl Op {
             Op::Ge => lhs >= rhs,
             Op::Lt => lhs < rhs,
             Op::Le => lhs <= rhs,
-            Op::Eq => (lhs - rhs).abs() < f64::EPSILON,
-            Op::Ne => (lhs - rhs).abs() >= f64::EPSILON,
+            // A **relative** tolerance: `f64::EPSILON` is smaller than
+            // the gap between representable numbers above 1.0, so an
+            // absolute comparison made `== 84` unable to match a computed
+            // 84 and `!=` always true. D57 amendment 18 said this had been
+            // fixed; a partially-applied edit meant it had not, and the
+            // arc 7b review caught the drift between the doc and the code.
+            Op::Eq => near(lhs, rhs),
+            Op::Ne => !near(lhs, rhs),
             Op::Absent => false,
         }
     }
+}
+
+/// Equal to within a relative tolerance (one part in a billion, with an
+/// absolute floor so values near zero still compare sanely). NaN is never
+/// equal to anything, including itself, which is what a rule wants.
+fn near(a: f64, b: f64) -> bool {
+    let diff = (a - b).abs();
+    diff <= 1e-9 * a.abs().max(b.abs()).max(1.0)
 }
 
 /// A rule's right-hand side: a number, or another metric (`sensor.crit_c`
@@ -190,7 +204,9 @@ pub type KnownLabels<'a> = &'a dyn Fn(&str, &str) -> Vec<(String, Ts)>;
 #[derive(Clone, Debug, Default)]
 pub struct Rules {
     rules: Vec<Rule>,
-    states: BTreeMap<(usize, String), State>,
+    /// Keyed by **rule name and label**, not by index: a reload rebuilds
+    /// the `Vec` and the states have to survive it (arc 7b review).
+    states: BTreeMap<(String, String), State>,
     /// When this set of rules started watching — the clock a key that has
     /// never arrived is counted absent from.
     started: Option<Ts>,
@@ -245,6 +261,43 @@ impl Rules {
         &self.rules
     }
 
+    /// Take over from the rules this set replaces (a config reload).
+    ///
+    /// A rule that is still here keeps its state, so an alert that is
+    /// already raised is neither re-raised nor un-acknowledged; a rule
+    /// that is gone has its raised alerts **resolved**, because nothing
+    /// will ever clear them otherwise. Before this, editing either config
+    /// file — a theme name, a layout tweak — re-fired active alerts or
+    /// stranded them until restart (arc 7b review, D57 amendment 25).
+    pub fn adopt(&mut self, old: Rules, at: Ts, source: SourceId) -> Vec<AlertEvent> {
+        self.started = old.started;
+        let mut out = Vec::new();
+        for ((name, label), state) in old.states {
+            match self.rules.iter().find(|r| r.name == name) {
+                Some(_) => {
+                    self.states.insert((name, label), state);
+                }
+                None if state.raised => {
+                    out.push(AlertEvent {
+                        id: if label.is_empty() {
+                            AlertId::new(&name)
+                        } else {
+                            AlertId::new(&format!("{name}/{label}"))
+                        },
+                        source,
+                        severity: Severity::Info,
+                        transition: Transition::Resolved,
+                        title: Arc::from(name.as_str()),
+                        detail: Arc::from("the rule was removed"),
+                        at,
+                    });
+                }
+                None => {}
+            }
+        }
+        out
+    }
+
     /// Evaluate the rules a batch's samples touch. `lookup` reads another
     /// metric for a rule whose right-hand side is a key.
     pub fn observe(
@@ -257,7 +310,7 @@ impl Rules {
         let mut out = Vec::new();
         for (id, value) in samples {
             let label = label_text(&id.label);
-            for (i, rule) in self.rules.iter().enumerate() {
+            for rule in self.rules.iter() {
                 if rule.op == Op::Absent || !rule.matches(id) {
                     continue;
                 }
@@ -271,7 +324,10 @@ impl Rules {
                     continue;
                 };
                 let holds = rule.op.holds(*value, threshold);
-                let st = self.states.entry((i, label.clone())).or_default();
+                let st = self
+                    .states
+                    .entry((rule.name.clone(), label.clone()))
+                    .or_default();
                 st.seen = Some(at);
                 if let Some(ev) = step(rule, st, holds, at, &label, *value, threshold, source) {
                     out.push(ev);
@@ -281,20 +337,29 @@ impl Rules {
         out
     }
 
-    /// The `absent` rules, and the clear-side of every rule whose key
-    /// stopped arriving. Called on the frame's clock, not per batch.
+    /// The `absent` rules, on the frame's clock rather than a batch's.
+    ///
+    /// A **threshold** rule is not touched here: it changes state only
+    /// when a sample arrives, so one that is raised when its source dies
+    /// stays raised until the source comes back. That is deliberate — the
+    /// alternative is inventing a clear from no data — and the tile's
+    /// `STALE` badge is what tells a person the source stopped (the doc
+    /// comment used to claim otherwise; arc 7b review, D57 amendment 27).
     pub fn tick(&mut self, at: Ts, source: SourceId, known: KnownLabels<'_>) -> Vec<AlertEvent> {
         // The clock the never-seen case counts from: a key that has never
         // arrived is treated as last seen when the rules were installed,
         // so `for_s` still means what it says.
         let started = *self.started.get_or_insert(at);
         let mut out = Vec::new();
-        for (i, rule) in self.rules.iter().enumerate() {
+        for rule in self.rules.iter() {
             if rule.op != Op::Absent {
                 continue;
             }
             let mut labels = known(&rule.key, &rule.label);
             if labels.is_empty() && !rule.label.contains('*') {
+                // An exact label (including the empty one, for a key that
+                // carries none) is a name we can watch for even before it
+                // exists.
                 // Nothing has ever published it: that is the absence the
                 // rule was written for, dated from installation.
                 labels.push((rule.label.clone(), started));
@@ -306,7 +371,10 @@ impl Rules {
                 let mut immediate = rule.clone();
                 immediate.for_s = Duration::ZERO;
                 immediate.clear_s = Duration::ZERO;
-                let st = self.states.entry((i, label.clone())).or_default();
+                let st = self
+                    .states
+                    .entry((rule.name.clone(), label.clone()))
+                    .or_default();
                 st.seen = Some(last);
                 if let Some(ev) = step(&immediate, st, gone, at, &label, 0.0, 0.0, source) {
                     out.push(ev);
@@ -321,7 +389,7 @@ impl Rules {
         self.states
             .iter()
             .filter(|(_, s)| s.raised)
-            .map(|((i, label), _)| (self.rules[*i].name.clone(), label.clone()))
+            .map(|((name, label), _)| (name.clone(), label.clone()))
             .collect()
     }
 }
@@ -439,6 +507,26 @@ pub fn parse_rule(t: &toml::Table, known_key: &dyn Fn(&str) -> bool) -> Result<R
             .map(Duration::from_secs_f64)
     };
     let for_s = secs("for_s").unwrap_or(Duration::ZERO);
+    // An `absent` rule compares the frame clock against the last sample's
+    // stamp, and the frame is always later — so `for_s = 0` is
+    // permanently true. A rule that says "tell me when this stops" needs
+    // to say how long counts as stopped (arc 7b review, D57 amendment 26).
+    if op == Op::Absent && for_s.is_zero() {
+        return Err(err(
+            "`absent` needs a `for_s`: how long the key may be missing before it counts",
+        ));
+    }
+    // A `for_s` that is not a number at all (`for_s = "30"`) silently
+    // became zero; say so instead.
+    for k in ["for_s", "clear_s"] {
+        if let Some(v) = t.get(k)
+            && secs(k).is_none()
+        {
+            return Err(err(&format!(
+                "`{k}` must be a non-negative number of seconds, not {v}"
+            )));
+        }
+    }
     let severity = match t.get("severity").and_then(|v| v.as_str()).unwrap_or("warn") {
         "info" => Severity::Info,
         "warn" => Severity::Warn,

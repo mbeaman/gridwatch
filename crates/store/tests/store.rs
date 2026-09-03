@@ -507,3 +507,89 @@ for_s = 10"#,
     assert!(!plain.rules().has_absent());
     assert!(plain.tick_rules(Ts(1)).is_empty());
 }
+
+/// Arc 7b review: a config reload rebuilds the rule set, and used to lose
+/// every rule's state with it — re-firing an active alert or stranding it
+/// until restart. A rule that survives keeps its state; a rule that is
+/// removed has its alert resolved.
+#[test]
+fn reloading_the_rules_keeps_what_is_raised_and_resolves_what_is_gone() {
+    use gridwatch_store::rules::{Rules, parse_all};
+    let known = |k: &str| gridwatch_store::key::lookup(k).is_some();
+    let rule = |name: &str, value: i64| -> toml::Table {
+        toml::from_str(&format!(
+            "name = \"{name}\"\nkey = \"gpu.temp_c\"\nop = \">\"\nvalue = {value}\nfor_s = 1\nclear_s = 1"
+        ))
+        .unwrap()
+    };
+    let hot = |t: u64, v: f64| {
+        Msg::Batch(Batch {
+            source: SourceId("gpu"),
+            at: Ts(t * 1_000_000_000),
+            samples: vec![Sample {
+                id: gridwatch_store::keys::gpu::TEMP_C.idx(0).id,
+                datum: Datum::Scalar(v),
+            }],
+        })
+    };
+
+    let mut store = Store::default();
+    let (rules, _) = parse_all(&[rule("hot", 84), rule("warm", 40)], &known);
+    assert!(store.set_rules(Rules::new(rules)).is_empty());
+    store.apply(&hot(10, 90.0));
+    let raised = store.apply(&hot(12, 90.0));
+    assert_eq!(raised.len(), 2, "both rules hold: {raised:?}");
+    assert_eq!(store.alerts().active().count(), 2);
+
+    // A reload that keeps `hot` and drops `warm`: nothing re-raises, and
+    // `warm` is resolved because nothing else ever could.
+    let (rules, _) = parse_all(&[rule("hot", 84)], &known);
+    let resolved = store.set_rules(Rules::new(rules));
+    assert_eq!(resolved.len(), 1, "{resolved:?}");
+    assert_eq!(resolved[0].title.as_ref(), "warm");
+    assert_eq!(
+        resolved[0].transition,
+        gridwatch_store::Transition::Resolved
+    );
+    assert_eq!(store.alerts().active().count(), 1, "only `hot` is left");
+    // Still hot, still raised, and it does not raise a second time.
+    for t in 13..20 {
+        assert!(
+            store.apply(&hot(t, 90.0)).is_empty(),
+            "a surviving rule re-raised at {t}s"
+        );
+    }
+    assert_eq!(store.rules().raised(), vec![("hot".into(), "0".into())]);
+    // And it can still resolve normally.
+    store.apply(&hot(21, 50.0));
+    let ev = store.apply(&hot(23, 50.0));
+    assert_eq!(ev.len(), 1);
+    assert_eq!(ev[0].transition, gridwatch_store::Transition::Resolved);
+    assert_eq!(store.alerts().active().count(), 0);
+}
+
+/// Arc 7b review: the config surface refuses what it cannot honour.
+#[test]
+fn a_rule_that_cannot_work_is_refused_at_parse_time() {
+    use gridwatch_store::rules::parse_all;
+    let known = |k: &str| gridwatch_store::key::lookup(k).is_some();
+    let problem = |text: &str| -> String {
+        let (rules, errors) = parse_all(&[toml::from_str(text).unwrap()], &known);
+        assert!(rules.is_empty(), "{text} should not have parsed");
+        errors[0].problem.clone()
+    };
+    // `absent` against a frame clock is always true without a hold.
+    assert!(
+        problem("name = \"x\"\nkey = \"gpu.temp_c\"\nop = \"absent\"").contains("for_s"),
+        "an absent rule with no hold must be refused"
+    );
+    // A hold that is not a number was silently becoming zero.
+    assert!(
+        problem("name = \"x\"\nkey = \"gpu.temp_c\"\nop = \">\"\nvalue = 1\nfor_s = \"30\"")
+            .contains("seconds"),
+    );
+    assert!(
+        problem("name = \"x\"\nkey = \"gpu.temp_c\"\nop = \">\"\nvalue = 1\nclear_s = -5")
+            .contains("seconds"),
+    );
+}

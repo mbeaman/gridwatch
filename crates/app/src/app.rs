@@ -207,7 +207,9 @@ impl Shell {
                 (def.info.cadence.visible, def.info.cadence.focused),
             );
         }
-        store.set_rules(gridwatch_store::rules::Rules::new(loaded.rules.clone()));
+        // At startup there is nothing to resolve; the events are only
+        // non-empty on a reload that removed a rule.
+        let _ = store.set_rules(gridwatch_store::rules::Rules::new(loaded.rules.clone()));
         let instances = build_instances(&registry, loaded, &caps, None);
         let view_warnings = view_warnings(loaded, &instances);
         let theme_ref = theme.name.clone();
@@ -406,8 +408,10 @@ impl Shell {
         self.view_warnings = view_warnings(loaded, &self.instances);
         self.grid = loaded.grid;
         self.pages = loaded.pages.clone();
-        self.store
+        let resolved = self
+            .store
             .set_rules(gridwatch_store::rules::Rules::new(loaded.rules.clone()));
+        self.route_alerts(resolved);
         self.fps = loaded.config.fps; // as at start; `set_fps` is the CLI's clamp
         self.fps_max = loaded.config.fps_max;
         self.unfocused_fps = loaded.config.perf.unfocused_fps;
