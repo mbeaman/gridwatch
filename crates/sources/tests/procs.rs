@@ -62,7 +62,7 @@ fn cpu_percent_is_irix_mode_over_the_aggregate_period() {
     std::fs::create_dir_all(&dir).unwrap();
     let pw = passwd(&dir);
     let mut sc = ProcScanner::new(tick(1), pw.clone());
-    let first = sc.scan(total_ticks(&tick(1)), 32, 91 * 1024 * 1024, 7);
+    let first = sc.scan(total_ticks(&tick(1)), 32, 91 * 1024 * 1024, 7, false);
     assert!(first.ms >= 0.0);
     let row = first
         .table
@@ -216,14 +216,14 @@ fn live_scan_is_inside_p15() {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    let _ = sc.scan(total, cpus, 91 * 1024 * 1024, 7);
+    let _ = sc.scan(total, cpus, 91 * 1024 * 1024, 7, false);
     let mut worst = 0.0f64;
     let mut sum = 0.0f64;
     let n = 10;
     for _ in 0..n {
         std::thread::sleep(std::time::Duration::from_millis(300));
         let total = total_ticks(Path::new("/proc"));
-        let s = sc.scan(total, cpus, 91 * 1024 * 1024, 7);
+        let s = sc.scan(total, cpus, 91 * 1024 * 1024, 7, false);
         worst = worst.max(s.ms);
         sum += s.ms;
         println!(
@@ -238,4 +238,58 @@ fn live_scan_is_inside_p15() {
         sum / f64::from(n)
     );
     assert!(worst <= 20.0, "P15: worst pass {worst:.2} ms > 20 ms");
+}
+
+/// Arc 8a: the gated `/proc/<pid>/io` file is read only at
+/// `Detail::Columns`, and its rates come from the interval between two
+/// such passes. This scans our own tree, where at least our own process is
+/// readable.
+#[test]
+fn the_io_columns_are_read_only_when_asked_for() {
+    let mut sc = ProcScanner::new(PathBuf::from("/proc"), PathBuf::from("/etc/passwd"));
+    let total = total_ticks(Path::new("/proc"));
+    // Without the flag: nothing is read, and every row says so.
+    let plain = sc.scan(total, 32, 91 * 1024 * 1024, 7, false);
+    assert!(!plain.table.rows.is_empty());
+    assert!(
+        plain.table.rows.iter().all(|r| !r.io_readable),
+        "no io file is opened at Detail::Table"
+    );
+    assert!(
+        plain
+            .table
+            .rows
+            .iter()
+            .all(|r| r.read_bps == 0.0 && r.write_bps == 0.0)
+    );
+    // With it: our own rows are readable, and another user's are not — the
+    // scan says which rather than showing zeroes as if they were idle.
+    let first = sc.scan(total, 32, 91 * 1024 * 1024, 7, true);
+    let me = std::process::id() as i32;
+    let ours = first
+        .table
+        .rows
+        .iter()
+        .find(|r| r.pid == me)
+        .expect("our own row");
+    assert!(ours.io_readable, "our own /proc/self/io is readable");
+    // The first pass has no interval, so it reports no rate rather than a
+    // fabricated burst — the same rule the CPU% column follows.
+    assert_eq!(ours.read_bps, 0.0);
+    assert_eq!(ours.write_bps, 0.0);
+    // A second pass has one, and the rate is finite and not negative.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let _ = std::fs::read_to_string("/proc/self/stat");
+    let second = sc.scan(total, 32, 91 * 1024 * 1024, 7, true);
+    let ours = second
+        .table
+        .rows
+        .iter()
+        .find(|r| r.pid == me)
+        .expect("our own row");
+    assert!(
+        ours.read_bps >= 0.0 && ours.read_bps.is_finite(),
+        "{ours:?}"
+    );
+    assert!(ours.write_bps >= 0.0 && ours.write_bps.is_finite());
 }

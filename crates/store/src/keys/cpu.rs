@@ -123,6 +123,17 @@ pub struct ProcRow {
     pub kthread: bool,
     pub cmdline: Arc<str>,
     pub comm: Arc<str>,
+    /// Bytes a second through the block layer, from `/proc/<pid>/io` — a
+    /// **gated** file (readable only for your own processes) that the scan
+    /// opens at `Detail::Columns` only, i.e. htop's I/O screen (arc 8a).
+    /// Zero where it could not be read, which is the honest answer for
+    /// another user's process; `io_readable` says which it was.
+    #[serde(default)]
+    pub read_bps: f32,
+    #[serde(default)]
+    pub write_bps: f32,
+    #[serde(default)]
+    pub io_readable: bool,
 }
 
 /// The scan output (§8.1). `rows` is a plain Vec inside the record — the record

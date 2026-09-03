@@ -417,9 +417,15 @@ impl gridwatch_store::Sampler for CpuSampler {
             && let Some(total) = self.prev_total
         {
             let digits = sysfs::pid_digits(&self.roots.proc);
-            let scan =
-                self.scanner
-                    .scan(total.total(), self.active_cpus, self.mem_total_kib, digits);
+            let scan = self.scanner.scan(
+                total.total(),
+                self.active_cpus,
+                self.mem_total_kib,
+                digits,
+                // htop's gated files: only when a `full` tier asked for
+                // them (§4.3, D58 — `H` and the I/O screen).
+                detail >= Detail::Columns,
+            );
             out.push(scalar(&sys::TASKS_KERNEL, scan.kernel_threads as f64));
             out.push(scalar(&sys::SCAN_MS, scan.ms));
             out.push(Sample {

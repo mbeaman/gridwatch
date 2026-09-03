@@ -46,6 +46,29 @@ pub struct ProcScanner {
     users: HashMap<u32, Arc<str>>,
     users_loaded: bool,
     prev_total: Option<u64>,
+    /// `read_bytes`/`write_bytes` at the previous `Detail::Columns` pass,
+    /// and when that pass ran — the I/O screen's rates (arc 8a).
+    prev_io: HashMap<Ident, (u64, u64)>,
+    io_at: Option<Instant>,
+}
+
+/// `/proc/<pid>/io`'s two counters, or `None` when it is not ours to read
+/// (EACCES for another user's process — the normal case).
+fn read_io(dir: &std::path::Path) -> Option<(u64, u64)> {
+    let text = std::fs::read_to_string(dir.join("io")).ok()?;
+    let mut read = None;
+    let mut write = None;
+    for line in text.lines() {
+        // `read_bytes` and `write_bytes` are the block-layer counters —
+        // `rchar`/`wchar` count anything that passed through a syscall,
+        // including a pipe, which is not what an I/O screen means.
+        if let Some(v) = line.strip_prefix("read_bytes:") {
+            read = v.trim().parse().ok();
+        } else if let Some(v) = line.strip_prefix("write_bytes:") {
+            write = v.trim().parse().ok();
+        }
+    }
+    Some((read?, write?))
 }
 
 impl ProcScanner {
@@ -58,6 +81,8 @@ impl ProcScanner {
             names: HashMap::new(),
             users: HashMap::new(),
             users_loaded: false,
+            prev_io: HashMap::new(),
+            io_at: None,
             prev_total: None,
         }
     }
@@ -83,8 +108,21 @@ impl ProcScanner {
         active_cpus: usize,
         mem_total_kib: u64,
         pid_digits: u8,
+        columns: bool,
     ) -> Scan {
         let t0 = Instant::now();
+        // The I/O rates are per *measured* interval between two Columns
+        // passes, not per configured cadence.
+        let secs = columns
+            .then(|| {
+                self.io_at
+                    .map(|t| t0.saturating_duration_since(t).as_secs_f64())
+            })
+            .flatten();
+        let mut next_io: HashMap<Ident, (u64, u64)> = HashMap::new();
+        if columns {
+            self.io_at = Some(t0);
+        }
         self.load_users();
         let cpus = active_cpus.max(1);
         // htop: `period = Δtotal / activeCPUs`; the first pass has no period
@@ -137,6 +175,29 @@ impl ProcScanner {
             };
             next_prev.insert(ident, ticks);
             let (cmdline, comm) = self.name_of(ident, &dir, &stat.comm);
+            // htop's I/O screen (arc 8a): `/proc/<pid>/io` is 0400 to its
+            // owner, so this reads what it may and says which rows it
+            // could. Only at `Detail::Columns` — it is one more open and
+            // read per process (P15).
+            let (read_bps, write_bps, io_readable) = if columns {
+                match read_io(&dir) {
+                    Some((rd, wr)) => {
+                        let prev = self.prev_io.get(&ident).copied();
+                        next_io.insert(ident, (rd, wr));
+                        match (prev, secs) {
+                            (Some((prd, pwr)), Some(dt)) if dt > 0.0 => (
+                                (rd.saturating_sub(prd) as f64 / dt) as f32,
+                                (wr.saturating_sub(pwr) as f64 / dt) as f32,
+                                true,
+                            ),
+                            _ => (0.0, 0.0, true),
+                        }
+                    }
+                    None => (0.0, 0.0, false),
+                }
+            } else {
+                (0.0, 0.0, false)
+            };
             let kthread = stat.flags & PF_KTHREAD != 0;
             if kthread {
                 kernel_threads += 1;
@@ -170,9 +231,15 @@ impl ProcScanner {
                 kthread,
                 cmdline,
                 comm,
+                read_bps,
+                write_bps,
+                io_readable,
             });
         }
         // Forget what vanished, so a reused pid starts from nothing.
+        if columns {
+            self.prev_io = next_io;
+        }
         self.prev = next_prev;
         self.names.retain(|k, _| self.prev.contains_key(k));
         Scan {

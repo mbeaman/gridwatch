@@ -42,6 +42,10 @@ struct Template {
     /// Present only on ticks where `(tick / 8) % 2 == 0` — the PID that comes
     /// and goes (tomb rows are arc 8; the data exists now).
     flicker: bool,
+    /// Block-layer bytes a second, for htop's I/O screen (arc 8a). Most
+    /// processes move none; the backup and the browser do.
+    read_bps: f32,
+    write_bps: f32,
 }
 
 const M: &str = "mattbeam";
@@ -70,6 +74,8 @@ const SET: &[Template] = &[
         cmdline: "/opt/game/bin/game --fullscreen --vulkan",
         comm: "game",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 6120,
@@ -90,6 +96,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/lib/firefox/firefox",
         comm: "firefox",
         flicker: false,
+        read_bps: 260_000.0,
+        write_bps: 84_000.0,
     },
     Template {
         pid: 6350,
@@ -110,6 +118,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/lib/firefox/firefox -contentproc -childID 7 -isForBrowser",
         comm: "Isolated Web Co",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 11805,
@@ -130,6 +140,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/ptyxis --gapplication-service",
         comm: "ptyxis",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 2801,
@@ -150,6 +162,8 @@ const SET: &[Template] = &[
         cmdline: "bash",
         comm: "bash",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 555555,
@@ -170,6 +184,8 @@ const SET: &[Template] = &[
         cmdline: "cargo build --release",
         comm: "cargo",
         flicker: true,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 555601,
@@ -190,6 +206,8 @@ const SET: &[Template] = &[
         cmdline: "rustc --crate-name gridwatch_app --edition=2024",
         comm: "rustc",
         flicker: true,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 1842,
@@ -210,6 +228,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/pipewire",
         comm: "pipewire",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 1849,
@@ -230,6 +250,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/wireplumber",
         comm: "wireplumber",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 1701,
@@ -250,6 +272,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/gnome-shell",
         comm: "gnome-shell",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 1,
@@ -270,6 +294,8 @@ const SET: &[Template] = &[
         cmdline: "/sbin/init splash",
         comm: "systemd",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 981,
@@ -290,6 +316,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/dockerd -H fd://",
         comm: "dockerd",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 1204,
@@ -310,6 +338,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/sbin/libvirtd",
         comm: "libvirtd",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 733,
@@ -330,6 +360,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/lib/systemd/systemd-journald",
         comm: "systemd-journal",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 802,
@@ -350,6 +382,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/sbin/acpid",
         comm: "acpid",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 4090,
@@ -370,6 +404,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/astral-watch serve --exporter",
         comm: "astral-watch",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 1330,
@@ -390,6 +426,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/nvidia-persistenced --verbose",
         comm: "nvidia-persiste",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 2,
@@ -410,6 +448,8 @@ const SET: &[Template] = &[
         cmdline: "",
         comm: "kthreadd",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 17,
@@ -430,6 +470,8 @@ const SET: &[Template] = &[
         cmdline: "",
         comm: "rcu_preempt",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 24,
@@ -450,6 +492,8 @@ const SET: &[Template] = &[
         cmdline: "",
         comm: "ksoftirqd/0",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 3801,
@@ -470,6 +514,8 @@ const SET: &[Template] = &[
         cmdline: "",
         comm: "kworker/0:1-events",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 3902,
@@ -490,6 +536,8 @@ const SET: &[Template] = &[
         cmdline: "",
         comm: "kworker/u64:2-events_unbound",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 388,
@@ -510,6 +558,8 @@ const SET: &[Template] = &[
         cmdline: "",
         comm: "irq/95-nvidia",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 1910,
@@ -530,6 +580,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/libexec/xdg-desktop-portal",
         comm: "xdg-desktop-por",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 2210,
@@ -550,6 +602,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/gjs /usr/share/gnome-shell/org.gnome.Shell.Notifications",
         comm: "gjs",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 2333,
@@ -570,6 +624,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/libexec/gvfsd",
         comm: "gvfsd",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 2456,
@@ -590,6 +646,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/libexec/at-spi-bus-launcher",
         comm: "at-spi-bus-laun",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 2602,
@@ -610,6 +668,8 @@ const SET: &[Template] = &[
         cmdline: "sleep 3600",
         comm: "sleep",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 2777,
@@ -630,6 +690,8 @@ const SET: &[Template] = &[
         cmdline: "vim docs/PLAN.md",
         comm: "vim",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 2990,
@@ -650,6 +712,8 @@ const SET: &[Template] = &[
         cmdline: "rsync -a /home/mattbeam/ /mnt/backup/",
         comm: "rsync",
         flicker: false,
+        read_bps: 18_400_000.0,
+        write_bps: 17_900_000.0,
     },
     Template {
         pid: 3050,
@@ -670,6 +734,8 @@ const SET: &[Template] = &[
         cmdline: "",
         comm: "sh",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
     Template {
         pid: 3120,
@@ -690,6 +756,8 @@ const SET: &[Template] = &[
         cmdline: "/usr/bin/gridwatch run --record fixtures/journals/torch-game.jsonl",
         comm: "gridwatch",
         flicker: false,
+        read_bps: 0.0,
+        write_bps: 0.0,
     },
 ];
 
@@ -727,6 +795,13 @@ pub fn proc_table(tick: u64, seed: u64) -> ProcTable {
                 res_kib: t.res_kib,
                 shr_kib: t.shr_kib,
                 cpu_pct,
+                // The I/O screen's numbers (arc 8a): the backup and the
+                // browser move bytes, the rest do not, and the two rows
+                // owned by another user are unreadable — which is what a
+                // person sees on a real machine.
+                read_bps: t.read_bps,
+                write_bps: t.write_bps,
+                io_readable: t.uid == 1000,
                 mem_pct: (t.res_kib as f64 / MEM_TOTAL_KIB * 100.0) as f32,
                 time_cs,
                 starttime: t.starttime,
