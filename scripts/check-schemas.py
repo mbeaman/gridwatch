@@ -37,6 +37,33 @@ for theme in sorted((ROOT / "themes").glob("*.toml")):
 check("config.schema.json", toml_doc(ROOT / "crates/app/src/defaults/config.toml"), "defaults/config.toml")
 check("layout.schema.json", toml_doc(ROOT / "crates/app/src/defaults/layout.toml"), "defaults/layout.toml")
 
+# The scheme fixtures `gridwatch theme import` reads (D59 seam 2). Their own
+# formats have no schema here — the check is that they are the shapes the
+# importer's three parsers expect, so a fixture cannot rot into something the
+# tests silently stop covering.
+import_dir = ROOT / "fixtures/themes/import"
+if import_dir.is_dir():
+    seen = set()
+    for path in sorted(import_dir.iterdir()):
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        if "[colors.primary]" in text and "[colors.normal]" in text:
+            seen.add("alacritty")
+        elif "ansi = [" in text and "brights = [" in text:
+            seen.add("wezterm")
+        elif "base00" in text and "base0F" in text:
+            seen.add("base16")
+        else:
+            FAILED = True
+            print(f"FAIL fixtures/themes/import/{path.name}: not one of the three formats")
+    missing = {"alacritty", "wezterm", "base16"} - seen
+    if missing:
+        FAILED = True
+        print(f"FAIL fixtures/themes/import: no fixture for {', '.join(sorted(missing))}")
+    else:
+        print("ok   fixtures/themes/import covers alacritty, wezterm and base16")
+
 # The `[[plugins]]` surface (§4.7, arc 8b). The good file must validate whole;
 # every entry of the bad one must be refused **on its own** against the item
 # subschema, so a file that happens to fail on its first entry cannot hide

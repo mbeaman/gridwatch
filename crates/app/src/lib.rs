@@ -18,6 +18,7 @@ pub mod save;
 pub mod stats;
 pub mod sys;
 pub mod terminal;
+pub mod theme_import;
 pub mod watch;
 
 use std::collections::BTreeMap;

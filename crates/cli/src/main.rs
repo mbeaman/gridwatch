@@ -101,6 +101,11 @@ enum Cmd {
         #[command(subcommand)]
         what: ComponentCmd,
     },
+    /// Themes: import someone else's colour scheme.
+    Theme {
+        #[command(subcommand)]
+        what: ThemeCmd,
+    },
     /// Validate or print configuration.
     Config {
         #[command(subcommand)]
@@ -120,6 +125,22 @@ enum ComponentCmd {
     List,
     /// One component's manifest and tier ladder.
     Info { kind: String },
+}
+
+#[derive(Subcommand)]
+enum ThemeCmd {
+    /// Convert an alacritty, wezterm or base16/base24 colour scheme into a
+    /// gridwatch theme. Writes a file; never changes your configuration.
+    Import {
+        /// The scheme file. The format is decided by its contents.
+        file: PathBuf,
+        /// The theme's name (default: the scheme's own, slugged).
+        #[arg(long)]
+        name: Option<String>,
+        /// Write here instead of stdout.
+        #[arg(short = 'o', long, value_name = "PATH")]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -148,6 +169,38 @@ fn registry() -> Registry {
     gridwatch_components::builtin_components(&mut reg);
     gridwatch_sources::builtin_sources(&mut reg);
     reg
+}
+
+/// `gridwatch theme import` (D59 seam 2). The theme goes to stdout so it can
+/// be redirected; the loader's report goes to stderr so redirecting still
+/// leaves you reading it.
+fn theme_import(
+    file: &std::path::Path,
+    name: Option<&str>,
+    out: Option<PathBuf>,
+) -> Result<(), String> {
+    let imported = gridwatch_app::theme_import::import(file, name)
+        .map_err(|e| format!("theme import {}: {e}", file.display()))?;
+    for w in &imported.warnings {
+        eprintln!("warning: {w}");
+    }
+    for line in &imported.contrast {
+        eprintln!("  {line}");
+    }
+    match out {
+        Some(path) => {
+            std::fs::write(&path, &imported.toml)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            eprintln!(
+                "wrote {} — use it with `theme = \"{}\"` in config.toml, or `--theme {}`",
+                path.display(),
+                path.display(),
+                path.display()
+            );
+        }
+        None => print!("{}", imported.toml),
+    }
+    Ok(())
 }
 
 fn main() -> std::process::ExitCode {
@@ -267,6 +320,9 @@ fn main() -> std::process::ExitCode {
                     )),
                 }
             }
+        },
+        Cmd::Theme { what } => match what {
+            ThemeCmd::Import { file, name, out } => theme_import(&file, name.as_deref(), out),
         },
         Cmd::Config { what } => match what {
             ConfigCmd::Check { theme } => {
