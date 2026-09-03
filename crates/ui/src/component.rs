@@ -119,6 +119,11 @@ impl std::error::Error for BuildError {}
 pub struct BuildCx<'a> {
     pub options: &'a toml::Table,
     pub caps: &'a CapSet,
+    /// The instance key this component is being built for — a `[[components]]`
+    /// id, or `kind:<k>` for an anonymous placement (§6). A built-in has no
+    /// use for it; a plugin tile needs it, because it is the name the host and
+    /// the plugin both know the tile by (§4.7, arc 8b).
+    pub instance: &'a str,
 }
 
 /// How a kind is built. A **closure**, not a bare `fn`: a plugin's builder has

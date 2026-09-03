@@ -163,7 +163,7 @@ pub struct RenderCx<'a> { pub inner: Rect, pub tier: usize, pub view_fallback: b
 // `tz_offset_s`: local-time offset computed once by the app (libc `localtime_r`, the one unsafe seam) so components render local wall time
 // deterministically — testkit passes 0. Under a virtual clock, `wall` is driven by the clock, so `shot --seed N` is byte-deterministic (D41).
 pub struct TickCx<'a>   { pub store: &'a Store, pub now: Ts, pub visible: bool, pub tier: usize }
-pub struct InputCx<'a>  { pub store: &'a Store, pub inner: Rect, pub caps: &'a CapSet, pub readonly: bool }
+pub struct InputCx<'a>  { pub store: &'a Store, pub inner: Rect, pub caps: &'a CapSet, pub readonly: bool, pub zoomed: bool, pub tier: usize }   // zoomed/tier from the shell (D58 amendment 7): a component must never infer its tier from `inner`
 /// The semantic view tree (D32). Components describe *what* is shown; the theme's `Renderer` decides *how*. Small on purpose.
 pub struct Span { pub role: Role, pub text: Cow<'static, str>, pub bold: bool }   // never a Color
 pub enum View {

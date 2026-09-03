@@ -22,6 +22,7 @@ pub mod watch;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use gridwatch_sources::spawn_source;
 use gridwatch_store::{Clock, Header, JournalSource, RecordOpts, Recorder, Replay, Ts, channels};
@@ -117,7 +118,7 @@ fn resolve_parent(child: &Path, parent: &str) -> Result<gridwatch_ui::theme::The
 
 /// Full assembly for the live terminal (§5): config → theme → sources →
 /// input thread → raw mode/alt screen → frame loop → restore.
-pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
+pub fn run_terminal(mut registry: Registry, opts: RunOpts) -> Result<(), String> {
     // Check this first, and *before* stderr is redirected: crossterm's failure
     // is "No such device or address (os error 6)" into a log file nobody is
     // looking at, which is indistinguishable from the process doing nothing.
@@ -153,6 +154,31 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
         Clock::real_starting_now()
     };
     let (ch, inbox_early) = channels();
+
+    // Exec plugins (§4.7, arc 8b). Not under `--replay`, for the reason the
+    // config watcher is not (D53): a replayed frame must be reproducible from
+    // the journal alone, and a child process is not in the journal. A plugin's
+    // *samples* replay like any source's, because they were recorded as
+    // batches on the channel below.
+    let mut started = if opts.replay.is_some() {
+        plugin::host::Started {
+            host: None,
+            defs: Vec::new(),
+            sources: Vec::new(),
+            warnings: Vec::new(),
+        }
+    } else {
+        plugin::host::start(
+            &loaded.config.plugins,
+            &caps,
+            ch.data.clone(),
+            ch.control.clone(),
+            clock.now(),
+        )
+    };
+    for def in std::mem::take(&mut started.defs) {
+        registry.register_component(def);
+    }
 
     // Sources: live builders or the seeded synth per --demo (§4.3) — or, under
     // --replay, only the journal source: the registry's real sources are not
@@ -245,6 +271,17 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     let mut shell = Shell::new(
         registry, &loaded, theme, caps, tz, clock, demands, controls, opts.stats,
     );
+    shell.attach_plugins(
+        started.host.take(),
+        loaded.config.plugins.iter().map(|p| p.id.clone()),
+    );
+    for id in &started.sources {
+        shell.store.ensure_source(*id);
+    }
+    for w in &started.warnings {
+        tracing::warn!("{w}");
+        shell.warn_toast(w.clone());
+    }
     // Config warnings are otherwise only in the log the user cannot see from
     // inside the alternate screen (§4.6: an unknown `view` name is a warning).
     for w in shell.view_warnings().to_vec() {
@@ -355,12 +392,21 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
 /// no env, TrueColor, virtual clock (§12.5, D41).
 fn headless_shell(registry: Registry, theme_name: &str, page: usize) -> Result<Shell, String> {
     let loaded = config::load_embedded().map_err(|e| e.to_string())?;
+    headless_from(registry, &loaded, theme_name, page)
+}
+
+fn headless_from(
+    registry: Registry,
+    loaded: &config::Loaded,
+    theme_name: &str,
+    page: usize,
+) -> Result<Shell, String> {
     let theme = load_theme_by_name(theme_name, gridwatch_ui::ColorMode::TrueColor)?;
     let demands = BTreeMap::new();
     let clock = Clock::new_virtual();
     let mut shell = Shell::new(
         registry,
-        &loaded,
+        loaded,
         theme,
         probe::probe(),
         0,
@@ -405,20 +451,60 @@ pub fn shot_replay(
 }
 
 /// Headless screenshot (§12.5): demo store, one solved frame, ANSI, cells or SVG.
+///
+/// `config_dir` is the one thing that reads a file: without it this is the
+/// embedded default and byte-deterministic across machines (D41), and with it
+/// the plugins that config names are really started, which is how CI renders
+/// the example plugin end to end.
+#[allow(clippy::too_many_arguments)]
 pub fn shot(
-    registry: Registry,
+    mut registry: Registry,
     seed: u64,
     w: u16,
     h: u16,
     theme_name: &str,
     page: usize,
     format: &str,
+    config_dir: Option<&Path>,
 ) -> Result<String, String> {
-    // Embedded defaults, no env: byte-deterministic across machines (§12.5).
-    let mut shell = headless_shell(registry, theme_name, page)?;
-    // 40 ticks ≈ a minute of synthetic history, so sparklines and the CCD bars
-    // have something to show in a screenshot; still byte-deterministic (§12.5).
+    let Some(dir) = config_dir else {
+        let mut shell = headless_shell(registry, theme_name, page)?;
+        // 40 ticks ≈ a minute of synthetic history, so sparklines and the CCD
+        // bars have something to show; still byte-deterministic (§12.5).
+        feed_synth(&mut shell, seed, 40);
+        let buf = shot_frame(&mut shell, w, h);
+        return Ok(dump(&buf, format));
+    };
+    let loaded = config::load_dir(dir).map_err(|e| e.to_string())?;
+    let (ch, inbox) = gridwatch_store::channels();
+    let caps = probe::probe();
+    let mut started = plugin::host::start(
+        &loaded.config.plugins,
+        &caps,
+        ch.data.clone(),
+        ch.control.clone(),
+        Ts::ZERO,
+    );
+    for def in std::mem::take(&mut started.defs) {
+        registry.register_component(def);
+    }
+    let mut shell = headless_from(registry, &loaded, theme_name, page)?;
+    shell.attach_plugins(
+        started.host.take(),
+        loaded.config.plugins.iter().map(|p| p.id.clone()),
+    );
+    for id in &started.sources {
+        shell.store.ensure_source(*id);
+    }
     feed_synth(&mut shell, seed, 40);
+    // The first frame is what *asks* each visible plugin tile for a render, so
+    // a shot needs a second one: draw, give the children a bounded moment to
+    // answer, drain what came back, draw again.
+    let _ = shot_frame(&mut shell, w, h);
+    shell.settle_plugins(Duration::from_millis(1_500));
+    for b in inbox.data.try_iter() {
+        shell.store.apply(&gridwatch_store::Msg::Batch(b));
+    }
     let buf = shot_frame(&mut shell, w, h);
     Ok(dump(&buf, format))
 }
@@ -503,6 +589,7 @@ fn build_for_doc(
     let mut cx = gridwatch_ui::BuildCx {
         options: &options,
         caps: &caps,
+        instance: "doc",
     };
     (def.build)(&mut cx).map_err(|e| e.0)
 }
@@ -700,6 +787,45 @@ pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
                 r.severity,
             ));
         }
+    }
+    // The plugins this config would start, and the manifests it would accept
+    // (§4.7). They are really started: a check that only echoed the argv back
+    // would say nothing a person could not read for themselves.
+    if !loaded.config.plugins.is_empty() {
+        lines.push(format!("plugins: {}", loaded.config.plugins.len()));
+        let (ch, inbox) = gridwatch_store::channels();
+        let started = plugin::host::start(
+            &loaded.config.plugins,
+            &probe::probe(),
+            ch.data.clone(),
+            ch.control.clone(),
+            Ts::ZERO,
+        );
+        let placeable: std::collections::BTreeMap<&str, &gridwatch_ui::Manifest> = started
+            .defs
+            .iter()
+            .map(|d| (d.manifest.kind, d.manifest))
+            .collect();
+        for pl in &loaded.config.plugins {
+            lines.push(format!("  {} — {}", pl.id, pl.argv.join(" ")));
+            match placeable
+                .iter()
+                .find(|(k, _)| k.starts_with(&format!("{}.", pl.id)))
+            {
+                Some((kind, m)) => lines.push(format!(
+                    "      kind `{kind}` — {}, {}x{}, contract {}",
+                    m.name, m.default_footprint.w, m.default_footprint.h, m.contract
+                )),
+                None => lines.push(
+                    "      no manifest — this plugin has no tile (it may still be a source)".into(),
+                ),
+            }
+        }
+        lines.extend(started.warnings.iter().map(|w| format!("warning: {w}")));
+        // Stop the children before the check returns; the receivers outlive
+        // the senders so nothing is blocked on the way out.
+        drop(started);
+        drop(inbox);
     }
     let name = theme.unwrap_or(&loaded.config.theme);
     // A theme that does not load is a failed check (exit 1), as `run` would

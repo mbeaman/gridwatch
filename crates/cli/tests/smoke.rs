@@ -12,11 +12,11 @@ fn registry() -> Registry {
 /// Same seed, same size, same theme → byte-identical frames.
 #[test]
 fn shot_is_deterministic() {
-    let a = gridwatch_app::shot(registry(), 42, 250, 70, "retrowave", 1, "cells").unwrap();
-    let b = gridwatch_app::shot(registry(), 42, 250, 70, "retrowave", 1, "cells").unwrap();
+    let a = gridwatch_app::shot(registry(), 42, 250, 70, "retrowave", 1, "cells", None).unwrap();
+    let b = gridwatch_app::shot(registry(), 42, 250, 70, "retrowave", 1, "cells", None).unwrap();
     assert_eq!(a, b);
-    let a = gridwatch_app::shot(registry(), 42, 250, 70, "retrowave", 1, "ansi").unwrap();
-    let b = gridwatch_app::shot(registry(), 42, 250, 70, "retrowave", 1, "ansi").unwrap();
+    let a = gridwatch_app::shot(registry(), 42, 250, 70, "retrowave", 1, "ansi", None).unwrap();
+    let b = gridwatch_app::shot(registry(), 42, 250, 70, "retrowave", 1, "ansi", None).unwrap();
     assert_eq!(a, b);
 }
 
@@ -39,7 +39,7 @@ fn plain(cells: &str) -> String {
 /// The frame carries the shell chrome and the arc-1a/1b tiles.
 #[test]
 fn shot_has_chrome_and_tiles() {
-    let frame = gridwatch_app::shot(registry(), 1, 250, 70, "retrowave", 1, "cells").unwrap();
+    let frame = gridwatch_app::shot(registry(), 1, 250, 70, "retrowave", 1, "cells", None).unwrap();
     let text = plain(&frame).to_lowercase();
     assert!(text.contains("gridwatch"), "tab bar missing");
     assert!(text.contains("sources"), "sources tile title missing");
@@ -78,7 +78,7 @@ fn shot_has_chrome_and_tiles() {
 fn shot_all_themes_all_sizes() {
     for theme in ["retrowave", "modern", "mono"] {
         for (w, h) in [(250u16, 70u16), (131, 37), (120, 40), (80, 24)] {
-            let out = gridwatch_app::shot(registry(), 7, w, h, theme, 1, "cells").unwrap();
+            let out = gridwatch_app::shot(registry(), 7, w, h, theme, 1, "cells", None).unwrap();
             assert!(!out.is_empty(), "{theme} {w}x{h} empty");
         }
     }
@@ -88,7 +88,7 @@ fn shot_all_themes_all_sizes() {
 /// stays at the `meters` tier its placement pins (§4.6).
 #[test]
 fn shot_second_page() {
-    let out = gridwatch_app::shot(registry(), 7, 250, 70, "retrowave", 2, "cells").unwrap();
+    let out = gridwatch_app::shot(registry(), 7, 250, 70, "retrowave", 2, "cells", None).unwrap();
     assert!(!out.is_empty());
     let text = plain(&out).to_lowercase();
     assert!(text.contains("running"), "the cpu strip is missing");
@@ -101,9 +101,11 @@ fn shot_second_page() {
 /// §6: dense mode hides the tab bar; configured mode shows it.
 #[test]
 fn dense_hides_tab_bar() {
-    let big = plain(&gridwatch_app::shot(registry(), 1, 250, 70, "mono", 1, "cells").unwrap());
+    let big =
+        plain(&gridwatch_app::shot(registry(), 1, 250, 70, "mono", 1, "cells", None).unwrap());
     assert!(big.contains("gridwatch"), "tab bar missing at 250x70");
-    let dense = plain(&gridwatch_app::shot(registry(), 1, 120, 40, "mono", 1, "cells").unwrap());
+    let dense =
+        plain(&gridwatch_app::shot(registry(), 1, 120, 40, "mono", 1, "cells", None).unwrap());
     assert!(
         !dense.contains("gridwatch"),
         "tab bar visible in dense mode"

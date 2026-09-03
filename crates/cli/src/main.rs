@@ -86,6 +86,11 @@ enum Cmd {
         /// With --replay: seconds into the journal to render at (≥ 0).
         #[arg(long, default_value_t = 60.0, requires = "replay", value_parser = parse_at)]
         at: f64,
+        /// Read config.toml + layout.toml from this directory, and start the
+        /// plugins it names. Without it a shot is the embedded default and
+        /// byte-deterministic across machines (§12.5, D41).
+        #[arg(long, value_name = "DIR", conflicts_with = "replay")]
+        config: Option<PathBuf>,
     },
     /// Print the metric catalogue as docs/KEYS.md (D33).
     Keys,
@@ -206,6 +211,7 @@ fn main() -> std::process::ExitCode {
             page,
             replay,
             at,
+            config,
         } => {
             let (w, h) = size
                 .split_once('x')
@@ -213,7 +219,16 @@ fn main() -> std::process::ExitCode {
                 .unwrap_or((250, 70));
             let frame = match replay {
                 Some(path) => shot_replay(registry(), &path, at, w, h, &theme, page, &format),
-                None => shot(registry(), seed, w, h, &theme, page, &format),
+                None => shot(
+                    registry(),
+                    seed,
+                    w,
+                    h,
+                    &theme,
+                    page,
+                    &format,
+                    config.as_deref(),
+                ),
             };
             frame.map(|s| {
                 // `shot | head` must not panic: swallow EPIPE on stdout.

@@ -211,6 +211,17 @@ pub struct Shell {
     /// What the executor last reported, so a test can drive key → confirm
     /// → executor → toast end to end.
     last_done: Option<(gridwatch_store::ActionId, Result<String, String>)>,
+    /// The exec plugin host (§4.7, arc 8b). `None` when nothing is
+    /// configured, and always under `--replay`.
+    plugin_host: Option<crate::plugin::Host>,
+    /// A plugin's tree or status landed since the last frame. A view moves
+    /// no source generation, so without this a component-only plugin's tile
+    /// would update on the 1 Hz heartbeat and not before (§5).
+    plugin_dirty: bool,
+    /// The configured plugin ids, so a placement of `<id>.<kind>` whose
+    /// plugin never sent a manifest is told that, rather than "arrives in a
+    /// later arc" (§6).
+    plugin_ids: std::collections::BTreeSet<String>,
 }
 
 impl Shell {
@@ -238,7 +249,7 @@ impl Shell {
         // At startup there is nothing to resolve; the events are only
         // non-empty on a reload that removed a rule.
         let _ = store.set_rules(gridwatch_store::rules::Rules::new(loaded.rules.clone()));
-        let instances = build_instances(&registry, loaded, &caps, None);
+        let instances = build_instances(&registry, loaded, &caps, None, None);
         let view_warnings = view_warnings(loaded, &instances);
         let theme_ref = theme.name.clone();
         Shell {
@@ -311,7 +322,92 @@ impl Shell {
             stats_log: None,
             view_warnings,
             recorder: None,
+            plugin_host: None,
+            plugin_dirty: false,
+            plugin_ids: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// Attach the plugin host and name the plugins that were configured
+    /// (§4.7, arc 8b). Called once, at startup: `[[plugins]]` is
+    /// restart-only, so nothing replaces this later.
+    pub fn attach_plugins(
+        &mut self,
+        host: Option<crate::plugin::Host>,
+        ids: impl IntoIterator<Item = String>,
+    ) {
+        self.plugin_host = host;
+        self.plugin_ids = ids.into_iter().collect();
+        // The instances were built before the ids were known, so a placement
+        // of `<id>.<kind>` whose plugin never sent a manifest was chipped
+        // "arrives in a later arc". Say the true thing instead.
+        let ids = &self.plugin_ids;
+        let registry = &self.registry;
+        for inst in self.instances.values_mut() {
+            if inst.component.is_none()
+                && registry.component(&inst.kind).is_none()
+                && crate::plugin::host::looks_like_plugin_kind(&inst.kind, ids)
+            {
+                inst.chip_reason = "this plugin sent no manifest".into();
+                inst.chip_hint =
+                    "check the plugin's own log lines, and `gridwatch config check`".into();
+            }
+        }
+    }
+
+    /// Everything the plugin host has said since the last frame: toasts and
+    /// the two commands a plugin may ask for, plus the redraw a new tree
+    /// deserves. Called by the frame loop before it decides to draw.
+    pub fn drain_plugins(&mut self) {
+        let Some(host) = &self.plugin_host else {
+            return;
+        };
+        let words = host.drain();
+        for word in words {
+            self.apply_word(word);
+        }
+    }
+
+    fn apply_word(&mut self, word: crate::plugin::Word) {
+        self.plugin_dirty = true;
+        match word {
+            crate::plugin::Word::Landed => {}
+            crate::plugin::Word::Toast(severity, text) => self.toast(severity, text),
+            crate::plugin::Word::Page(p) => self.set_page(p.saturating_sub(1)),
+            crate::plugin::Word::Zoom(on) => {
+                self.zoom = on.then_some(self.focus.unwrap_or(0));
+            }
+        }
+    }
+
+    /// Give the plugins a bounded moment to answer the render they were just
+    /// asked for, draining what comes back. Only `shot` waits: it draws one
+    /// frame to ask and a second to show the answer, and a screenshot of
+    /// "waiting for …" is not a screenshot of the tile. The live loop never
+    /// waits — it draws again when the tree arrives.
+    pub fn settle_plugins(&mut self, within: Duration) {
+        const QUIET: Duration = Duration::from_millis(250);
+        if self.plugin_host.is_none() {
+            return;
+        }
+        let deadline = Instant::now() + within;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            let word = self
+                .plugin_host
+                .as_ref()
+                .and_then(|h| h.next_word(QUIET.min(left)));
+            match word {
+                Some(w) => self.apply_word(w),
+                // Quiet for a quarter of a second: everything that was going
+                // to answer has answered.
+                None => break,
+            }
+        }
+        self.drain_plugins();
     }
 
     /// What the theme was loaded from (a built-in name or a `.toml` path).
@@ -425,7 +521,13 @@ impl Shell {
         let mut kept = 0;
         let mut rebuilt = 0;
         let mut removed = 0;
-        let mut fresh = build_instances(&self.registry, loaded, &self.caps, Some(&old));
+        let mut fresh = build_instances(
+            &self.registry,
+            loaded,
+            &self.caps,
+            Some(&old),
+            Some(&self.plugin_ids),
+        );
         for (key, inst) in old {
             match fresh.get_mut(&key) {
                 Some(new) if new.kind == inst.kind && new.options == inst.options => {
@@ -540,6 +642,17 @@ impl Shell {
                         "`mouse` / `color` changed — restart to apply",
                     );
                     self.restart_only = restart_only;
+                }
+                // `[[plugins]]` is restart-only by design (§4.7): a plugin's
+                // manifest is leaked once, and a reload that rebuilt them
+                // would leak one per edit — at 1 Hz, one per second.
+                let plugin_ids: std::collections::BTreeSet<String> =
+                    loaded.config.plugins.iter().map(|p| p.id.clone()).collect();
+                if plugin_ids != self.plugin_ids {
+                    self.toast(
+                        Severity::Warn,
+                        "[[plugins]] changed — plugins start once; restart to apply",
+                    );
                 }
                 let theme_changed = loaded.config.theme != self.config_theme;
                 self.config_theme = loaded.config.theme.clone();
@@ -844,7 +957,7 @@ impl Shell {
     /// list that also holds the journal source under `--replay`, and it needs
     /// no registry handle here.
     pub fn data_dirty(&mut self) -> bool {
-        let mut dirty = false;
+        let mut dirty = std::mem::take(&mut self.plugin_dirty);
         let gens: Vec<(&'static str, u64)> = self
             .store
             .sources()
@@ -1661,6 +1774,12 @@ impl Shell {
         let inner_size = Size::new(inner.width, inner.height);
         let (tier, fallback) =
             pick_tier(component.tiers(), inner_size, zoomed, view_pref.as_deref());
+        // A plugin is asked for a render here and nowhere else: this is the
+        // only place that knows the tile's real rect, and the host throttles
+        // the ask to `render_ms` unless the shape changed (§4.7).
+        if let Some(host) = self.plugin_host.as_mut() {
+            host.want_render(&kind, &key, tier, inner_size, focused, captured, now);
+        }
 
         // Tick + view every frame, contained (§11). The view's fingerprint is
         // the cache key's backstop (§5): a component whose data changed but
@@ -2990,8 +3109,14 @@ impl Shell {
             Ok(next) => {
                 let key = self.instance_key(&item.target);
                 if !self.instances.contains_key(&key) {
-                    let inst =
-                        build_instance(&self.registry, &item.kind, &toml::Table::new(), &self.caps);
+                    let inst = build_instance(
+                        &self.registry,
+                        &key,
+                        &item.kind,
+                        &toml::Table::new(),
+                        &self.caps,
+                        Some(&self.plugin_ids),
+                    );
                     self.instances.insert(key, inst);
                 }
                 let new_focus = next.place.len() - 1;
@@ -3166,9 +3291,11 @@ fn shift(v: (u8, u8), dx: i8, dy: i8, floor: u8) -> (u8, u8) {
 /// required capability is missing — §11).
 fn build_instance(
     registry: &Registry,
+    instance: &str,
     kind: &str,
     options: &toml::Table,
     caps: &CapSet,
+    plugin_ids: Option<&std::collections::BTreeSet<String>>,
 ) -> Instance {
     let mk = |component, reason: String, hint: String| Instance {
         animated: false,
@@ -3180,13 +3307,26 @@ fn build_instance(
         chip_hint: hint,
     };
     match registry.component(kind) {
+        None if plugin_ids
+            .is_some_and(|ids| crate::plugin::host::looks_like_plugin_kind(kind, ids)) =>
+        {
+            mk(
+                None,
+                "this plugin sent no manifest".into(),
+                "check the plugin's own log lines, and `gridwatch config check`".into(),
+            )
+        }
         None => mk(None, "arrives in a later arc".into(), String::new()),
         Some(def) => {
             if let Some(missing) = caps.missing(def.manifest.requires).first() {
                 let (reason, hint) = crate::probe::missing_lines(*missing);
                 return mk(None, reason, hint);
             }
-            let mut cx = BuildCx { options, caps };
+            let mut cx = BuildCx {
+                options,
+                caps,
+                instance,
+            };
             match (def.build)(&mut cx) {
                 Ok(c) => mk(Some(c), String::new(), String::new()),
                 Err(e) => mk(None, e.0, String::new()),
@@ -3205,8 +3345,11 @@ fn build_instances(
     loaded: &Loaded,
     caps: &CapSet,
     previous: Option<&BTreeMap<String, Instance>>,
+    plugin_ids: Option<&std::collections::BTreeSet<String>>,
 ) -> BTreeMap<String, Instance> {
-    let build = |kind: &str, options: &toml::Table| build_instance(registry, kind, options, caps);
+    let build = |instance: &str, kind: &str, options: &toml::Table| {
+        build_instance(registry, instance, kind, options, caps, plugin_ids)
+    };
     // A stand-in for an instance the caller is about to replace with the one
     // it kept: same kind and options, never drawn.
     let stand_in = |kind: &str, options: &toml::Table| Instance {
@@ -3228,7 +3371,7 @@ fn build_instances(
         let value = if unchanged(&inst.id, &inst.kind, &inst.options) {
             stand_in(&inst.kind, &inst.options)
         } else {
-            build(&inst.kind, &inst.options)
+            build(&inst.id, &inst.kind, &inst.options)
         };
         instances.insert(inst.id.clone(), value);
     }
@@ -3243,7 +3386,7 @@ fn build_instances(
                 let value = if unchanged(&key, k, &empty) {
                     stand_in(k, &empty)
                 } else {
-                    build(k, &empty)
+                    build(&key, k, &empty)
                 };
                 instances.insert(key, value);
             }
@@ -3406,6 +3549,9 @@ where
                 break;
             }
         }
+        // What the plugin host has said since the last pass: trees, statuses
+        // and the two commands a plugin may ask for (§4.7, arc 8b).
+        shell.drain_plugins();
         shell.tick_rules();
         if shell.quit {
             // Finish the drain before leaving: the 3 ms cap above exists to

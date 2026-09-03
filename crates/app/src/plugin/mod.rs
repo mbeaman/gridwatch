@@ -19,8 +19,12 @@
 //! * **Caps.** Memory and CPU limits on the child, and a supervisor that
 //!   stops one that outgrows them.
 
+pub mod host;
 pub mod proto;
 pub mod supervise;
+pub mod tile;
 pub mod tree;
 
+pub use host::{Host, Started, Word};
 pub use supervise::{Plugin, PluginConfig, Report};
+pub use tile::PluginTile;

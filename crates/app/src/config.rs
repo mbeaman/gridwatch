@@ -2,7 +2,7 @@
 //! ← CLI; strict parsing with spans; the layout file is the only one edit mode
 //! will ever write (arc 4).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gridwatch_ui::component::Size;
 use gridwatch_ui::layout::{BorderMode, GridSpec, Page, PlaceTarget, Placement};
@@ -360,6 +360,24 @@ pub fn load() -> Result<Loaded, ConfigError> {
 /// byte-deterministic across machines (§12.5, D41).
 pub fn load_embedded() -> Result<Loaded, ConfigError> {
     load_from(DEFAULT_CONFIG, DEFAULT_LAYOUT, None, None, false)
+}
+
+/// Load `config.toml` + `layout.toml` from a named directory — what
+/// `shot --config DIR` uses. The env layer is off, as it is for every load
+/// that is not the live app, so a screenshot says what the files say.
+pub fn load_dir(dir: &Path) -> Result<Loaded, ConfigError> {
+    let read = |name: &str, fallback: &str| -> Result<(String, Option<PathBuf>), ConfigError> {
+        let path = dir.join(name);
+        if !path.exists() {
+            return Ok((fallback.to_string(), None));
+        }
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| ConfigError(format!("{}: {e}", path.display())))?;
+        Ok((text, Some(path)))
+    };
+    let (config_text, config_path) = read("config.toml", DEFAULT_CONFIG)?;
+    let (layout_text, layout_path) = read("layout.toml", DEFAULT_LAYOUT)?;
+    load_from(&config_text, &layout_text, config_path, layout_path, false)
 }
 
 /// Load an explicit pair of documents — how fixtures (and, from arc 3, the hot
