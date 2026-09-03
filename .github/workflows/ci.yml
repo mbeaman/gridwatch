@@ -102,5 +102,7 @@ jobs:
       - uses: actions/checkout@v5
       # `referencing` is what resolves exec.schema.json's $refs to the
       # manifest and view schemas (arc 8b).
-      - run: pip install jsonschema referencing
+      # `registry=` needs jsonschema 4.18+, where `referencing` replaced
+      # the deprecated RefResolver; the runner's default can be older.
+      - run: pip install --upgrade "jsonschema>=4.18" referencing
       - run: python3 scripts/check-schemas.py
