@@ -351,19 +351,9 @@ pub enum Menu {
     IoPrio { at: usize },
 }
 
-/// The signals the `F9` menu offers, in htop's order. The numbers are the
-/// platform's, and `ui` may not call libc — the shell's handler maps them.
-pub const SIGNALS: &[(&str, i32)] = &[
-    ("SIGTERM", 15),
-    ("SIGKILL", 9),
-    ("SIGHUP", 1),
-    ("SIGINT", 2),
-    ("SIGQUIT", 3),
-    ("SIGSTOP", 19),
-    ("SIGCONT", 18),
-    ("SIGUSR1", 10),
-    ("SIGUSR2", 12),
-];
+/// The signals the `F9` menu offers (`components::signals`), shared with
+/// the gpu tile.
+pub use crate::signals::SIGNALS;
 
 /// The I/O classes the `i` menu offers.
 pub const IO_CLASSES: &[(&str, gridwatch_ui::actions::IoClass)] = &[

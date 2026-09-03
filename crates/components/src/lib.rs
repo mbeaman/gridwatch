@@ -11,6 +11,8 @@ pub mod clock;
 pub mod gpu;
 #[cfg(feature = "htop")]
 pub mod htop;
+pub mod signals;
+
 #[cfg(feature = "net")]
 pub mod net;
 #[cfg(feature = "pins")]

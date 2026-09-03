@@ -16,9 +16,10 @@ use gridwatch_store::keys::{cpu, gpu};
 use gridwatch_store::{ActionId, Detail, KeyCode, KeyEvent, Ts};
 use gridwatch_ui::actions::ProcAction;
 
-/// The signals the `F9` picker offers — htop's list, and the same one the
-/// htop tile uses (`components::htop::SIGNALS`).
-pub use crate::htop::SIGNALS;
+/// The signals the `F9` picker offers (`components::signals`), which the
+/// htop tile shares — it lives outside both so the gpu tile builds without
+/// the htop feature.
+pub use crate::signals::SIGNALS;
 use gridwatch_ui::component::{
     BuildCx, BuildError, Chrome, Command, Component, ComponentDef, Footprint, InputCx, KeyHint,
     Manifest, Outcome, Redraw, RenderCx, Size, TickCx, Tier,
