@@ -88,7 +88,24 @@ impl Session {
         args: &str,
         env: &[(&str, &str)],
     ) -> Session {
-        let sandbox = Sandbox::new(tag);
+        Session::start_in_with_env(tag, Sandbox::new(tag), rows, cols, args, env)
+    }
+
+    /// The same over a sandbox the test already filled — arc 8b's plugin rows
+    /// have to write `config.toml` *before* the run, and `Sandbox::new` wipes
+    /// the tree it creates.
+    fn start_in(tag: &str, sandbox: Sandbox, rows: u16, cols: u16, args: &str) -> Session {
+        Session::start_in_with_env(tag, sandbox, rows, cols, args, &[])
+    }
+
+    fn start_in_with_env(
+        tag: &str,
+        sandbox: Sandbox,
+        rows: u16,
+        cols: u16,
+        args: &str,
+        env: &[(&str, &str)],
+    ) -> Session {
         let inner = format!("stty rows {rows} cols {cols}; exec {} {args}", bin());
         let mut cmd = Command::new("script");
         cmd.args(["-q", "-f", "-e", "-c", &inner])
@@ -1172,6 +1189,120 @@ fn readonly_refuses_an_action_and_says_so() {
     std::thread::sleep(Duration::from_millis(200));
     s.keys("z");
     std::thread::sleep(Duration::from_millis(200));
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}
+
+/// C.28 (arc 8b) — the example plugin, running for real inside the app: the
+/// tile draws the tree it sends, `config check` lists the manifest it would
+/// accept, and the metric it publishes reaches the sources tile.
+#[test]
+fn the_example_plugin_draws_in_a_real_terminal() {
+    if skip("the_example_plugin_draws_in_a_real_terminal") {
+        return;
+    }
+    if std::process::Command::new("python3")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| !s.success())
+        .unwrap_or(true)
+    {
+        eprintln!("skipping: no python3");
+        return;
+    }
+    let example = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugins/examples/weather.py")
+        .canonicalize()
+        .expect("the example plugin is in the repository");
+    let sandbox = Sandbox::new("plugin");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("config.toml"),
+        format!(
+            "schema = 1\ntheme = \"mono\"\n\n[[plugins]]\nid = \"weather\"\nargv = [\"python3\", {:?}]\n\n[[components]]\nid = \"outside\"\nkind = \"weather.weather\"\n",
+            example.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("layout.toml"),
+        "schema = 1\n\n[grid]\ncolumns = 12\nrows = 6\n\n[[pages]]\nname = \"Plugin\"\nplace = [\n  { id = \"outside\", at = [0, 0], size = [4, 2] },\n  { kind = \"sources\", at = [4, 0], size = [4, 2] },\n]\n",
+    )
+    .unwrap();
+    // `config check` first, on the same config the session will run: it must
+    // start the plugin and accept the manifest.
+    let out = std::process::Command::new(bin())
+        .args(["config", "check"])
+        .env("XDG_CONFIG_HOME", sandbox.root.join("config"))
+        .env("XDG_STATE_HOME", sandbox.root.join("state"))
+        .output()
+        .expect("config check runs");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("plugins: 1"), "{text}");
+    assert!(text.contains("kind `weather.weather`"), "{text}");
+
+    let mut s = Session::start_in("plugin-run", sandbox, 40, 160, "run");
+    // The tile draws the plugin's own tree, and the temperature is in it.
+    let seen = s.wait_for(Duration::from_secs(8), |t| t.contains("°C"));
+    assert!(
+        seen.is_some(),
+        "the plugin tile drew nothing; screen: {:?}",
+        s.screen()
+    );
+    // And the metric it published reached the store, so the sources tile
+    // lists it beside the built-ins.
+    let seen = s.wait_for(Duration::from_secs(6), |t| t.contains("weather"));
+    assert!(
+        seen.is_some(),
+        "the plugin's source is not listed; screen: {:?}",
+        s.screen()
+    );
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}
+
+/// C.29 (arc 8b) — `--replay` starts no plugin. The journal is the only
+/// source of a replayed frame (D47's byte-identical promise, D53's reason
+/// for leaving the watcher out), so a child process must not run: this
+/// plugin's first act is to leave a file behind, and the file must not be
+/// there.
+#[test]
+fn replay_starts_no_plugin() {
+    if skip("replay_starts_no_plugin") {
+        return;
+    }
+    let sandbox = Sandbox::new("replay-plugin");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let marker = sandbox.root.join("the-plugin-ran");
+    // `touch` is not a plugin and will never send a manifest — which is the
+    // point: all this fixture does is prove it was executed.
+    std::fs::write(
+        dir.join("config.toml"),
+        format!(
+            "schema = 1\ntheme = \"mono\"\n\n[[plugins]]\nid = \"marker\"\nargv = [\"touch\", {:?}]\nhello_ms = 200\n",
+            marker.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    let journal = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/journals/torch-idle.jsonl");
+    let args = format!("run --replay {} --speed 0", journal.display());
+    let mut s = Session::start_in("replay-plugin-run", sandbox, 40, 160, &args);
+    let seen = s.wait_for(Duration::from_secs(8), |t| t.contains("gridwatch"));
+    assert!(seen.is_some(), "no frame; screen: {:?}", s.screen());
+    assert!(
+        !marker.exists(),
+        "a plugin was started under --replay: {}",
+        marker.display()
+    );
     s.keys("q");
     let (code, _, log) = s.finish();
     assert_eq!(code, 0);
