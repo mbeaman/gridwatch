@@ -203,9 +203,31 @@ pub enum RedrawPolicy {
     Animated { fps: u8 },
 }
 
-/// Open-ended side effects, executed on the executor thread (§4.6).
+/// Open-ended side effects, executed on the executor thread (§4.6, D58).
+///
+/// An action is built by a component — capturing whatever it needs, so it
+/// stays `Send` and testable with no machine — and run by the app. It says
+/// for itself whether a person should be asked first, and which processes
+/// it will touch.
 pub trait Action: std::any::Any + fmt::Debug + Send {
     fn run(self: Box<Self>) -> Result<String, String>;
+
+    /// The question to put in the confirm bar, or `None` to run at once.
+    /// The default asks, using the action's own `Debug`: anything that
+    /// changes another process should be confirmed, and a new action that
+    /// forgets to say so gets the careful behaviour rather than the
+    /// dangerous one.
+    fn confirm(&self) -> Option<String> {
+        Some(format!("{self:?}?"))
+    }
+
+    /// The processes this action will act on. The executor's test fence
+    /// reads it (D58): no test in this project may touch a process it did
+    /// not spawn. An action that changes nothing outside this process
+    /// returns nothing.
+    fn pids(&self) -> Vec<u32> {
+        Vec::new()
+    }
 }
 
 pub enum Command {
