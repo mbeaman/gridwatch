@@ -36,13 +36,19 @@ impl Ring {
         if self.samples.len() == RING {
             self.samples.pop_front();
         }
-        if let Some(ms) = ms {
-            // RFC 3550: J += (|D| − J) / 16.
-            if let Some(prev) = self.prev {
-                let d = (ms - prev).abs();
-                self.jitter += (d - self.jitter) / 16.0;
+        match ms {
+            Some(ms) => {
+                // RFC 3550: J += (|D| − J) / 16, where D is between two
+                // **consecutive** packets. A loss in between breaks the
+                // pair, so it clears `prev` rather than spanning the gap
+                // (arc 7a review, D57 amendment 21).
+                if let Some(prev) = self.prev {
+                    let d = (ms - prev).abs();
+                    self.jitter += (d - self.jitter) / 16.0;
+                }
+                self.prev = Some(ms);
             }
-            self.prev = Some(ms);
+            None => self.prev = None,
         }
         self.samples.push_back(ms);
     }
@@ -68,21 +74,31 @@ impl Ring {
         } else {
             ok.iter().sum::<f64>() / n
         };
+        // `ping`'s mdev is the population standard deviation
+        // (√(Σv²/n − avg²)), not the mean absolute deviation — the docs
+        // and PARITY claim ping's number, so compute ping's number
+        // (arc 7a review, D57 amendment 21).
         let mdev = if ok.is_empty() {
             0.0
         } else {
-            ok.iter().map(|v| (v - avg).abs()).sum::<f64>() / n
+            (ok.iter().map(|v| v * v).sum::<f64>() / n - avg * avg)
+                .max(0.0)
+                .sqrt()
         };
         let lost = self.samples.len() - ok.len();
         ProbeStat {
             target: target.to_string(),
             addr: addr.to_string(),
             kind,
-            min_ms: ok
-                .iter()
-                .cloned()
-                .fold(f64::INFINITY, f64::min)
-                .min(f64::MAX),
+            // With nothing to average, every statistic is zero and the
+            // 100 % loss beside it is the true statement. `f64::MAX` used
+            // to leak out here as a 309-digit `min` (arc 7a review, D57
+            // amendment 21).
+            min_ms: if ok.is_empty() {
+                0.0
+            } else {
+                ok.iter().cloned().fold(f64::INFINITY, f64::min)
+            },
             avg_ms: avg,
             max_ms: ok.iter().cloned().fold(0.0, f64::max),
             mdev_ms: mdev,
@@ -221,6 +237,36 @@ mod tests {
         assert_eq!(r.len(), RING);
         assert_eq!(r.stat("g", "a", ProbeKind::Tcp).loss_pct, 0.0);
         assert_eq!(r.last(), Some(199.0));
+        // A ring whose every sample was lost reports zeroes beside its
+        // 100 % loss — never `f64::MAX`, which the `full` tier printed as
+        // a 309-digit number.
+        let mut all_lost = Ring::default();
+        for _ in 0..5 {
+            all_lost.push(None);
+        }
+        let s = all_lost.stat("gw", "10.0.0.1", ProbeKind::Icmp);
+        assert_eq!(s.loss_pct, 100.0);
+        assert_eq!(s.min_ms, 0.0, "no reply is not a minimum of f64::MAX");
+        assert_eq!(s.max_ms, 0.0);
+        assert_eq!(s.avg_ms, 0.0);
+        assert_eq!(s.jitter_ms, 0.0);
+        // `mdev` is ping's: the population standard deviation. For
+        // 10/11/10/11 that is 0.5, and for a constant series it is 0.
+        let mut steady = Ring::default();
+        for _ in 0..4 {
+            steady.push(Some(7.0));
+        }
+        assert_eq!(steady.stat("g", "a", ProbeKind::Icmp).mdev_ms, 0.0);
+        // Jitter does not span a loss.
+        let mut gap = Ring::default();
+        gap.push(Some(10.0));
+        gap.push(None);
+        gap.push(Some(100.0));
+        assert_eq!(
+            gap.stat("g", "a", ProbeKind::Icmp).jitter_ms,
+            0.0,
+            "the 90 ms step spans a lost packet and is not jitter"
+        );
         // An empty ring says nothing rather than dividing by zero.
         let empty = Ring::default();
         let s = empty.stat("g", "a", ProbeKind::Icmp);

@@ -164,7 +164,8 @@ mod tests {
     fn globs_and_missing_trees() {
         assert!(matches("*", "anything"));
         assert!(matches("en*", "eno1"));
-        assert!(matches("*0", "eno1").not_or(true));
+        assert!(matches("*1", "eno1"), "a trailing-star suffix");
+        assert!(!matches("*0", "eno1"), "eno1 does not end in 0");
         assert!(matches("*7s0", "wlp7s0"));
         assert!(!matches("en", "eno1"));
         assert!(matches("*veth*", "x-veth-y"));
@@ -179,14 +180,68 @@ mod tests {
         assert!(!missing.up);
         assert_eq!(missing.operstate, "unknown");
     }
+}
 
-    trait NotOr {
-        fn not_or(self, other: bool) -> bool;
-    }
-
-    impl NotOr for bool {
-        fn not_or(self, other: bool) -> bool {
-            self || other
+/// The IPv6 addresses the kernel lists in `/proc/net/if_inet6`, by
+/// interface. Format: 32 hex digits, ifindex, prefix length, scope, flags,
+/// name — all whitespace separated.
+///
+/// IPv4 addresses are **not** in procfs: `ip addr` reads them over
+/// netlink, and `getifaddrs` needs `unsafe`, which every crate here
+/// forbids. So `Link.addrs` carries the v6 addresses and the docs say so
+/// (arc 7a review, D57 amendment 24); the v4 path is owed and needs a
+/// decision about netlink.
+pub fn inet6_addrs(proc: &Path) -> std::collections::HashMap<String, Vec<String>> {
+    let mut out: std::collections::HashMap<String, Vec<String>> = Default::default();
+    let Ok(text) = std::fs::read_to_string(proc.join("net/if_inet6")) else {
+        return out;
+    };
+    for line in text.lines() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() < 6 || f[0].len() != 32 {
+            continue;
         }
+        let mut bytes = [0u8; 16];
+        let mut ok = true;
+        for (i, b) in bytes.iter_mut().enumerate() {
+            match u8::from_str_radix(&f[0][i * 2..i * 2 + 2], 16) {
+                Ok(v) => *b = v,
+                Err(_) => {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if !ok {
+            continue;
+        }
+        let prefix = u32::from_str_radix(f[2], 16).unwrap_or(0);
+        let addr = std::net::Ipv6Addr::from(bytes);
+        out.entry(f[5].to_string())
+            .or_default()
+            .push(format!("{addr}/{prefix}"));
+    }
+    out
+}
+
+#[cfg(test)]
+mod inet6_tests {
+    use super::*;
+
+    #[test]
+    fn the_v6_addresses_come_out_by_interface() {
+        let proc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/net/proc");
+        let by_iface = inet6_addrs(&proc);
+        assert!(!by_iface.is_empty(), "torch's fixture lists addresses");
+        let lo = by_iface.get("lo").expect("loopback is always there");
+        assert_eq!(lo, &["::1/128".to_string()]);
+        let eno1 = by_iface.get("eno1").expect("the wired interface");
+        assert!(
+            eno1.iter()
+                .all(|a| a.starts_with("fe80:") && a.ends_with("/64")),
+            "link-local with its prefix: {eno1:?}"
+        );
+        // A tree without the file yields nothing rather than panicking.
+        assert!(inet6_addrs(Path::new("/nonexistent")).is_empty());
     }
 }

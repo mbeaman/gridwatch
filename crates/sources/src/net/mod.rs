@@ -183,7 +183,8 @@ pub struct Sampler {
     /// The last link Record per interface, so an unchanged one is not
     /// republished every two seconds.
     links: HashMap<String, Link>,
-    route_sent: bool,
+    /// The last route published, so a change is noticed and a repeat is not.
+    route: Option<net::Route>,
     pub scan_ms: f64,
 }
 
@@ -196,7 +197,7 @@ impl Sampler {
             linked: None,
             conned: None,
             links: HashMap::new(),
-            route_sent: false,
+            route: None,
             scan_ms: 0.0,
         }
     }
@@ -242,8 +243,13 @@ impl Sampler {
         self.linked = Some(now);
         let mut out = Vec::new();
         let names = link::interfaces(&self.roots.sys);
+        let addrs = link::inet6_addrs(&self.roots.proc);
         for name in &names {
-            let l = link::read_link(&self.roots.sys, name, Vec::new());
+            let l = link::read_link(
+                &self.roots.sys,
+                name,
+                addrs.get(name).cloned().unwrap_or_default(),
+            );
             if self.links.get(name) == Some(&l) {
                 continue;
             }
@@ -264,19 +270,21 @@ impl Sampler {
         out
     }
 
-    /// The route Record, once per generation (and when it changes).
+    /// The route Record: on the first tick, and whenever it **changes**.
+    /// It used to send once and never again, so a VPN coming up or a cable
+    /// swap left the tile naming the old interface for ever (arc 7a
+    /// review, D57 amendment 20) — `links()` had always diffed; this now
+    /// does the same.
     pub fn route(&mut self) -> Vec<Sample> {
         let r = route::read(&self.roots.proc, &self.roots.resolv, String::new());
-        let changed = !self.route_sent;
-        self.route_sent = true;
-        if changed {
-            vec![Sample {
-                id: net::ROUTE.id.clone(),
-                datum: Datum::Record(Arc::new(r)),
-            }]
-        } else {
-            Vec::new()
+        if self.route.as_ref() == Some(&r) {
+            return Vec::new();
         }
+        self.route = Some(r.clone());
+        vec![Sample {
+            id: net::ROUTE.id.clone(),
+            datum: Datum::Record(Arc::new(r)),
+        }]
     }
 
     /// The connection table, at `Detail::Table` and on its own cadence.
@@ -424,66 +432,163 @@ impl Source for NetSource {
     }
 }
 
-/// The probes' own state: a ring per target, on its own cadence.
+/// One round the probe thread is asked for: the sequence number and the
+/// targets, already resolved to addresses.
+#[cfg(feature = "net-probe")]
+type Round = (u16, Vec<(String, IpAddr)>);
+
+/// One round's answer from the probe thread.
+#[cfg(feature = "net-probe")]
+struct Reply {
+    target: String,
+    addr: IpAddr,
+    kind: gridwatch_store::keys::net::ProbeKind,
+    ms: Option<f64>,
+}
+
+/// The probes' own state: a ring per target, on its own cadence, with the
+/// **blocking** work on a helper thread. Inline, two silent targets held
+/// the source thread for 1.8 s a tick and delayed every rate sample with
+/// it (arc 7a review, D57 amendment 22); the brief always said helper
+/// thread. The thread lives as long as the `Prober`: dropping it closes
+/// the request channel and the thread returns.
 #[cfg(feature = "net-probe")]
 pub struct Prober {
     targets: Vec<String>,
     rings: HashMap<String, probe::Ring>,
     last: Option<Instant>,
     seq: u16,
-    kind: gridwatch_store::keys::net::ProbeKind,
     degraded: Option<String>,
+    /// A round in flight: the thread is probing and has not answered yet.
+    pending: bool,
+    ask: Option<std::sync::mpsc::Sender<Round>>,
+    replies: Option<std::sync::mpsc::Receiver<Vec<Reply>>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+#[cfg(feature = "net-probe")]
+impl Drop for Prober {
+    fn drop(&mut self) {
+        // Close the channel first, then wait: the thread is at most one
+        // round (a bounded number of timeouts) from noticing.
+        self.ask = None;
+        if let Some(h) = self.worker.take() {
+            let _ = h.join();
+        }
+    }
 }
 
 #[cfg(feature = "net-probe")]
 impl Prober {
     pub fn new(targets: Vec<String>) -> Prober {
         let icmp = probe::icmp_available();
+        let kind = if icmp {
+            gridwatch_store::keys::net::ProbeKind::Icmp
+        } else {
+            gridwatch_store::keys::net::ProbeKind::Tcp
+        };
+        let (ask, asked) = std::sync::mpsc::channel::<Round>();
+        let (answer, replies) = std::sync::mpsc::channel::<Vec<Reply>>();
+        let worker = std::thread::Builder::new()
+            .name("gw-net-probe".into())
+            .spawn(move || {
+                while let Ok((seq, round)) = asked.recv() {
+                    let mut out = Vec::with_capacity(round.len());
+                    for (target, addr) in round {
+                        // ICMP here is v4 only, so a v6 target measures
+                        // with a TCP connect rather than reporting a loss
+                        // for a path nobody probed (review B2).
+                        let kind = if kind == gridwatch_store::keys::net::ProbeKind::Icmp
+                            && addr.is_ipv4()
+                        {
+                            gridwatch_store::keys::net::ProbeKind::Icmp
+                        } else {
+                            gridwatch_store::keys::net::ProbeKind::Tcp
+                        };
+                        let ms = match kind {
+                            gridwatch_store::keys::net::ProbeKind::Icmp => {
+                                probe::icmp_probe(addr, seq, probe::TIMEOUT)
+                            }
+                            gridwatch_store::keys::net::ProbeKind::Tcp => {
+                                probe::tcp_probe(addr, probe::TCP_PORT, probe::TIMEOUT)
+                            }
+                        };
+                        out.push(Reply {
+                            target,
+                            addr,
+                            kind,
+                            ms,
+                        });
+                    }
+                    if answer.send(out).is_err() {
+                        return;
+                    }
+                }
+            })
+            .ok();
         Prober {
             targets,
             rings: HashMap::new(),
             last: None,
             seq: 0,
-            kind: if icmp {
-                gridwatch_store::keys::net::ProbeKind::Icmp
-            } else {
-                gridwatch_store::keys::net::ProbeKind::Tcp
-            },
             degraded: (!icmp)
                 .then(|| "no unprivileged ICMP socket; measuring with a TCP connect".to_string()),
+            pending: false,
+            ask: Some(ask),
+            replies: Some(replies),
+            worker,
         }
     }
 
-    /// One round of probes, if due.
+    /// Send a round if one is due, and turn whatever the thread has
+    /// finished into samples. Never blocks.
     pub fn tick(&mut self, now: Instant, gateway: Option<IpAddr>, every: Duration) -> Vec<Sample> {
         if self.targets.is_empty() {
             return Vec::new();
         }
-        if self
+        let due = self
             .last
-            .is_some_and(|t| now.saturating_duration_since(t) < every)
-        {
-            return Vec::new();
+            .is_none_or(|t| now.saturating_duration_since(t) >= every);
+        if due && !self.pending {
+            let round: Vec<(String, IpAddr)> = self
+                .targets
+                .iter()
+                .filter_map(|t| {
+                    let addr = if t == "gateway" {
+                        gateway
+                    } else {
+                        t.parse::<IpAddr>().ok()
+                    };
+                    addr.map(|a| (t.clone(), a))
+                })
+                .collect();
+            if !round.is_empty()
+                && let Some(ask) = self.ask.as_ref()
+            {
+                self.seq = self.seq.wrapping_add(1);
+                if ask.send((self.seq, round)).is_ok() {
+                    self.pending = true;
+                    self.last = Some(now);
+                }
+            }
         }
-        self.last = Some(now);
-        self.seq = self.seq.wrapping_add(1);
-        let mut stats = Vec::with_capacity(self.targets.len());
+        let Some(replies) = self.replies.as_ref() else {
+            return Vec::new();
+        };
+        let Ok(round) = replies.try_recv() else {
+            return Vec::new();
+        };
+        self.pending = false;
+        let mut stats = Vec::with_capacity(round.len());
         let mut out = Vec::new();
-        for target in &self.targets {
-            let addr = if target == "gateway" {
-                gateway
-            } else {
-                target.parse::<IpAddr>().ok()
-            };
-            let Some(addr) = addr else { continue };
-            let ms = match self.kind {
-                gridwatch_store::keys::net::ProbeKind::Icmp => {
-                    probe::icmp_probe(addr, self.seq, probe::TIMEOUT)
-                }
-                gridwatch_store::keys::net::ProbeKind::Tcp => {
-                    probe::tcp_probe(addr, probe::TCP_PORT, probe::TIMEOUT)
-                }
-            };
+        for Reply {
+            target,
+            addr,
+            kind,
+            ms,
+        } in round
+        {
+            let target = &target;
             let ring = self.rings.entry(target.clone()).or_default();
             ring.push(ms);
             if let Some(ms) = ms {
@@ -492,7 +597,7 @@ impl Prober {
                     datum: Datum::Scalar((ms * 100.0).round() / 100.0),
                 });
             }
-            let stat = ring.stat(target, &addr.to_string(), self.kind);
+            let stat = ring.stat(target, &addr.to_string(), kind);
             out.push(Sample {
                 id: named(&net::LOSS_PCT, target),
                 datum: Datum::Scalar(stat.loss_pct),
@@ -527,6 +632,32 @@ mod tests {
             sys: base.join("sys"),
             resolv: base.join("proc/resolv.conf"),
         }
+    }
+
+    /// The probes run on a helper thread: a round against an address that
+    /// will never answer must not hold the caller for the timeout, and the
+    /// thread must end when the `Prober` is dropped (arc 7a review).
+    #[cfg(feature = "net-probe")]
+    #[test]
+    fn probes_do_not_block_the_source_thread() {
+        // TEST-NET-1 (RFC 5737): documentation space, routed nowhere.
+        let mut p = Prober::new(vec!["192.0.2.1".to_string()]);
+        let t0 = Instant::now();
+        let first = p.tick(Instant::now(), None, Duration::from_millis(0));
+        let elapsed = t0.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "the first tick blocked for {elapsed:?} — the probe is inline again"
+        );
+        assert!(first.is_empty(), "the answer cannot be ready yet");
+        // Ticking again while a round is in flight is also instant, and
+        // does not start a second round.
+        let t0 = Instant::now();
+        let _ = p.tick(Instant::now(), None, Duration::from_millis(0));
+        assert!(t0.elapsed() < Duration::from_millis(100));
+        // Dropping joins the thread; if it leaked, this test would hang
+        // rather than finish.
+        drop(p);
     }
 
     #[test]

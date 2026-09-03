@@ -51,7 +51,11 @@ pub fn parse(text: &str) -> Vec<RouteRow> {
             destination,
             gateway,
             mask,
-            flags: f[3].parse().unwrap_or(0),
+            // `fib_route_seq_show` prints the flags as `%04X`. Parsing
+            // them as decimal happened to work for every value torch
+            // emits, and would silently drop any row whose flags carry a
+            // hex letter (arc 7a review, D57 amendment 23).
+            flags: u16::from_str_radix(f[3], 16).unwrap_or(0),
             metric: f[6].parse().unwrap_or(0),
         });
     }
