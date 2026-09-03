@@ -1308,3 +1308,90 @@ fn replay_starts_no_plugin() {
     assert_eq!(code, 0);
     assert!(!log.contains("ERROR"), "{log}");
 }
+
+/// C.30 (arc 8b) — the children go when gridwatch does. The shell owns the
+/// host, the host owns the children, and the order that makes that true is a
+/// drop order rather than a written step — so it is worth a test that would
+/// notice if a later change to the shutdown path quietly left a plugin
+/// running after `q`.
+#[test]
+fn quitting_stops_the_plugin_children() {
+    if skip("quitting_stops_the_plugin_children") {
+        return;
+    }
+    if std::process::Command::new("python3")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| !s.success())
+        .unwrap_or(true)
+    {
+        eprintln!("skipping: no python3");
+        return;
+    }
+    let sandbox = Sandbox::new("plugin-quit");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let pidfile = sandbox.root.join("child.pid");
+    // The plugin records its own pid, so the test never has to guess which
+    // process is the child.
+    let script = dir.join("pidplugin.py");
+    std::fs::write(
+        &script,
+        format!(
+            "import json, os, sys\n\
+             open({:?}, 'w').write(str(os.getpid()))\n\
+             sys.stdin.readline()\n\
+             sys.stdout.write(json.dumps({{'kind': 'manifest', 'manifest': {{\n\
+             'kind': 'pidder', 'name': 'pidder', 'contract': 1,\n\
+             'tiers': [{{'name': 'badge', 'min': {{'w': 8, 'h': 3}}}}]}}}}) + '\\n')\n\
+             sys.stdout.flush()\n\
+             sys.stdin.read()\n",
+            pidfile.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("config.toml"),
+        format!(
+            "schema = 1\ntheme = \"mono\"\n\n[[plugins]]\nid = \"pidder\"\nargv = [\"python3\", {:?}]\n",
+            script.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("layout.toml"),
+        "schema = 1\n\n[grid]\ncolumns = 12\nrows = 6\n\n[[pages]]\nname = \"P\"\nplace = [{ kind = \"pidder.pidder\", at = [0, 0], size = [4, 2] }]\n",
+    )
+    .unwrap();
+    let mut s = Session::start_in("plugin-quit-run", sandbox, 40, 160, "run");
+    let seen = s.wait_for(Duration::from_secs(10), |t| t.contains("pidder"));
+    assert!(
+        seen.is_some(),
+        "the plugin tile never drew: {:?}",
+        s.screen()
+    );
+    let pid: u32 = std::fs::read_to_string(&pidfile)
+        .expect("the plugin wrote its pid")
+        .trim()
+        .parse()
+        .expect("a pid");
+    assert!(
+        std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "the plugin child is not running before the quit"
+    );
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+    // The child may take a moment to be reaped after the parent's exit.
+    let gone = (0..40).any(|_| {
+        if !std::path::Path::new(&format!("/proc/{pid}")).exists() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+        false
+    });
+    assert!(gone, "plugin child {pid} outlived gridwatch");
+}

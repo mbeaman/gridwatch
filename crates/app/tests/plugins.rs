@@ -362,10 +362,16 @@ for line in sys.stdin:
     );
 }
 
-/// A plugin that floods costs the host nothing above its own drain: the data
-/// channel is lossy by design, and the host must not grow to keep up.
+/// The read-rate budget, which is what makes a flooding plugin free (P22).
+///
+/// This is the regression that cost 62 % of a core when it was missing, and
+/// the number to assert is the one that regressed: how many messages the host
+/// reads. A test that only checked the shell kept drawing would have passed
+/// before the fix — the flood never stalled the render thread, it burned a
+/// different one.
 #[test]
-fn a_flooding_plugin_does_not_stall_the_shell() {
+fn a_flooding_plugin_is_read_no_faster_than_the_budget() {
+    use gridwatch_app::plugin::supervise;
     let dir = workdir("flood");
     let argv = python_plugin(
         &dir,
@@ -378,19 +384,78 @@ for i in itertools.count():
 "#
         ),
     );
-    let (mut started, _inbox) = start(&[sect("probe", argv.clone())]);
-    let loaded =
-        config::load_texts(&one_plugin_config("probe", "probe", &argv), ONE_TILE_LAYOUT).unwrap();
-    let mut sh = shell_with(&loaded, &mut started);
+    let mut plugin = gridwatch_app::plugin::Plugin::spawn(
+        gridwatch_app::plugin::PluginConfig::new("flood", argv),
+        gridwatch_app::plugin::proto::Hello::new(Vec::new(), Vec::new()),
+    );
+    assert!(matches!(
+        plugin.next_report(Duration::from_secs(5)),
+        Some(gridwatch_app::plugin::Report::Ready(_))
+    ));
+    // Drain as fast as the host would, for two windows.
+    let window = Duration::from_millis(2_000);
     let began = std::time::Instant::now();
-    for _ in 0..5 {
-        let _ = shot_frame(&mut sh, 120, 40);
-        sh.drain_plugins();
+    let mut read = 0usize;
+    while began.elapsed() < window {
+        read += plugin.drain().len();
+        std::thread::sleep(Duration::from_millis(20));
     }
+    let dropped = plugin.dropped();
+    plugin.stop();
+    // Generous on purpose: the two seconds measured here overlap three of the
+    // reader's own one-second windows, and a loaded runner shifts where the
+    // boundaries fall. It is still decisive — the unthrottled reader this
+    // replaced took *hundreds of thousands* of messages in the same window,
+    // two orders of magnitude past this ceiling.
+    let ceiling = supervise::MAX_MSGS_PER_SEC as usize * 5;
     assert!(
-        began.elapsed() < Duration::from_secs(5),
-        "five frames beside a flooding plugin took {:?}",
-        began.elapsed()
+        read + dropped as usize <= ceiling,
+        "read {read} + dropped {dropped} messages in 2 s against a budget of \
+         {} a second — the reader is not throttled",
+        supervise::MAX_MSGS_PER_SEC
+    );
+    assert!(
+        read > 0,
+        "a throttled reader still has to read: got nothing in 2 s"
+    );
+}
+
+/// The queue is bounded and says so: a plugin that outruns a host which is not
+/// draining loses the oldest reports rather than growing the host (seam 7).
+#[test]
+fn the_queue_drops_rather_than_growing() {
+    use gridwatch_app::plugin::supervise;
+    let dir = workdir("queue");
+    let argv = python_plugin(
+        &dir,
+        "queue",
+        &format!(
+            r#"{PREAMBLE}
+import itertools
+for i in itertools.count():
+    say({{"kind": "sample", "key": "probe.value", "value": i % 100}})
+"#
+        ),
+    );
+    let plugin = gridwatch_app::plugin::Plugin::spawn(
+        gridwatch_app::plugin::PluginConfig::new("queue", argv),
+        gridwatch_app::plugin::proto::Hello::new(Vec::new(), Vec::new()),
+    );
+    assert!(matches!(
+        plugin.next_report(Duration::from_secs(5)),
+        Some(gridwatch_app::plugin::Report::Ready(_))
+    ));
+    // Nobody drains for a second: the queue fills and then drops.
+    std::thread::sleep(Duration::from_millis(1_200));
+    let waiting = plugin.drain().len();
+    assert!(
+        waiting <= supervise::QUEUE_DEPTH,
+        "{waiting} reports were waiting behind a queue {} deep",
+        supervise::QUEUE_DEPTH
+    );
+    assert!(
+        plugin.dropped() > 0,
+        "a plugin that outran an idle host should have had reports dropped"
     );
 }
 
