@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod actions;
 pub mod component;
 pub mod dump;
 pub mod halfblock;

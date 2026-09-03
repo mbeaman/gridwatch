@@ -8,9 +8,11 @@ pub mod app;
 pub mod config;
 pub mod edit;
 pub mod effects;
+pub mod exec;
 pub mod flourish;
 pub mod input;
 pub mod probe;
+pub mod proc_actions;
 pub mod save;
 pub mod stats;
 pub mod sys;
@@ -49,6 +51,10 @@ pub struct RunOpts {
     pub replay: Option<PathBuf>,
     /// `--speed N` for `--replay`; 0 = as fast as possible.
     pub speed: Option<f64>,
+    /// `--readonly`: every action is refused with a sentence saying what
+    /// it would have done (§4.6, arc 8a). The config key of the same name
+    /// does the same thing; either one is enough.
+    pub readonly: bool,
 }
 
 /// Load a theme by built-in name or `.toml` path (§7, D52). A file may
@@ -247,6 +253,12 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     for w in theme_warnings {
         shell.warn_toast(w);
     }
+    // The executor (§4.6, seam 11, arc 8a): actions answer on the control
+    // channel the loop already drains, and the process handler is what
+    // turns a `ProcAction` into a syscall — installed once, here.
+    proc_actions::install();
+    shell.attach_executor(ch.control.clone());
+    shell.set_readonly(loaded.config.readonly || opts.readonly);
     shell.set_theme_ref(theme_name.clone());
     shell.age_after_journal = true;
     shell.set_effects(effects_on, loaded.config.effects.budget_ms);
