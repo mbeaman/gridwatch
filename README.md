@@ -45,7 +45,7 @@ A modular, themeable ops dashboard for the terminal — a grid of components tha
 ║gpu ok                                   ║ ║ ▪ sensors                                                     ║
 ║                                         ║ ║ arrives in a later arc                                        ║
 ╚═════════════════════════════════════════╝ ╚═══════════════════════════════════════════════════════════════╝
- q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack · A alerts · S shot · F12 hud
+ q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack · A alerts
 ```
 
 *`gridwatch shot --format ansi --size 131x37 --theme retrowave`, colour stripped for this page — the real frame is a truecolor synthwave palette with gradient-coloured core bars and braille chart lines; at 131 columns both 6x3 tiles are one row short of their process tables, which the SVGs above show. A PNG from a real Ptyxis window still needs a human.*

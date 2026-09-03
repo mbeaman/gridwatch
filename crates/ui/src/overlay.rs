@@ -174,8 +174,11 @@ pub fn too_small(
     buf.set_stringn(x, y, &msg, area.width as usize, theme.style(Role::Warn));
 }
 
+/// The key help. An entry with an empty key is a **section header** — the
+/// table is grouped by where each binding applies (D59 seam 1), and a header
+/// spans the whole line rather than sitting in the key column.
 pub fn help(entries: &[(&str, &str)], area: Rect, theme: &Theme, buf: &mut Buffer) {
-    let w = (area.width * 2 / 3).clamp(20, 60).min(area.width);
+    let w = (area.width * 2 / 3).clamp(20, 64).min(area.width);
     let h = (entries.len() as u16 + 4).min(area.height);
     let x = area.x + (area.width - w) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
@@ -193,18 +196,44 @@ pub fn help(entries: &[(&str, &str)], area: Rect, theme: &Theme, buf: &mut Buffe
         (w - 4) as usize,
         theme.style(Role::Title).add_modifier(Modifier::BOLD),
     );
+    let mut shown = 0usize;
     for (i, (k, d)) in entries.iter().enumerate() {
         let ry = y + 3 + i as u16;
         if ry >= y + h - 1 {
             break;
         }
-        buf.set_stringn(x + 2, ry, k, 10, theme.style(Role::AccentPrimary));
+        shown = i + 1;
+        if k.is_empty() {
+            // A section header: the whole line, muted and bold, so the groups
+            // read apart without a rule between them.
+            buf.set_stringn(
+                x + 2,
+                ry,
+                d,
+                (w.saturating_sub(4)) as usize,
+                theme.style(Role::TextMuted).add_modifier(Modifier::BOLD),
+            );
+            continue;
+        }
+        buf.set_stringn(x + 2, ry, k, 12, theme.style(Role::AccentPrimary));
         buf.set_stringn(
-            x + 13,
+            x + 15,
             ry,
             d,
-            (w.saturating_sub(15)) as usize,
+            (w.saturating_sub(17)) as usize,
             theme.style(Role::Text),
+        );
+    }
+    // A clipped help must say so rather than quietly ending: the keys it hid
+    // are in `docs/KEYBINDINGS.md`, which is generated from the same table.
+    if shown < entries.len() && h > 4 {
+        let left = entries.len() - shown;
+        buf.set_stringn(
+            x + 2,
+            y + h - 2,
+            format!("… {left} more — a taller window, or docs/KEYBINDINGS.md"),
+            (w.saturating_sub(4)) as usize,
+            theme.style(Role::TextGhost),
         );
     }
 }

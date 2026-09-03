@@ -94,6 +94,8 @@ enum Cmd {
     },
     /// Print the metric catalogue as docs/KEYS.md (D33).
     Keys,
+    /// Print the key bindings as docs/KEYBINDINGS.md (D33/D59).
+    Keybindings,
     /// Component manifests.
     Component {
         #[command(subcommand)]
@@ -235,6 +237,10 @@ fn main() -> std::process::ExitCode {
                 use std::io::Write as _;
                 let _ = std::io::stdout().write_all(s.as_bytes());
             })
+        }
+        Cmd::Keybindings => {
+            print!("{}", gridwatch_app::keybindings_doc(&registry()));
+            Ok(())
         }
         Cmd::Keys => {
             print!("{}", gridwatch_app::keys_doc());

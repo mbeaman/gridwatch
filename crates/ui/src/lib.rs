@@ -7,6 +7,7 @@ pub mod actions;
 pub mod component;
 pub mod dump;
 pub mod halfblock;
+pub mod keys;
 pub mod layout;
 pub mod overlay;
 pub mod renderer;

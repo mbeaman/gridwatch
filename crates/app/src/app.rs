@@ -1273,30 +1273,21 @@ impl Shell {
         } else if let Some(ed) = &self.edit {
             self.edit_hints(ed)
         } else if self.captured {
-            // §10: the captured component's keys replace the status bar.
-            let keys = self
+            // §10: the captured component's keys replace the status bar, and
+            // the way out comes first.
+            let keys: Vec<(&str, &str)> = self
                 .focus
                 .and_then(|f| self.pages[self.page].place.get(f))
                 .map(|pl| self.instance_key(&pl.target))
                 .and_then(|k| self.instances.get(&k))
                 .and_then(|i| i.component.as_ref())
-                .map(|c| {
-                    c.manifest()
-                        .keys
-                        .iter()
-                        .map(|k| format!("{} {}", k.key, k.does))
-                        .collect::<Vec<_>>()
-                        .join(" · ")
-                })
+                .map(|c| c.manifest().keys.iter().map(|k| (k.key, k.does)).collect())
                 .unwrap_or_default();
-            if keys.is_empty() {
-                "Esc release · component keys active".to_string()
-            } else {
-                format!("Esc release · {keys}")
-            }
+            gridwatch_ui::keys::captured_bar(&keys, area.width)
         } else {
-            "q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack · A alerts · S shot · F12 hud"
-                .to_string()
+            // One table, three readers (D59 seam 1): this bar, the `?`
+            // overlay below, and the generated `docs/KEYBINDINGS.md`.
+            gridwatch_ui::keys::bar(area.width)
         };
         let warns = self.warn_count();
         if warns > 0 {
@@ -1355,31 +1346,24 @@ impl Shell {
             buf.set_string(x, y, &text, style);
         }
         if self.help {
-            overlay::help(
-                &[
-                    ("q / ^q", "quit"),
-                    ("1-9 [ ]", "pages"),
-                    ("hjkl / arrows", "move focus"),
-                    ("Enter / Esc", "capture / release keys"),
-                    ("z", "zoom tile"),
-                    ("d", "dense mode"),
-                    ("t / T", "cycle / reload theme"),
-                    ("space", "pause sources"),
-                    ("a", "acknowledge the alert banner"),
-                    ("A", "alerts: active list and log"),
-                    ("V / L", "matrix: re-light the page / lock it lit"),
-                    ("e / Esc", "enter / leave edit mode"),
-                    ("edit HJKL", "move a unit; ^hjkl widen/narrow/grow/shrink"),
-                    ("edit s S", "cycle footprint; S+dir swaps with neighbour"),
-                    ("edit a x", "add a tile (picker); remove (also Delete)"),
-                    ("edit u ^r w", "undo; redo; save layout.toml (y discards)"),
-                    ("S", "screenshot to state dir"),
-                    ("F12", "stats HUD"),
-                ],
-                body,
-                &self.theme,
-                buf,
-            );
+            // Grouped by where each key applies, from the one table. The
+            // hand-written copy that used to live here is what D59 seam 1
+            // removed: it had already drifted from the key bar beside it.
+            use gridwatch_ui::keys::{GLOBAL, Mode};
+            let mut entries: Vec<(String, &str)> = Vec::new();
+            for mode in [Mode::Always, Mode::Grid, Mode::Edit, Mode::Showcase] {
+                let mut any = false;
+                for b in GLOBAL.iter().filter(|b| b.mode == mode) {
+                    if !any {
+                        entries.push((String::new(), mode.title()));
+                        any = true;
+                    }
+                    entries.push((b.keys.to_string(), b.does));
+                }
+            }
+            let borrowed: Vec<(&str, &str)> =
+                entries.iter().map(|(k, d)| (k.as_str(), *d)).collect();
+            overlay::help(&borrowed, body, &self.theme, buf);
         }
         if self.alerts_overlay {
             let now = self.clock.now();

@@ -1456,5 +1456,5 @@
 <text x="1664" y="1084" fill="#45475a" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="1100" fill="#45475a" textLength="664" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────────────────────────────╯</text>
 <text x="672" y="1100" fill="#45475a" textLength="1000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
-<text x="0" y="1116" fill="#a6adc8" textLength="1192" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack · A alerts · S shot · F12 hud</text>
+<text x="0" y="1116" fill="#a6adc8" textLength="1264" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack · A alerts · S shot · e edit · F12 hud</text>
 </svg>

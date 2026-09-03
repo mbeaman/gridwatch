@@ -920,5 +920,5 @@
 <text x="320" y="604" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="800" y="604" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="620" fill="#7a3fb5" textLength="808" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╚═══════════════════════════════════════╚═══════════════════════════════════════════════════════════╝</text>
-<text x="0" y="636" fill="#8a7fb0" textLength="960" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack </text>
+<text x="0" y="636" fill="#8a7fb0" textLength="952" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack</text>
 </svg>

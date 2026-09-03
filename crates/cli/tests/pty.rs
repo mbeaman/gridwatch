@@ -927,7 +927,14 @@ fn demo_winamp_transport_keys_are_consumed() {
         t.to_lowercase().contains("esc release")
     });
     assert!(seen.is_some(), "no capture; screen: {:?}", s.screen());
-    let seen = s.wait_for(Duration::from_secs(2), |t| {
+    // A typescript is a *diff*: a cell the previous frame already held is
+    // never written again, so a phrase can be missing its spaces here while
+    // being perfectly correct on screen. A resize repaints everything, which
+    // is what makes the next assertion about the bar rather than about which
+    // cells happened to change (arc 9a — the old assertion passed by
+    // alignment luck against the previous key bar's text).
+    s.resize(70, 248);
+    let seen = s.wait_for(Duration::from_secs(3), |t| {
         t.to_lowercase().contains("play pause stop")
     });
     assert!(

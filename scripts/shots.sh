@@ -18,10 +18,11 @@ mkdir -p docs/img
 "$GW" shot --format svg --size 120x40 --theme retrowave --page 1 > docs/img/dense-120x40.svg
 "$GW" shot --format svg --size 250x70 --theme phosphor-green --page 1 > docs/img/overview-phosphor-green.svg
 "$GW" keys > docs/KEYS.md
+"$GW" keybindings > docs/KEYBINDINGS.md
 "$GW" component list > docs/COMPONENTS.md
 if [ "${1:-}" = "--check" ]; then
   # A regenerated file that is new (untracked) is drift too — `git diff` alone misses it.
-  if ! git diff --exit-code --stat -- docs/img docs/KEYS.md docs/COMPONENTS.md || git status --porcelain --untracked-files=all -- docs/img | grep -q '^??'; then
+  if ! git diff --exit-code --stat -- docs/img docs/KEYS.md docs/KEYBINDINGS.md docs/COMPONENTS.md || git status --porcelain --untracked-files=all -- docs/img | grep -q '^??'; then
     echo "docs drift: regenerate with scripts/shots.sh and commit" >&2
     exit 1
   fi
