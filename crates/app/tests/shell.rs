@@ -2092,3 +2092,75 @@ fn the_shipped_config_has_no_active_rules() {
         loaded.warnings
     );
 }
+
+/// Arc 8a: an action goes component → shell → confirm bar → executor, and
+/// `--readonly` refuses it with a sentence. Nothing here touches a process:
+/// the action is a `ProcAction` against a pid no test ever signals, and the
+/// shell has no executor attached, so the queue is where it stops.
+#[test]
+fn an_action_asks_before_it_runs_and_readonly_refuses_it() {
+    use gridwatch_ui::actions::{IoClass, ProcAction};
+    use gridwatch_ui::component::Command;
+    let mut sh = shell();
+    sh.set_clock(Ts(60_000_000_000));
+    let action = || {
+        Box::new(ProcAction::IoPrio {
+            pid: 424_242,
+            class: IoClass::Idle,
+            level: 0,
+        })
+    };
+
+    // The question reaches the key bar, and nothing has run yet.
+    sh.run_command(Command::Run(gridwatch_store::ActionId(0), action()));
+    let question = sh.pending_question().expect("a question is pending");
+    assert!(question.contains("424242"), "{question}");
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("y confirm"), "the confirm bar: {text}");
+    assert!(text.contains("424242"), "{text}");
+
+    // Any key that is not `y` cancels, and says so.
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('n'))));
+    assert!(sh.pending_question().is_none());
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("cancelled"), "{text}");
+
+    // `y` answers it. With no executor attached the shell says where it
+    // stopped rather than pretending it ran.
+    sh.run_command(Command::Run(gridwatch_store::ActionId(0), action()));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('y'))));
+    assert!(sh.pending_question().is_none());
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("no executor"), "{text}");
+
+    // Read-only refuses before any question is asked.
+    sh.set_readonly(true);
+    sh.run_command(Command::Run(gridwatch_store::ActionId(0), action()));
+    assert!(
+        sh.pending_question().is_none(),
+        "read-only does not even ask"
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("read-only"), "{text}");
+    assert!(text.contains("424242"), "it says what it would have done");
+}
+
+/// The confirm bar owns the next key: while a question stands, `q` must not
+/// quit and `z` must not zoom.
+#[test]
+fn a_pending_question_takes_the_next_key() {
+    use gridwatch_ui::actions::{IoClass, ProcAction};
+    use gridwatch_ui::component::Command;
+    let mut sh = shell();
+    sh.run_command(Command::Run(
+        gridwatch_store::ActionId(0),
+        Box::new(ProcAction::IoPrio {
+            pid: 424_242,
+            class: IoClass::Idle,
+            level: 0,
+        }),
+    ));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('q'))));
+    assert!(!sh.quit, "`q` answered the question instead of quitting");
+    assert!(sh.pending_question().is_none(), "and it was answered");
+}

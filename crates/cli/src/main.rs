@@ -61,6 +61,10 @@ enum Cmd {
         /// With --replay: time multiplier (0 = as fast as possible).
         #[arg(long, requires = "replay")]
         speed: Option<f64>,
+        /// Refuse every action that would change another process, saying
+        /// what it would have done.
+        #[arg(long)]
+        readonly: bool,
     },
     /// Render one frame headlessly from synthetic data or a journal.
     Shot {
@@ -156,6 +160,7 @@ fn main() -> std::process::ExitCode {
         tables: "off".into(),
         replay: None,
         speed: None,
+        readonly: false,
     }) {
         Cmd::Run {
             demo,
@@ -172,6 +177,7 @@ fn main() -> std::process::ExitCode {
             tables,
             replay,
             speed,
+            readonly,
         } => run_terminal(
             registry(),
             RunOpts {
@@ -189,6 +195,7 @@ fn main() -> std::process::ExitCode {
                 tables: tables == "on",
                 replay,
                 speed,
+                readonly,
             },
         ),
         Cmd::Shot {

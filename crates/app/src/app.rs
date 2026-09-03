@@ -10,7 +10,9 @@ use gridwatch_store::{
     CapSet, Clock, Control, ControlMsg, Detail, Inbox, InputEvent, KeyCode, Level, Msg, Recorder,
     ReloadKind, Severity, SourceId, Store, Ts,
 };
-use gridwatch_ui::component::{BuildCx, Chrome, Command, Component, Outcome, Size, pick_tier};
+use gridwatch_ui::component::{
+    Action, BuildCx, Chrome, Command, Component, Outcome, Size, pick_tier,
+};
 use gridwatch_ui::layout::{
     Cell, Direction, Page, PlaceTarget, SolveMode, Solved, derive_mode, focus_dir, hit, solve,
     unit_at, unit_rect,
@@ -183,6 +185,19 @@ pub struct Shell {
     view_warnings: Vec<String>,
     /// `--record`: the journal tee (§4.5). `r` toggles it; the HUD counts it.
     pub recorder: Option<Recorder>,
+    /// The action executor (§4.6, seam 11, arc 8a). `None` in `shot` and
+    /// in tests that never run one.
+    executor: Option<crate::exec::Executor>,
+    /// An action waiting on `y`: the question, and what to run if the
+    /// answer is yes. Confirmation is the shell's job, not each
+    /// component's (D58 seam 2).
+    pending_action: Option<(gridwatch_store::ActionId, Box<dyn Action>, String)>,
+    /// `--readonly` (or `readonly = true`): actions are refused with a
+    /// sentence saying what would have happened.
+    pub readonly: bool,
+    /// The id of the next action, so "keys in, commands out" tests can
+    /// name one (D42).
+    next_action: u64,
 }
 
 impl Shell {
@@ -214,6 +229,10 @@ impl Shell {
         let view_warnings = view_warnings(loaded, &instances);
         let theme_ref = theme.name.clone();
         Shell {
+            executor: None,
+            pending_action: None,
+            readonly: false,
+            next_action: 0,
             store,
             registry,
             theme,
@@ -1086,8 +1105,11 @@ impl Shell {
             self.draw_edit_chrome(body, buf);
         }
 
-        // Status bar.
-        let mut hints = if let Some(ed) = &self.edit {
+        // Status bar. A pending action takes it over: the question is the
+        // most important thing on the screen while it stands.
+        let mut hints = if let Some((_, _, question)) = &self.pending_action {
+            format!("{question}   y confirm · any other key cancels")
+        } else if let Some(ed) = &self.edit {
             self.edit_hints(ed)
         } else if self.captured {
             // §10: the captured component's keys replace the status bar.
@@ -1954,6 +1976,12 @@ impl Shell {
             self.quit = true;
             return true;
         }
+        // A question on the screen takes the next key, whatever it is:
+        // nothing else should happen while a person is being asked
+        // whether to signal a process.
+        if self.confirm_key(k) {
+            return true;
+        }
         if self.edit.is_some() {
             return self.edit_key(k);
         }
@@ -2227,6 +2255,12 @@ impl Shell {
         }
     }
 
+    /// Run a command as if a component had returned it — the seam the
+    /// "keys in, commands out" tests drive (D42).
+    pub fn run_command(&mut self, cmd: Command) {
+        self.execute(cmd);
+    }
+
     fn execute(&mut self, cmd: Command) {
         match cmd {
             Command::Quit => self.quit = true,
@@ -2272,6 +2306,7 @@ impl Shell {
                     }
                 }
             }
+            Command::Run(_, action) => self.request_action(action),
             Command::Source(id, ctl) => match self.controls.get(id.0) {
                 Some(send) => send(ctl),
                 None => self.toast(
@@ -2279,8 +2314,73 @@ impl Shell {
                     format!("{id}: no live source to control (demo, replay or shot)"),
                 ),
             },
-            other => self.toast(Severity::Info, format!("{other:?} arrives in a later arc")),
         }
+    }
+
+    /// A component asked to change something. Refuse it under `readonly`,
+    /// ask first if the action wants confirming, otherwise queue it.
+    fn request_action(&mut self, action: Box<dyn Action>) {
+        if self.readonly {
+            self.toast(Severity::Warn, format!("read-only: {action:?} was not run"));
+            return;
+        }
+        match action.confirm() {
+            Some(question) => {
+                let id = self.take_action_id();
+                self.pending_action = Some((id, action, question));
+            }
+            None => self.dispatch_action(action),
+        }
+    }
+
+    fn take_action_id(&mut self) -> gridwatch_store::ActionId {
+        self.next_action += 1;
+        gridwatch_store::ActionId(self.next_action)
+    }
+
+    fn dispatch_action(&mut self, action: Box<dyn Action>) {
+        let id = self.take_action_id();
+        let what = format!("{action:?}");
+        match self.executor.as_ref() {
+            Some(ex) => match ex.run(id, action) {
+                Ok(()) => tracing::info!(action = %what, "queued"),
+                Err(e) => self.toast(Severity::Warn, format!("{what}: {e}")),
+            },
+            None => self.toast(
+                Severity::Info,
+                format!("{what}: no executor in this mode (shot or replay)"),
+            ),
+        }
+    }
+
+    /// The confirm bar's key: `y` (or `Enter`) runs it, anything else
+    /// cancels. Returns whether the key was the confirm bar's.
+    fn confirm_key(&mut self, k: gridwatch_store::KeyEvent) -> bool {
+        let Some((_, action, question)) = self.pending_action.take() else {
+            return false;
+        };
+        match k.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                self.dispatch_action(action);
+            }
+            _ => self.toast(Severity::Info, format!("cancelled: {question}")),
+        }
+        true
+    }
+
+    /// Give the executor somewhere to send its answers, and turn them into
+    /// toasts. Called by `run` once the control channel exists.
+    pub fn attach_executor(&mut self, done: std::sync::mpsc::Sender<ControlMsg>) {
+        self.executor = Some(crate::exec::Executor::new(done));
+    }
+
+    pub fn set_readonly(&mut self, readonly: bool) {
+        self.readonly = readonly;
+    }
+
+    /// Test seam: is an action waiting for an answer, and what does it ask?
+    pub fn pending_question(&self) -> Option<&str> {
+        self.pending_action.as_ref().map(|(_, _, q)| q.as_str())
     }
 
     fn screenshot(&mut self) -> Result<String, String> {
