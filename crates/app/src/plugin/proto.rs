@@ -224,13 +224,17 @@ pub fn key_is_sane(key: &str) -> bool {
     let Some((source, metric)) = key.split_once('.') else {
         return false;
     };
-    let part_ok = |s: &str| {
-        !s.is_empty()
-            && s.starts_with(|c: char| c.is_ascii_lowercase())
-            && s.chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-    };
-    part_ok(source) && part_ok(metric) && !key.contains("..")
+    id_is_sane(source) && id_is_sane(metric) && !key.contains("..")
+}
+
+/// One half of a metric name, and the shape a plugin's `id` must have: it
+/// becomes the source half of every key the plugin publishes, so the two
+/// rules are the same rule (§4.7).
+pub fn id_is_sane(s: &str) -> bool {
+    !s.is_empty()
+        && s.starts_with(|c: char| c.is_ascii_lowercase())
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// Parse one line. This is the only door untrusted text comes through.

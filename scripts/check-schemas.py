@@ -37,6 +37,31 @@ for theme in sorted((ROOT / "themes").glob("*.toml")):
 check("config.schema.json", toml_doc(ROOT / "crates/app/src/defaults/config.toml"), "defaults/config.toml")
 check("layout.schema.json", toml_doc(ROOT / "crates/app/src/defaults/layout.toml"), "defaults/layout.toml")
 
+# The `[[plugins]]` surface (§4.7, arc 8b). The good file must validate whole;
+# every entry of the bad one must be refused **on its own** against the item
+# subschema, so a file that happens to fail on its first entry cannot hide
+# three that would have been accepted.
+config_schema = json.loads((ROOT / "schema/config.schema.json").read_text())
+plugin_item = config_schema["properties"]["plugins"]["items"]
+plugin_ok = ROOT / "fixtures/config/plugins-ok.toml"
+if plugin_ok.is_file():
+    check("config.schema.json", toml_doc(plugin_ok), "fixtures/config/plugins-ok.toml")
+plugin_bad = ROOT / "fixtures/config/plugins-bad.toml"
+if plugin_bad.is_file():
+    item_validator = jsonschema.Draft202012Validator(plugin_item)
+    accepted = [
+        e.get("id", f"#{i}")
+        for i, e in enumerate(toml_doc(plugin_bad).get("plugins", []))
+        if not list(item_validator.iter_errors(e))
+    ]
+    if accepted:
+        FAILED = True
+        for name in accepted:
+            print(f"FAIL fixtures/config/plugins-bad.toml: [[plugins]] {name!r} was accepted")
+    else:
+        n = len(toml_doc(plugin_bad).get("plugins", []))
+        print(f"ok   fixtures/config/plugins-bad.toml ({n} entries) are refused vs config.schema.json")
+
 for layout in sorted((ROOT / "fixtures/layouts").glob("*.toml")):
     check("layout.schema.json", toml_doc(layout), f"fixtures/layouts/{layout.name}")
 

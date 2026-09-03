@@ -221,6 +221,20 @@ plugin → host   status  { state, reason, hint }                               
 
 JSON lines over stdin/stdout, one subprocess per plugin instance kind, supervised like a source (backoff, restart counter, `Unavailable` chip). A plugin can be a source, a component, or both. Because a plugin returns a *view tree* and not cells, it cannot break the theme, the layout or the readability rules, and the host renders it with the same `Renderer` as built-ins. Every format that crosses a boundary has a JSON Schema in `schema/` — `config`, `layout`, `theme`, `journal`, `view`, `manifest`, `exec` — with fixtures validated in CI; the `contract` number is the compatibility promise.
 
+**How a plugin reaches the grid (arc 8b).** Plugins are configured in `config.toml`, never discovered:
+
+```toml
+[[plugins]]
+id = "weather"                                     # namespaces its keys and its kind; lower case, digits, `_`
+argv = ["python3", "/path/to/weather.py"]          # a program and its arguments — never a shell string
+rss_mb = 256   cpu_secs = 600                      # RLIMIT_AS / RLIMIT_CPU on the child
+hello_ms = 2000   render_ms = 1000                 # the startup wait for its manifest; the floor between two renders
+```
+
+Startup **spawns every plugin first and then waits on them together**, so N plugins cost the longest `hello_ms`, not the sum; a plugin that has not sent a manifest by its deadline is left running as a source and its tile chips the reason. An accepted manifest is registered as an ordinary `ComponentDef` under the kind **`<id>.<the kind the manifest declares>`** — which is why `ComponentDef::build` is a closure (§4.6): it captures the instance and the channel. The `Manifest` is `&'static`, so exactly one is leaked per configured plugin, bounded by making `[[plugins]]` **restart-only** — a hot reload reports a change here and does not apply it, like `mouse` and `color` (§9). A plugin's samples become an ordinary `Batch` on the data channel under `SourceId("<id>")`, so they reach the store, the recorder and `--replay` by the path every source already uses; its `status` becomes a `ControlMsg::Status`. There is no cadence to compare a plugin's samples against, so a plugin source is never badged `STALE`.
+
+The host asks for a `render` when the tile's tier, size, focus or capture changed, and otherwise no more often than `render_ms`; the tile draws the last tree it was given and, because a new tree moves no source generation, the drain raises a redraw of its own (§5) rather than waiting for the heartbeat. The tree is held as JSON and turned into a `View` in `view()` — `View` carries `Box<dyn Paint>` and is therefore not `Send`, and nothing about a plugin's tree needs it to be. Instance `options` are not delivered in contract 1: there is no wire message for them, and inventing one is a contract change rather than an implementation detail. Under `--replay` no plugin is started at all, for the same reason the config watcher is not (D53): a replayed frame must be reproducible from the journal alone. `gridwatch keys` and `gridwatch component list` build the built-in registry only, so a configured plugin can never drift the generated catalogues.
+
 ## 5. Data flow, threading, tick rates
 
 ```
@@ -391,6 +405,9 @@ confirm_kill = true
 [[components]] id = "temps"  kind = "sensors"
 
 [[rules]] id = "gpu-hot"   when = "gpu.temp_c{0} > 85"   for = "10s"   clear = "gpu.temp_c{0} < 80"   severity = "crit"   title = "GPU hot"
+
+# Exec plugins (§4.7, arc 8b). Restart-only: a reload reports a change here and does not apply it.
+[[plugins]] id = "weather"   argv = ["python3", "~/.config/gridwatch/plugins/weather.py"]
 ```
 
 ```toml

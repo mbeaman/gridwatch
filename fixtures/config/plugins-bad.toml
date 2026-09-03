@@ -1,0 +1,25 @@
+# Every `[[plugins]]` entry here is wrong in one way, and the schema must
+# say so — a schema that accepts nonsense is worse than no schema, because
+# the host trusts it. `check-schemas.py` requires this file to FAIL.
+schema = 1
+
+# `argv` is a shell string, which this host never interprets.
+[[plugins]]
+id = "shelly"
+argv = "python3 plugins/examples/weather.py"
+
+# An id that would not namespace a metric key.
+[[plugins]]
+id = "Weather Plugin"
+argv = ["true"]
+
+# Nothing to run.
+[[plugins]]
+id = "empty"
+argv = []
+
+# A key nothing reads: a typo must not be silently ignored.
+[[plugins]]
+id = "typo"
+argv = ["true"]
+rss_gb = 4

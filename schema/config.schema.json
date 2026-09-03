@@ -172,6 +172,53 @@
     "record": {
       "type": "object",
       "description": "Recording config — parsed and ignored until arc 2 (§9)."
+    },
+    "plugins": {
+      "type": "array",
+      "description": "Exec plugins (§4.7, arc 8b): one child process each, started at launch and registered as a placeable kind `<id>.<the kind its manifest declares>`. Restart-only — a hot reload reports the change and does not apply it.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "argv"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Namespaces the plugin's keys and its kind; must be unique."
+          },
+          "argv": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "A program and its arguments, verbatim. Never a shell string."
+          },
+          "rss_mb": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "RLIMIT_AS for the child, in MiB (default 256)."
+          },
+          "cpu_secs": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "RLIMIT_CPU for the child, in seconds (default 600)."
+          },
+          "hello_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How long the host waits at startup for this plugin's manifest before chipping the tile and going on without it (default 2000). Every plugin is spawned first and they wait together, so N plugins cost the longest one, not the sum."
+          },
+          "render_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The floor between two `render` asks for the same unchanged tile (default 1000). A changed tier, size, focus or capture asks at once."
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": false

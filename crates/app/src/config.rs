@@ -75,6 +75,10 @@ pub struct ConfigFile {
     pub record: toml::Table,
     /// Parsed and ignored until the rules arc (§9): alert rules.
     pub rules: Vec<toml::Table>,
+    /// The `exec` plugins to start (§4.7, arc 8b). **Restart-only**: a hot
+    /// reload reports a change here and does not apply it, which is what
+    /// bounds the one manifest leaked per plugin to one per process.
+    pub plugins: Vec<PluginSect>,
 }
 
 impl Default for ConfigFile {
@@ -106,6 +110,7 @@ impl Default for ConfigFile {
             sources,
             record: toml::Table::new(),
             rules: Vec::new(),
+            plugins: Vec::new(),
             components: vec![
                 inst("cpu", "htop"),
                 inst("gpu", "gpu"),
@@ -174,6 +179,45 @@ pub struct InstanceSect {
     pub kind: String,
     #[serde(default)]
     pub options: toml::Table,
+}
+
+/// One `[[plugins]]` entry (§4.7, arc 8b). `argv` is a program and its
+/// arguments, never a shell string: nothing in a config file is interpreted.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginSect {
+    pub id: String,
+    pub argv: Vec<String>,
+    /// `RLIMIT_AS` for the child, in MiB.
+    #[serde(default = "default_rss_mb")]
+    pub rss_mb: u64,
+    /// `RLIMIT_CPU` for the child, in seconds.
+    #[serde(default = "default_cpu_secs")]
+    pub cpu_secs: u64,
+    /// How long startup waits for this plugin's manifest. Every plugin is
+    /// spawned before any is waited on, so N plugins cost the longest wait,
+    /// not the sum.
+    #[serde(default = "default_hello_ms")]
+    pub hello_ms: u64,
+    /// The floor between two `render` asks for the same unchanged tile.
+    #[serde(default = "default_render_ms")]
+    pub render_ms: u64,
+}
+
+fn default_rss_mb() -> u64 {
+    256
+}
+
+fn default_cpu_secs() -> u64 {
+    600
+}
+
+fn default_hello_ms() -> u64 {
+    2_000
+}
+
+fn default_render_ms() -> u64 {
+    1_000
 }
 
 #[derive(Debug, Deserialize)]
@@ -343,6 +387,43 @@ fn load_from(
         gridwatch_store::key::lookup(k).is_some()
     });
     warnings.extend(rule_errors.iter().map(|e| e.to_string()));
+    // `[[plugins]]` (§4.7, arc 8b): an entry that cannot be started is dropped
+    // with a warning rather than failing the load — one mistyped plugin should
+    // not cost you the dashboard. The schema says the same thing in CI; this
+    // says it to the person whose config was never validated by anything.
+    let mut plugin_errors = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    config.plugins.retain(|pl| {
+        let bad = if pl.argv.is_empty() || pl.argv[0].is_empty() {
+            Some(format!(
+                "[[plugins]] '{}': argv is empty — nothing to run",
+                pl.id
+            ))
+        } else if !crate::plugin::proto::id_is_sane(&pl.id) {
+            Some(format!(
+                "[[plugins]] '{}': an id must be lower case letters, digits and _ —                  it namespaces this plugin's metric keys",
+                pl.id
+            ))
+        } else if seen.contains(&pl.id) {
+            Some(format!(
+                "[[plugins]] '{}': a second entry with that id — ignored",
+                pl.id
+            ))
+        } else {
+            None
+        };
+        match bad {
+            Some(w) => {
+                plugin_errors.push(w);
+                false
+            }
+            None => {
+                seen.push(pl.id.clone());
+                true
+            }
+        }
+    });
+    warnings.extend(plugin_errors);
     if config.schema != 1 || layout.schema != 1 {
         return Err(ConfigError("unsupported schema (expected 1)".into()));
     }

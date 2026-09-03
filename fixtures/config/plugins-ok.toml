@@ -1,0 +1,21 @@
+# A config that configures two exec plugins (§4.7, arc 8b) — the must-pass
+# half of the schema fixture pair. `check-schemas.py` validates it.
+schema = 1
+theme = "modern"
+
+[[plugins]]
+id = "weather"
+argv = ["python3", "plugins/examples/weather.py"]
+
+[[plugins]]
+id = "solar"
+argv = ["/usr/local/bin/solar-plugin", "--interval", "5"]
+rss_mb = 64
+cpu_secs = 120
+hello_ms = 500
+render_ms = 5000
+
+# Placed like any other kind: `<id>.<the kind the manifest declares>`.
+[[components]]
+id = "outside"
+kind = "weather.weather"
