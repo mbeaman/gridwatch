@@ -5,15 +5,106 @@
 //! says is untrusted, so the reader validates before it believes, counts
 //! strikes, and stops rather than restarting a plugin that cannot speak.
 
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use super::proto::{self, Ask, Hello, Manifest, Refused, Says};
 
 /// Three malformed messages and the plugin is stopped, not restarted.
 pub const STRIKES: u32 = 3;
+
+/// How many messages the host will read from one plugin per second.
+///
+/// This is the ceiling that makes a flooding plugin cost the *host* nothing
+/// (P22). A plugin that writes faster than this is not read faster than this:
+/// the reader stops for the rest of the second, its pipe fills, and the child
+/// blocks in `write` — so neither process spins. Measured before it existed, a
+/// plugin writing samples in a loop cost the host **62 % of a core** and
+/// 578 000 wake-ups a second; 500 messages a second is far above what any real
+/// plugin needs (the example publishes one) and far below what one can burn.
+pub const MAX_MSGS_PER_SEC: u32 = 500;
+
+/// The inbound queue's depth (D58 seam 7). Full, it **drops the oldest**: a
+/// reading nobody has read yet is worth less than the one after it, and a
+/// queue that grows instead is how a plugin becomes the host's memory leak.
+pub const QUEUE_DEPTH: usize = 64;
+
+/// A bounded, drop-oldest queue between one plugin's reader thread and the
+/// host. The reader is the only producer and the host thread the only
+/// consumer, and neither is the render thread.
+#[derive(Default)]
+struct Inbox {
+    queue: Mutex<Queued>,
+    ready: Condvar,
+}
+
+#[derive(Default)]
+struct Queued {
+    reports: VecDeque<Report>,
+    dropped: u64,
+    closed: bool,
+}
+
+impl Inbox {
+    /// Push, dropping the oldest if the queue is full. Returns false once the
+    /// consumer is gone, which is the reader's signal to stop.
+    fn push(&self, report: Report) -> bool {
+        let Ok(mut q) = self.queue.lock() else {
+            return false;
+        };
+        if q.closed {
+            return false;
+        }
+        if q.reports.len() >= QUEUE_DEPTH {
+            q.reports.pop_front();
+            q.dropped += 1;
+        }
+        q.reports.push_back(report);
+        self.ready.notify_all();
+        true
+    }
+
+    fn drain(&self) -> Vec<Report> {
+        match self.queue.lock() {
+            Ok(mut q) => q.reports.drain(..).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    fn next(&self, for_: Duration) -> Option<Report> {
+        let deadline = Instant::now() + for_;
+        let mut q = self.queue.lock().ok()?;
+        loop {
+            if let Some(r) = q.reports.pop_front() {
+                return Some(r);
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return None;
+            }
+            let (next, timeout) = self.ready.wait_timeout(q, left).ok()?;
+            q = next;
+            if timeout.timed_out() && q.reports.is_empty() {
+                return None;
+            }
+        }
+    }
+
+    fn dropped(&self) -> u64 {
+        self.queue.lock().map(|q| q.dropped).unwrap_or(0)
+    }
+
+    fn close(&self) {
+        if let Ok(mut q) = self.queue.lock() {
+            q.closed = true;
+            q.reports.clear();
+            self.ready.notify_all();
+        }
+    }
+}
 
 /// How long the host waits for the manifest before giving up on a plugin
 /// that never speaks.
@@ -95,7 +186,7 @@ pub enum Report {
 /// A running (or failed) plugin.
 pub struct Plugin {
     pub config: PluginConfig,
-    reports: Receiver<Report>,
+    inbox: Arc<Inbox>,
     stdin: Option<ChildStdin>,
     child: Option<Child>,
     reader: Option<std::thread::JoinHandle<()>>,
@@ -139,12 +230,12 @@ impl Plugin {
     /// Spawn the child and start reading it. Never runs a shell.
     pub fn spawn(config: PluginConfig, hello: Hello) -> Plugin {
         let started = Instant::now();
-        let (tx, reports) = channel();
+        let inbox = Arc::new(Inbox::default());
         let Some((program, args)) = config.argv.split_first() else {
-            let _ = tx.send(Report::Stopped("no command configured".into()));
+            inbox.push(Report::Stopped("no command configured".into()));
             return Plugin {
                 config,
-                reports,
+                inbox,
                 stdin: None,
                 child: None,
                 reader: None,
@@ -167,10 +258,10 @@ impl Plugin {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                let _ = tx.send(Report::Stopped(format!("{program}: {e}")));
+                inbox.push(Report::Stopped(format!("{program}: {e}")));
                 return Plugin {
                     config,
-                    reports,
+                    inbox,
                     stdin: None,
                     child: None,
                     reader: None,
@@ -191,15 +282,16 @@ impl Plugin {
         }
         let stdout = child.stdout.take();
         let id = config.id.clone();
+        let to_host = Arc::clone(&inbox);
         let reader = stdout.map(|out| {
             std::thread::Builder::new()
                 .name(format!("gw-plugin-{id}"))
-                .spawn(move || read_lines(out, &id, tx))
+                .spawn(move || read_lines(out, &id, &to_host))
                 .expect("spawn a reader thread")
         });
         Plugin {
             config,
-            reports,
+            inbox,
             stdin,
             child: Some(child),
             reader,
@@ -209,13 +301,19 @@ impl Plugin {
 
     /// Everything the plugin has said since the last call. Never blocks.
     pub fn drain(&self) -> Vec<Report> {
-        self.reports.try_iter().collect()
+        self.inbox.drain()
     }
 
     /// Wait for the next report, up to `for_`. Used by the handshake and
     /// by tests; the frame loop uses `drain`.
     pub fn next_report(&self, for_: Duration) -> Option<Report> {
-        self.reports.recv_timeout(for_).ok()
+        self.inbox.next(for_)
+    }
+
+    /// How many reports the queue has dropped to stay bounded — a number the
+    /// host shows rather than hides (D58 seam 7).
+    pub fn dropped(&self) -> u64 {
+        self.inbox.dropped()
     }
 
     /// Ask the plugin for something. A closed pipe is not an error worth
@@ -243,6 +341,10 @@ impl Plugin {
     /// host when a plugin strikes out.
     pub fn stop(&mut self) {
         self.stdin = None;
+        // Close before the kill: a reader blocked on `push` learns the
+        // consumer is gone, and one blocked on `read_line` wakes when the
+        // child's stdout closes.
+        self.inbox.close();
         if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();
@@ -260,24 +362,48 @@ impl Drop for Plugin {
 }
 
 /// The reader thread: one line at a time, validated, counted, reported.
-fn read_lines(out: std::process::ChildStdout, id: &str, tx: Sender<Report>) {
+fn read_lines(out: std::process::ChildStdout, id: &str, tx: &Inbox) {
     let mut reader = BufReader::new(out);
     let mut strikes = 0u32;
     let mut line = String::new();
     let mut manifest_seen = false;
+    // The rate budget (P22): messages read in the current second, and when
+    // that second began.
+    let mut window = Instant::now();
+    let mut read_this_second = 0u32;
     loop {
+        // Do not read faster than the budget. Stopping here is what makes a
+        // flooding plugin free: the pipe fills, the child blocks in `write`,
+        // and neither process spins. It is deliberately *before* the read, so
+        // no line is parsed above the budget either.
+        read_this_second += 1;
+        if read_this_second > MAX_MSGS_PER_SEC {
+            let left = Duration::from_secs(1).saturating_sub(window.elapsed());
+            if !left.is_zero() {
+                tracing::debug!(
+                    target: "gridwatch::plugin",
+                    "{id}: over {MAX_MSGS_PER_SEC} messages/s — not reading for {} ms",
+                    left.as_millis()
+                );
+                std::thread::sleep(left);
+            }
+        }
+        if window.elapsed() >= Duration::from_secs(1) {
+            window = Instant::now();
+            read_this_second = 1;
+        }
         line.clear();
         // A bounded read: a plugin that never writes a newline cannot make
         // the host grow a string until the machine notices.
         let mut limited = Read::take(&mut reader, (proto::MAX_LINE + 1) as u64);
         match limited.read_line(&mut line) {
             Ok(0) => {
-                let _ = tx.send(Report::Stopped("the plugin exited".into()));
+                tx.push(Report::Stopped("the plugin exited".into()));
                 return;
             }
             Ok(_) => {}
             Err(e) => {
-                let _ = tx.send(Report::Stopped(format!("read: {e}")));
+                tx.push(Report::Stopped(format!("read: {e}")));
                 return;
             }
         }
@@ -334,21 +460,20 @@ fn read_lines(out: std::process::ChildStdout, id: &str, tx: Sender<Report>) {
         };
         match report {
             Ok(r) => {
-                if tx.send(r).is_err() {
+                if !tx.push(r) {
                     return; // the host is gone
                 }
             }
             Err(why) => {
                 strikes += 1;
-                let sent = tx.send(Report::Refused {
+                if !tx.push(Report::Refused {
                     why: why.to_string(),
                     strike: strikes,
-                });
-                if sent.is_err() {
+                }) {
                     return;
                 }
                 if strikes >= STRIKES {
-                    let _ = tx.send(Report::Stopped(format!(
+                    tx.push(Report::Stopped(format!(
                         "{STRIKES} malformed messages; the last was {why}"
                     )));
                     return;
