@@ -1,0 +1,61 @@
+# nfpm builds the .deb and the .rpm from one description (D59 seam 6, arc 9b).
+#
+# Everything gridwatch talks to is optional at runtime — NVML is `dlopen`ed,
+# `pw-record` is spawned, D-Bus is connected to if it is there — so this
+# package has **no hard dependencies beyond libc**. That is deliberate: a
+# dashboard that refuses to install because you have no NVIDIA card is a worse
+# dashboard. `gridwatch doctor` tells you what is missing and how to fix it.
+name: gridwatch
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: Matt Beaman <matthew.a.beaman@gmail.com>
+description: |
+  A modular, themeable ops dashboard for the terminal.
+  A grid of components that each render from a 1x1 tile to full screen, in
+  file-defined themes, reproducing the behaviour of htop, nvtop and
+  astral-watch alongside network, audio-visualizer and now-playing tiles.
+vendor: mbeaman
+homepage: https://github.com/mbeaman/gridwatch
+license: MIT
+
+# Recommends, never Depends: each of these unlocks a tile, and none of them is
+# needed to run.
+recommends:
+  - pipewire-bin       # the audio visualizer spawns `pw-record`
+  - dbus               # the now-playing tile speaks MPRIS over the session bus
+
+contents:
+  - src: packaging/gridwatch
+    dst: /usr/bin/gridwatch
+    file_info:
+      mode: 0755
+
+  - src: themes
+    dst: /usr/share/gridwatch/themes
+    type: tree
+
+  - src: README.md
+    dst: /usr/share/doc/gridwatch/README.md
+  - src: CHANGELOG.md
+    dst: /usr/share/doc/gridwatch/CHANGELOG.md
+  - src: THIRD_PARTY.md
+    dst: /usr/share/doc/gridwatch/THIRD_PARTY.md
+  - src: LICENSE
+    dst: /usr/share/doc/gridwatch/LICENSE
+
+  # Shipped, and **not installed**: reading RAPL package power needs a rule
+  # that opens `energy_uj` to your user, and quietly widening a permission at
+  # install time is not this project's decision to make. `gridwatch doctor`
+  # prints the one-line fix, which is to copy this file.
+  - src: packaging/udev/90-gridwatch-rapl.rules
+    dst: /usr/share/gridwatch/udev/90-gridwatch-rapl.rules
+    type: config|noreplace
+
+overrides:
+  rpm:
+    recommends:
+      - pipewire-utils
+      - dbus

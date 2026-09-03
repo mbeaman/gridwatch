@@ -1,0 +1,28 @@
+# gridwatch — optional: let a non-root user read RAPL package power.
+#
+# **This is not installed by default, and gridwatch works without it.** The
+# sensors tile shows temperatures, fans and volts either way; what this unlocks
+# is the `sensor.power_w{rapl:package-0}` reading, which is the CPU package's
+# own energy counter.
+#
+# Why it is opt-in: `/sys/class/powercap/intel-rapl:0/energy_uj` was made
+# root-only on most kernels because a high-resolution energy counter is a
+# side channel — it has been used to infer what another process is computing.
+# Widening it is a real, if small, decision about your machine, and a package
+# install is not the place to make it for you. `gridwatch doctor` prints this
+# file's path and says the same thing.
+#
+# To use it:
+#
+#     sudo groupadd -f powermon
+#     sudo usermod -aG powermon "$USER"
+#     sudo cp 90-gridwatch-rapl.rules /etc/udev/rules.d/
+#     sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=powercap
+#     # then log out and back in, so your session picks up the new group
+#
+# To undo it, delete the file from /etc/udev/rules.d/ and reload as above.
+#
+# The rule matches the hint in `gridwatch-sources::sensors::rapl::UDEV_HINT`;
+# if you change one, change both.
+
+SUBSYSTEM=="powercap", KERNEL=="intel-rapl:*", GROUP="powermon", MODE="0440"

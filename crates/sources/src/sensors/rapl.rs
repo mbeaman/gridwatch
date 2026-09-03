@@ -12,7 +12,7 @@ use gridwatch_store::keys::sensors::RaplState;
 /// The fix `doctor` prints: a group-readable rule, never world-readable —
 /// the kernel locked `energy_uj` because of Platypus (CVE-2020-8694), so
 /// widening it to everyone is the wrong advice (review).
-pub const UDEV_HINT: &str = "RAPL power needs a udev rule: SUBSYSTEM==\"powercap\", KERNEL==\"intel-rapl:0\", GROUP=\"powermon\", MODE=\"0440\" (and add yourself to that group)";
+pub const UDEV_HINT: &str = "RAPL power needs a udev rule — the release ships one at packaging/udev/90-gridwatch-rapl.rules (also /usr/share/gridwatch/udev/), which explains itself: SUBSYSTEM==\"powercap\", KERNEL==\"intel-rapl:*\", GROUP=\"powermon\", MODE=\"0440\", and add yourself to that group";
 
 /// A package draw above this is not a reading, it is a counter reset: the
 /// sample is dropped and the baseline re-seeded (review).

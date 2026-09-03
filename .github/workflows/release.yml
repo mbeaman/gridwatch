@@ -1,0 +1,171 @@
+name: Release
+
+# Three triggers, and the reason for each (D59 seam 4, amended in 9b):
+#
+#  * `tags: v*` is the real thing — build, verify, and upload to a **draft**
+#    release. Tagging is a person's decision, and so is publishing the draft
+#    it leaves behind.
+#  * `pull_request` with a path filter: a change to this file, to
+#    `packaging/**` or to `flake.nix` exercises the whole path before it
+#    lands. That is where the risk actually lives.
+#  * `workflow_dispatch` runs everything except the upload, on demand. A
+#    release path nobody has run is untested code at the moment it matters
+#    most, so it has to be runnable without cutting a tag.
+#
+# **A direct push to `main` does not run this**, even one that touches
+# packaging: GitHub applies a `tags` filter to the whole `push` event, so a
+# `push` block cannot mean "tags, or branches with these paths" — and adding
+# two more LTO release builds to every push is a tax people learn to resent.
+# The way to exercise it outside a PR is `gh workflow run release.yml`, which
+# is how it was first verified.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+      - "flake.nix"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            libc: gnu
+          - target: x86_64-unknown-linux-musl
+            libc: musl
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # `ring` (rustls <- ureq <- the pins exporter and the album-art fetch)
+      # compiles C, so the musl target needs a musl C compiler. Everything else
+      # in the tree is pure Rust and links with the toolchain's own
+      # self-contained musl — verified 2026-09-02 by building
+      # `--no-default-features` here without this package.
+      - name: musl C toolchain
+        if: matrix.libc == 'musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --locked --all-features --target ${{ matrix.target }}
+
+      # A binary that does not run is not a release. `shot` exercises the whole
+      # render path headlessly, and `doctor --offline` proves the capability
+      # probe works — on musl it is also where NVML's absence shows up, which
+      # is expected and is why the release notes say so.
+      - name: It runs
+        run: |
+          BIN=target/${{ matrix.target }}/release/gridwatch
+          "$BIN" --version
+          "$BIN" keys > /dev/null
+          "$BIN" shot --format cells --size 120x40 --theme mono --page 1 > /tmp/frame.txt
+          grep -q CPU /tmp/frame.txt || { echo "the frame is empty"; exit 1; }
+          "$BIN" doctor --offline
+
+      # A static musl binary cannot `dlopen`, so NVML is unavailable there. That
+      # is a property of static linking, not a bug: the gpu source degrades to
+      # its `nvidia-smi` tier and `doctor` says so. Asserting it here means the
+      # release notes stay true.
+      - name: musl says NVML is unavailable rather than pretending
+        if: matrix.libc == 'musl'
+        run: |
+          BIN=target/${{ matrix.target }}/release/gridwatch
+          "$BIN" doctor --offline | grep -E '^✗ Nvml' \
+            || { echo "expected doctor to report NVML as missing on a static build"; exit 1; }
+
+      - name: Tarball
+        id: tar
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_TYPE" = tag ] || VERSION="$(git rev-parse --short HEAD)"
+          NAME="gridwatch-${VERSION}-${{ matrix.target }}"
+          mkdir -p "dist/$NAME"
+          cp target/${{ matrix.target }}/release/gridwatch "dist/$NAME/"
+          cp README.md LICENSE THIRD_PARTY.md CHANGELOG.md "dist/$NAME/"
+          cp -r themes "dist/$NAME/"
+          mkdir -p "dist/$NAME/packaging"
+          cp packaging/udev/*.rules "dist/$NAME/packaging/"
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+          ( cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256" )
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # The assertions that make this job worth running on a packaging change:
+      # the archive contains what it claims to.
+      - name: The tarball is what it says
+        run: |
+          NAME="${{ steps.tar.outputs.name }}"
+          tar -tzf "dist/$NAME.tar.gz" | tee /tmp/listing
+          for want in "$NAME/gridwatch" "$NAME/LICENSE" "$NAME/THIRD_PARTY.md" "$NAME/themes/matrix.toml"; do
+            grep -qx "$want" /tmp/listing || { echo "missing from the tarball: $want"; exit 1; }
+          done
+          ( cd dist && sha256sum -c "$NAME.tar.gz.sha256" )
+
+      - name: nfpm
+        if: matrix.libc == 'gnu'
+        run: |
+          curl -sSL -o /tmp/nfpm.deb \
+            https://github.com/goreleaser/nfpm/releases/download/v2.44.0/nfpm_2.44.0_amd64.deb
+          sudo dpkg -i /tmp/nfpm.deb
+          cp target/${{ matrix.target }}/release/gridwatch packaging/gridwatch
+          export VERSION="${{ steps.tar.outputs.version }}"
+          nfpm package -f packaging/nfpm.yaml -p deb -t dist/
+          nfpm package -f packaging/nfpm.yaml -p rpm -t dist/
+
+      - name: The deb is what it says
+        if: matrix.libc == 'gnu'
+        run: |
+          DEB=$(ls dist/*.deb)
+          dpkg-deb --info "$DEB"
+          dpkg-deb --contents "$DEB" | tee /tmp/deb
+          grep -q '/usr/bin/gridwatch' /tmp/deb || { echo "no binary in the deb"; exit 1; }
+          grep -q '90-gridwatch-rapl.rules' /tmp/deb || { echo "no udev rule in the deb"; exit 1; }
+          # It must install and run on a clean image, not merely unpack.
+          sudo dpkg -i "$DEB"
+          gridwatch --version
+          sudo dpkg -r gridwatch
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.tar.outputs.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    # Only a tag publishes anything, and only as a **draft**: the notes and the
+    # decision to make it public are a person's.
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file packaging/RELEASE_NOTES.md \
+            dist/*.tar.gz dist/*.sha256 dist/*.deb dist/*.rpm

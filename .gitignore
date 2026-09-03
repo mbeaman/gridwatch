@@ -1,3 +1,6 @@
 /target
 .cargo/config.toml
 *.log
+
+# nfpm copies the built binary here at package time (release.yml)
+/packaging/gridwatch

@@ -1,0 +1,66 @@
+# Maintainer: Matt Beaman <matthew.a.beaman@gmail.com>
+#
+# UNVERIFIED — this file has never been through `makepkg`. It is written from
+# the Arch packaging guidelines and the same facts as `packaging/nfpm.yaml`
+# (which CI does build and inspect), but no Arch machine has run it. Treat the
+# first `makepkg -si` as the test, and please report what it says.
+#
+# Why it builds from a git tag rather than a crates.io tarball: gridwatch
+# depends on astral-watch by git revision, and crates.io forbids git
+# dependencies, so there is no crate to fetch. See README.md.
+
+pkgname=gridwatch
+pkgver=0.9.0
+pkgrel=1
+pkgdesc="A modular, themeable ops dashboard for the terminal (htop/nvtop/sensors/network/audio in one grid)"
+arch=('x86_64')
+url="https://github.com/mbeaman/gridwatch"
+license=('MIT')
+depends=('gcc-libs')
+makedepends=('cargo' 'git')
+# Every one of these unlocks a tile and none is required to run: gridwatch
+# degrades with the reason on screen, and `gridwatch doctor` prints the fix.
+optdepends=(
+  'nvidia-utils: the GPU tile (NVML is dlopened at runtime)'
+  'pipewire: the audio visualizer (spawns pw-record)'
+  'dbus: the now-playing tile (MPRIS over the session bus)'
+  'noto-fonts-cjk: half-width katakana for the `matrix` theme'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')  # filled in at release time
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release --all-features
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  # The pty suite needs util-linux `script`, which is in base; if it is not
+  # there the tests skip visibly rather than silently.
+  cargo test --frozen --workspace
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm0755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  install -Dm0644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm0644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm0644 THIRD_PARTY.md "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY.md"
+  for t in themes/*.toml; do
+    install -Dm0644 "$t" "$pkgdir/usr/share/$pkgname/$t"
+  done
+  # Shipped, not installed: see the file's own comment for why reading RAPL
+  # is your decision and not an installer's.
+  install -Dm0644 packaging/udev/90-gridwatch-rapl.rules \
+    "$pkgdir/usr/share/$pkgname/udev/90-gridwatch-rapl.rules"
+}
