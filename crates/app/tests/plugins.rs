@@ -420,6 +420,49 @@ for i in itertools.count():
     );
 }
 
+/// A plugin that floods from its very first line still gets a tile.
+///
+/// The drop-oldest rule cost one: the manifest is the first thing in the
+/// queue, so a plugin writing thousands of samples behind it evicted its own
+/// declaration before the host read it, and the tile silently never appeared.
+/// CI caught it as an intermittent failure of the budget test above, which is
+/// the only reason it is a test here rather than a bug someone hits in a year.
+#[test]
+fn a_flood_cannot_evict_its_own_manifest() {
+    let dir = workdir("evict");
+    let argv = python_plugin(
+        &dir,
+        "evict",
+        &format!(
+            r#"{PREAMBLE}
+import itertools
+for i in itertools.count():
+    say({{"kind": "sample", "key": "probe.value", "value": i % 100}})
+"#
+        ),
+    );
+    // Give the child a clear head start, so the queue is certainly full and
+    // certainly has dropped by the time anything is read.
+    let plugin = gridwatch_app::plugin::Plugin::spawn(
+        gridwatch_app::plugin::PluginConfig::new("evict", argv),
+        gridwatch_app::plugin::proto::Hello::new(Vec::new(), Vec::new()),
+    );
+    std::thread::sleep(Duration::from_millis(1_200));
+    assert!(
+        plugin.dropped() > 0,
+        "the flood should have filled the queue"
+    );
+    let manifest = plugin
+        .drain()
+        .into_iter()
+        .any(|r| matches!(r, gridwatch_app::plugin::Report::Ready(_)));
+    assert!(
+        manifest,
+        "the manifest was dropped to make room for samples — the plugin would \
+         have got no tile"
+    );
+}
+
 /// The queue is bounded and says so: a plugin that outruns a host which is not
 /// draining loses the oldest reports rather than growing the host (seam 7).
 #[test]

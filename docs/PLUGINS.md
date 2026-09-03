@@ -144,8 +144,10 @@ None of this is about trusting you; it is about the dashboard staying up.
   spins. No real plugin comes near this — the example publishes one reading
   a second — and before it existed a plugin writing in a loop cost the host
   62 % of a core.
-- **A bounded queue.** 64 messages deep, and full it drops the *oldest*: a
-  reading nobody has read yet is worth less than the one after it.
+- **A bounded queue.** 64 messages deep, and full it drops the oldest
+  *sample, view or log line* — never your manifest, your status or the news
+  that you stopped. A reading nobody has read yet is worth less than the one
+  after it; a declaration is worth keeping.
 - **A runaway check.** 50 % of a core held for ten seconds and your plugin
   is stopped, with the reason on its tile. Blocking on `stdin` costs
   nothing, so a plugin that waits is never a runaway.

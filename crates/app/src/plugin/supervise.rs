@@ -75,9 +75,23 @@ struct Queued {
     closed: bool,
 }
 
+/// Is this report one of the thousands, or one of the few?
+///
+/// A sample or a view is one of a stream and the next one is better than the
+/// last; a manifest, a status, a refusal or a stop is rare and is the whole
+/// reason the host is listening. Only the first kind may be dropped to keep
+/// the queue bounded.
+fn droppable(r: &Report) -> bool {
+    matches!(
+        r,
+        Report::Sample { .. } | Report::View { .. } | Report::Log { .. }
+    )
+}
+
 impl Inbox {
-    /// Push, dropping the oldest if the queue is full. Returns false once the
-    /// consumer is gone, which is the reader's signal to stop.
+    /// Push, dropping the oldest droppable report if the queue is full.
+    /// Returns false once the consumer is gone, which is the reader's signal
+    /// to stop.
     fn push(&self, report: Report) -> bool {
         let Ok(mut q) = self.queue.lock() else {
             return false;
@@ -86,7 +100,18 @@ impl Inbox {
             return false;
         }
         if q.reports.len() >= QUEUE_DEPTH {
-            q.reports.pop_front();
+            // Drop the oldest report that is *safe* to lose. Dropping the
+            // literal oldest loses the manifest to a plugin that floods from
+            // its first line — CI caught exactly that — and a plugin whose
+            // manifest is dropped silently never gets a tile.
+            let victim = q
+                .reports
+                .iter()
+                .position(droppable)
+                // Full of things that all mean something: the queue still has
+                // to stay bounded, so the oldest goes.
+                .unwrap_or(0);
+            q.reports.remove(victim);
             q.dropped += 1;
         }
         q.reports.push_back(report);
