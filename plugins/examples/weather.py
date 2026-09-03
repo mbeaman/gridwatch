@@ -16,9 +16,10 @@ sources in the host do.
     id = "weather"
     argv = ["python3", "plugins/examples/weather.py"]
 
-Then place it like any other tile:
+Then place it like any other kind (a placement names an `id` **or** a
+`kind`, never both):
 
-    place = [{ id = "outside", kind = "weather.weather", at = [0, 0], size = [2, 1] }]
+    place = [{ kind = "weather.weather", at = [0, 0], size = [2, 1] }]
 """
 
 import json

@@ -40,12 +40,28 @@ id = "hello"
 argv = ["python3", "/path/to/hello.py"]
 ```
 
-and in `layout.toml`, place it like any other tile — the kind is
-`<id>.<the kind your manifest declares>`:
+Your kind is `<id>.<the kind your manifest declares>` — `hello.hello` here.
+Place it in `layout.toml` like any other kind:
 
 ```toml
-place = [{ id = "greeting", kind = "hello.hello", at = [0, 0], size = [1, 1] }]
+place = [{ kind = "hello.hello", at = [0, 0], size = [1, 1] }]
 ```
+
+or give it a name first, if you want two of them or a shorter placement:
+
+```toml
+# config.toml
+[[components]]
+id = "greeting"
+kind = "hello.hello"
+
+# layout.toml — a placement names an `id` **or** a `kind`, never both.
+place = [{ id = "greeting", at = [0, 0], size = [1, 1] }]
+```
+
+Plugins start once, when gridwatch does. Editing `[[plugins]]` while it is
+running tells you to restart rather than pretending: your manifest is read
+once and kept for the life of the process.
 
 ## The conversation
 
@@ -81,6 +97,10 @@ The host refuses a manifest it could not place, and tells you why:
   than the last, never less. Tier 0 is what you draw in a corner; the last
   one is what you draw when someone zooms.
 - **The first tier cannot be `zoom_only`.**
+- **`options` is reserved.** Contract 1 has no message that carries a tile's
+  instance options, so a `[[components]] options` table on a plugin kind is
+  ignored (with a line in the log). Declaring them in your manifest is how
+  you reserve the names for a later contract.
 - **Your keys are `<source>.<metric>`, lower case**, with `_` for spaces.
   The host prefixes every key you publish with your plugin's `id`, so you
   cannot collide with a built-in metric or with another plugin — publish
@@ -118,6 +138,20 @@ None of this is about trusting you; it is about the dashboard staying up.
 - **A clean environment.** Your process gets `PATH` and the contract
   number, and nothing else of the host's.
 - **Restart backoff.** 1, 2, 4, 8, then 30 seconds.
+- **A read-rate budget.** The host reads at most **500 messages a second**
+  from you. Write faster and it simply stops reading for the rest of the
+  second: your pipe fills, your next `write` blocks, and neither of us
+  spins. No real plugin comes near this — the example publishes one reading
+  a second — and before it existed a plugin writing in a loop cost the host
+  62 % of a core.
+- **A bounded queue.** 64 messages deep, and full it drops the *oldest*: a
+  reading nobody has read yet is worth less than the one after it.
+- **A runaway check.** 50 % of a core held for ten seconds and your plugin
+  is stopped, with the reason on its tile. Blocking on `stdin` costs
+  nothing, so a plugin that waits is never a runaway.
+- **At most 256 distinct metric names.** Publish `weather.temp_c` with
+  different *labels* as much as you like; inventing 100 000 different key
+  names is how a plugin would become the host's memory leak.
 
 A `status` of `unavailable` with a reason is **not** a strike. It is the
 right way to say "I cannot work on this machine", and the host will show
@@ -126,7 +160,14 @@ your reason and your hint on the tile instead of the tile's contents.
 ## Debugging
 
 - `gridwatch config check` lists the plugins it would start and the
-  manifests it would accept.
+  manifests it would accept. It really starts them, so it is the fastest
+  way to see a manifest refused and read why.
+- `gridwatch shot --config <dir> --format cells` draws one frame from a
+  config directory, plugins and all, without a terminal — what CI uses to
+  check that this example still draws.
+- Under `--replay` no plugin is started at all: a replayed frame has to be
+  reproducible from the journal alone. Your *samples* replay like any
+  source's, because they were recorded as they went past.
 - Your `stderr` goes to the log (`$XDG_STATE_HOME/gridwatch/gridwatch.log`),
   never to the screen — the screen is an alternate buffer and a stray
   `print` would corrupt it. Use `log` messages, or stderr, not stdout.

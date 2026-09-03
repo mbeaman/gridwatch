@@ -37,6 +37,7 @@ Every number below is a **ceiling in a release build on torch**, measured over 6
 | P18 | Startup | first frame **≤ 300 ms** (placeholder tiles); every source live **≤ 2 s**; NVML init, `detect_bus`, `pw-record` spawn and D-Bus connect never on the render thread | `--stats` prints both timestamps |
 | P19 | Frame cost | draw + write **p95 ≤ 8 ms** at 250×70; **mean ≤ 3 ms** at the Overview's ≈ 2 frames/s and **≤ 1.3 ms** at 30 fps (render cache: only the animated tile re-renders; the whole-frame diff is ~0.3 ms); missed frames **< 1 %** | `F12` HUD (p50/p95, changed cells, bytes) |
 | P20 | Effects (arc 4) | ≤ `budget_ms` (4 ms) per frame, area-scoped, ≤ 600 ms per event; the repeating alert pulse alone at 8 fps; `--no-effects` honours P6/P8 exactly | `F12` HUD effect column, `fx_us` in `--stats-log` |
+| P22 | Plugin host (arc 8b) | the host **≤ 0.1 %** of one core with a plugin rendering at 1 Hz, and a plugin that floods costs the host **no more** — the reader takes at most `MAX_MSGS_PER_SEC` (500) messages/s from one plugin, so its pipe fills and the child blocks rather than either process spinning; the inbound queue is 64 deep and drops the oldest; a plugin over 50 % of a core for 10 s is stopped; at most 256 distinct metric names per plugin. Startup: `hello_ms` (2 s default) is added to P18's first frame **only when a plugin is configured**, and every plugin is waited on together | `pidstat -u -t` (the `gw-plugins` and `gw-plugin-<id>` threads are named), `pidstat -p <child>`, task-summed context switches |
 | P21 | Unfocused throttle | on `FocusLost` every animated tile drops to `unfocused_fps` (default 2), every source but `always_on` ones goes `Hidden` / `Meters`; restored on `FocusGained` within one frame; VTE 0.84 implements focus reporting (DECSET 1004 → `CSI I`/`CSI O`, verified in `vte.cc`) and crossterm 0.29 maps it to `FocusGained`/`FocusLost` | `F12` HUD; confirmed interactively once in arc 1 |
 
 ## Showcase class — ceilings that apply only while a `class = "showcase"` theme is active **and the terminal is focused**
@@ -93,7 +94,7 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 5 | + P2, P3, P7, P9, P10, P16; P7b/P10b measured and a gate proposed |
 | 6 | Winamp marquee at 220 ms steps stays inside P6 (it is ~40 cells) |
 | 7 | probes and connection table stay inside P1/P5 |
-| 8 | zoomed `full` tiers inside P15 (`Detail::Columns`, `task/` walk with `H`) and P19 |
+| 8 | zoomed `full` tiers inside P15 (`Detail::Columns`, `task/` walk with `H`) and P19; **P22** for the plugin host, taken with the example plugin and with one that floods |
 | 9 | P17 at 24 h; packaged binary re-measured |
 
 ## Measured (fill per arc)
@@ -136,6 +137,24 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 
 
 
+
+
+| 2026-09-02 | 8b | quiet | live Overview 250x70 (pty, release), the clock slot replaced by a chip for a plugin that is **not** configured — the control for the three rows below | no | **1.27%** (gw-pins 0.78 · gw-gpu 0.33 · render 0.07) | 31 | 0.6 KB/s | 1.4 | — | — | n/a | n/a | 0.74 / 1.54 ms | 47524 kB |
+| 2026-09-02 | 8b | quiet | the same Overview with `plugins/examples/weather.py` in that slot, rendering at 1 Hz (**P22**) | no | **0.95%** (gw-pins 0.78 · render 0.15 · **gw-plugins 0.00 · gw-plugin-weather 0.00**; the python3 child 0.00) | 36 | 0.6 KB/s | 2.3 | — | — | n/a | n/a | 0.65 / 1.51 ms | 44168 kB |
+| 2026-09-02 | 8b | quiet | a plugin writing samples in a loop, **before** the read-rate budget existed (**P22, failing**) | no | **62.05%** (gw-plugin-flood 55.53 · gw-plugins 5.22 · gw-pins 0.83 · render 0.45; the python3 child **99.95%**) | **578457** | 0.7 KB/s | 4.2 | — | — | n/a | n/a | 0.49 / 0.98 ms | 56716 kB |
+| 2026-09-02 | 8b | quiet | the same flooding plugin **after** the budget (**P22** ✓) | no | **0.97%** (gw-pins 0.85 · render 0.07 · **gw-plugins 0.00 · gw-plugin-flood 0.00**; the python3 child **0.10%**) | 35 | 0.6 KB/s | 1.4 | — | — | n/a | n/a | 0.69 / 1.51 ms | 43764 kB |
+
+**Arc 8b notes (2026-09-02) — P22, and the row that failed first.** Same protocol (release binary, `script` pty at 250×70, an idle torch with no game, per-thread `pidstat`, task-summed context switches, Δ`wchar`). The Overview was measured with and without a plugin in the clock's slot, so the two rows differ only by the plugin.
+
+**The host is free at 1 Hz.** With `plugins/examples/weather.py` rendering once a second, both host threads read **0.00 %** at `pidstat`'s resolution and the python3 child reads 0.00 %; the whole process is 0.95 % against the control's 1.27 % (the difference is `gw-gpu`, which happened to be idle in the plugin run — the plugin's own cost is below what this instrument can see). It adds **+5 wake-ups/s**, **no measurable bytes**, and **+0.9 frames/s** — one frame for the sample it publishes, which is a generation change and therefore a frame P8 allows.
+
+**A flooding plugin failed the row, and hard.** The first measurement of a plugin writing samples in a loop cost **62 % of a core** — its reader thread 55.5, the host thread 5.2 — with **578 000 wake-ups a second** and 13 MB of RSS the queue had grown. D58 seam 7 had specified "a 64-message inbound queue that drops oldest rather than growing" and none of it was implemented: every parsed line went down an unbounded channel as fast as the child could write. The fix is two bounds, and the one that matters is the **read-rate budget**: the reader takes at most `MAX_MSGS_PER_SEC` (500) messages a second from one plugin and otherwise stops reading, so the pipe fills and the child blocks in `write`. After it, the host is **0.97 %** — the control's own figure — both plugin threads are 0.00 %, the child is **0.10 %**, and the wake-ups are **35**. The queue (64 deep, drop-oldest) is the second bound, for a burst rather than a flood.
+
+**And one that spins.** The budget is no answer to a plugin that burns a core without writing, so the host reads each child's `utime + stime` once a second and stops one holding 50 % of a core for ten seconds. Watched by hand: a Python `while True` child is gone 11 s after start, with `spin: stopped: 100% of a core for 10 s (the ceiling is 50%)` in the log and a `Crit` toast on screen. `RLIMIT_CPU` is still underneath it, but its 600 s default is ten minutes of a core beside a game.
+
+**P18 with plugins.** The first frame is still 1–6 ms without plugins, and a configured plugin adds up to its `hello_ms` (2 s default) — every plugin is spawned before any is waited on, so N plugins cost the longest wait rather than the sum, and one that never answers is left running as a source with its tile chipped. P18's ceiling is measured on the default config, which configures none.
+
+**Numbering.** The arc-8 brief called this row "P20"; P20 has been the effects budget since arc 4 and P21 the unfocused throttle, so the plugin host is **P22** (D58 amendment 17, in the same spirit as arc 6's P12/P19 correction).
 
 
 **Arc 8a post-review note (2026-09-02).** The review found the tree's per-row depth being recomputed inside `view` — a fresh map over every row, once per row, which at torch's 638 processes is ~407 000 inserts a frame — against §8.1's "`view` never sorts". The filter and the tree order now run in `tick` and `view` reads an index list, and the depth is one pass over the set. Measured after the fix: **605 µs** for one render of the zoomed `full` tier at 632 rows with the tree on, and **0.04 ms p50 / 0.05 ms p95** for the whole frame in a live 30 s run with that tier drawing (the render cache means most frames are blits, which is the point of it). P19's ceiling is 8 ms p95 for the frame.
