@@ -87,8 +87,10 @@
 <rect x="0" y="704" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="720" width="680" height="16" fill="#0a0f0a"/>
 <rect x="680" y="720" width="40" height="16" fill="#b6ffc9"/>
-<rect x="720" y="720" width="16" height="16" fill="#0a0f0a"/>
-<rect x="736" y="720" width="360" height="16" fill="#b6ffc9"/>
+<rect x="720" y="720" width="8" height="16" fill="#0a0f0a"/>
+<rect x="728" y="720" width="176" height="16" fill="#b6ffc9"/>
+<rect x="904" y="720" width="8" height="16" fill="#0a0f0a"/>
+<rect x="912" y="720" width="184" height="16" fill="#b6ffc9"/>
 <rect x="1096" y="720" width="8" height="16" fill="#0a0f0a"/>
 <rect x="1104" y="720" width="72" height="16" fill="#b6ffc9"/>
 <rect x="1176" y="720" width="8" height="16" fill="#0a0f0a"/>
@@ -1017,7 +1019,8 @@
 <text x="656" y="732" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="732" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="732" fill="#0a0f0a" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">proto</text>
-<text x="736" y="732" fill="#0a0f0a" textLength="360" lengthAdjust="spacingAndGlyphs" xml:space="preserve">remote                                       </text>
+<text x="728" y="732" fill="#0a0f0a" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">local                 </text>
+<text x="912" y="732" fill="#0a0f0a" textLength="184" lengthAdjust="spacingAndGlyphs" xml:space="preserve">remote                 </text>
 <text x="1104" y="732" fill="#0a0f0a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">state    </text>
 <text x="1184" y="732" fill="#0a0f0a" textLength="144" lengthAdjust="spacingAndGlyphs" xml:space="preserve">process           </text>
 <text x="1328" y="732" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1036,7 +1039,8 @@
 <text x="656" y="748" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="748" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="748" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tcp</text>
-<text x="736" y="748" fill="#b6ffc9" textLength="128" lengthAdjust="spacingAndGlyphs" xml:space="preserve">140.82.112.4:443</text>
+<text x="728" y="748" fill="#b6ffc9" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">192.168.100.154:52344</text>
+<text x="912" y="748" fill="#b6ffc9" textLength="128" lengthAdjust="spacingAndGlyphs" xml:space="preserve">140.82.112.4:443</text>
 <text x="1104" y="748" fill="#00ff41" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ESTAB</text>
 <text x="1184" y="748" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">firefox (4242)</text>
 <text x="1328" y="748" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1063,7 +1067,8 @@
 <text x="656" y="764" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="764" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="764" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tcp</text>
-<text x="736" y="764" fill="#b6ffc9" textLength="152" lengthAdjust="spacingAndGlyphs" xml:space="preserve">162.159.130.234:443</text>
+<text x="728" y="764" fill="#b6ffc9" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">192.168.100.154:44120</text>
+<text x="912" y="764" fill="#b6ffc9" textLength="152" lengthAdjust="spacingAndGlyphs" xml:space="preserve">162.159.130.234:443</text>
 <text x="1104" y="764" fill="#00ff41" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ESTAB</text>
 <text x="1184" y="764" fill="#b6ffc9" textLength="96" lengthAdjust="spacingAndGlyphs" xml:space="preserve">steam (9001)</text>
 <text x="1328" y="764" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1116,7 +1121,8 @@
 <text x="656" y="780" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="780" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="780" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tcp</text>
-<text x="736" y="780" fill="#b6ffc9" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0.0.0.0:0</text>
+<text x="728" y="780" fill="#b6ffc9" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0.0.0.0:22</text>
+<text x="912" y="780" fill="#b6ffc9" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0.0.0.0:0</text>
 <text x="1104" y="780" fill="#2e8b3a" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">LISTEN</text>
 <text x="1184" y="780" fill="#2e8b3a" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">uid 1000</text>
 <text x="1328" y="780" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1169,7 +1175,8 @@
 <text x="656" y="796" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="796" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="796" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">udp</text>
-<text x="736" y="796" fill="#b6ffc9" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0.0.0.0:0</text>
+<text x="728" y="796" fill="#b6ffc9" textLength="144" lengthAdjust="spacingAndGlyphs" xml:space="preserve">192.168.100.154:68</text>
+<text x="912" y="796" fill="#b6ffc9" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0.0.0.0:0</text>
 <text x="1184" y="796" fill="#2e8b3a" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">uid 1000</text>
 <text x="1328" y="796" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="1344" y="796" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1183,7 +1190,8 @@
 <text x="656" y="812" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="672" y="812" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="680" y="812" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tcp6</text>
-<text x="736" y="812" fill="#b6ffc9" textLength="88" lengthAdjust="spacingAndGlyphs" xml:space="preserve">[::1]:39422</text>
+<text x="728" y="812" fill="#b6ffc9" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">[::1]:6600</text>
+<text x="912" y="812" fill="#b6ffc9" textLength="88" lengthAdjust="spacingAndGlyphs" xml:space="preserve">[::1]:39422</text>
 <text x="1104" y="812" fill="#00ff41" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ESTAB</text>
 <text x="1184" y="812" fill="#b6ffc9" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">mpd (7000)</text>
 <text x="1328" y="812" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
