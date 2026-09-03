@@ -13,10 +13,15 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use gridwatch_store::keys::{cpu, gpu};
-use gridwatch_store::{Detail, KeyCode, KeyEvent, Ts};
+use gridwatch_store::{ActionId, Detail, KeyCode, KeyEvent, Ts};
+use gridwatch_ui::actions::ProcAction;
+
+/// The signals the `F9` picker offers — htop's list, and the same one the
+/// htop tile uses (`components::htop::SIGNALS`).
+pub use crate::htop::SIGNALS;
 use gridwatch_ui::component::{
-    BuildCx, BuildError, Chrome, Component, ComponentDef, Footprint, InputCx, KeyHint, Manifest,
-    Outcome, Redraw, RenderCx, Size, TickCx, Tier,
+    BuildCx, BuildError, Chrome, Command, Component, ComponentDef, Footprint, InputCx, KeyHint,
+    Manifest, Outcome, Redraw, RenderCx, Size, TickCx, Tier,
 };
 use gridwatch_ui::view::View;
 use serde::{Deserialize, Serialize};
@@ -241,6 +246,11 @@ pub struct Gpu {
     /// nvtop's ENC/DEC hiding: the last time either was non-zero (or first
     /// seen), so the bars vanish 30 s into idleness.
     encdec_active_at: Option<Ts>,
+    /// `h`/`l` in the zoomed `full` tier: nvtop scrolls its process table
+    /// horizontally four columns at a time (arc 8a).
+    col_scroll: usize,
+    /// `F9`: which signal the picker is on, if it is open.
+    signal_menu: Option<usize>,
 }
 
 impl Gpu {
@@ -269,6 +279,8 @@ impl Gpu {
             series_on,
             reverse: options.reverse,
             encdec_active_at: None,
+            col_scroll: 0,
+            signal_menu: None,
             options,
         }
     }
@@ -291,6 +303,19 @@ impl Gpu {
 
     pub fn sort(&self) -> (Col, bool) {
         (self.sort, self.desc)
+    }
+
+    /// Is this instance big enough to be the zoom-only `full` tier?
+    fn zoomed(&self, cx: &InputCx<'_>) -> bool {
+        cx.inner.width >= TIERS[TIER_FULL].min.w && cx.inner.height >= TIERS[TIER_FULL].min.h
+    }
+
+    pub fn col_scroll(&self) -> usize {
+        self.col_scroll
+    }
+
+    pub fn signal_menu(&self) -> Option<usize> {
+        self.signal_menu
     }
 
     pub fn selected(&self) -> Option<i32> {
@@ -493,6 +518,42 @@ impl Component for Gpu {
     fn on_key(&mut self, key: KeyEvent, cx: &InputCx<'_>) -> Outcome {
         let rows = self.body_rows(TIER_PROCS, cx.inner.height, false);
         let page = rows as isize;
+        // The signal picker owns every key while it is open.
+        if let Some(at) = self.signal_menu {
+            match key.code {
+                KeyCode::Esc => self.signal_menu = None,
+                KeyCode::Up | KeyCode::Char('k') => self.signal_menu = Some(at.saturating_sub(1)),
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.signal_menu = Some((at + 1).min(SIGNALS.len() - 1));
+                }
+                KeyCode::Enter => {
+                    self.signal_menu = None;
+                    let Some(row) = self
+                        .selected
+                        .and_then(|pid| self.derived.rows.iter().find(|r| r.pid == pid))
+                    else {
+                        return Outcome::Consumed;
+                    };
+                    let (name, number) = SIGNALS[at.min(SIGNALS.len() - 1)];
+                    return Outcome::Command(Command::Run(
+                        ActionId(0),
+                        Box::new(ProcAction::Signal {
+                            pids: vec![row.pid as u32],
+                            signal: number,
+                            signal_name: name.to_string(),
+                            names: vec![
+                                row.cmdline
+                                    .as_ref()
+                                    .map(|c| c.to_string())
+                                    .unwrap_or_else(|| format!("pid {}", row.pid)),
+                            ],
+                        }),
+                    ));
+                }
+                _ => return Outcome::Ignored,
+            }
+            return Outcome::Consumed;
+        }
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
@@ -507,6 +568,21 @@ impl Component for Gpu {
                 self.resort();
             }
             KeyCode::Char('r') => self.reverse = !self.reverse,
+            // nvtop's horizontal scroll and signal menu, in the zoomed
+            // `full` tier only (arc 8a): the grid's `procs` table is a
+            // dashboard, and a 4x2 tile has nowhere to scroll to.
+            KeyCode::Char('h') if self.zoomed(cx) => {
+                self.col_scroll = self.col_scroll.saturating_sub(4);
+            }
+            KeyCode::Char('l') if self.zoomed(cx) => {
+                self.col_scroll = (self.col_scroll + 4).min(self.columns.len().saturating_sub(1));
+            }
+            KeyCode::F(9) if self.zoomed(cx) => {
+                if self.selected.is_none() {
+                    return Outcome::Consumed;
+                }
+                self.signal_menu = Some(0);
+            }
             KeyCode::Char(c @ '1'..='6') => {
                 let i = (c as u8 - b'1') as usize;
                 self.series_on[i] = !self.series_on[i];

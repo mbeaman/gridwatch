@@ -741,6 +741,23 @@ fn table(g: &Gpu, cx: &RenderCx<'_>) -> View {
         if cx.tier > TIER_PROCS && !enabled.contains(&super::table::Col::User) {
             enabled.insert(1, super::table::Col::User);
         }
+        // `h`/`l` scroll the columns four at a time (nvtop's own step,
+        // arc 8a). PID and Command always stay: a table of numbers with
+        // nothing to name them is not a table anyone can read.
+        let scroll = g.col_scroll();
+        if scroll > 0 && enabled.len() > 2 {
+            let keep_first = enabled.remove(0);
+            let command = enabled
+                .iter()
+                .position(|c| *c == super::table::Col::Command)
+                .map(|i| enabled.remove(i));
+            let drop = scroll.min(enabled.len());
+            enabled.drain(..drop);
+            enabled.insert(0, keep_first);
+            if let Some(c) = command {
+                enabled.push(c);
+            }
+        }
         super::table::view(
             g.derived(),
             cx.inner.width,
@@ -783,7 +800,47 @@ fn table(g: &Gpu, cx: &RenderCx<'_>) -> View {
     }
 }
 
+/// The `F9` picker, drawn over the body it is asking about (arc 8a).
+fn signal_menu(g: &Gpu, at: usize) -> View {
+    let who = g
+        .selected()
+        .map(|pid| format!("pid {pid}"))
+        .unwrap_or_else(|| "no process".into());
+    let mut lines: Vec<Vec<Span>> = vec![
+        vec![Span::bold(
+            Role::AccentPrimary,
+            format!("send a signal to {who}"),
+        )],
+        vec![Span::new(
+            Role::TextGhost,
+            "↑/↓ move · Enter apply · Esc cancel",
+        )],
+        Vec::new(),
+    ];
+    for (i, (name, _)) in crate::gpu::SIGNALS.iter().enumerate() {
+        let cursor = i == at;
+        lines.push(vec![
+            Span::new(
+                if cursor {
+                    Role::AccentPrimary
+                } else {
+                    Role::TextGhost
+                },
+                if cursor { "▸ " } else { "  " },
+            ),
+            Span::new(
+                if cursor { Role::Text } else { Role::TextMuted },
+                (*name).to_string(),
+            ),
+        ]);
+    }
+    View::Text(lines)
+}
+
 pub fn render(g: &Gpu, cx: &RenderCx<'_>) -> View {
+    if let Some(at) = g.signal_menu() {
+        return signal_menu(g, at);
+    }
     match cx.tier {
         TIER_BADGE => badge(cx),
         TIER_GAUGES => gauges(cx),

@@ -10,7 +10,7 @@ use gridwatch_store::keys::cpu::ProcTable;
 use gridwatch_store::keys::gpu::{GpuProcKind, GpuProcRow, GpuProcs};
 use gridwatch_store::keys::{cpu, gpu};
 use gridwatch_store::{Batch, Datum, Detail, KeyCode, KeyEvent, Mods, Msg, Sample, Store, Ts};
-use gridwatch_ui::component::{Component, InputCx, Size, pick_tier};
+use gridwatch_ui::component::{Component, InputCx, Outcome, Size, pick_tier};
 use gridwatch_ui::testkit::{demo_store, demo_store_at, plain_text, render_component, theme};
 use ratatui_core::layout::Rect;
 
@@ -398,4 +398,75 @@ fn options_are_validated_through_build() {
     let ok: toml::Table = toml::from_str("table_rows = 2\ncolumns = [\"pid\", \"enc\"]").unwrap();
     let g = Gpu::from_table(&ok).unwrap();
     assert_eq!(g.options().table_rows, 5, "nvtop/htop's five-row floor");
+}
+
+/// Arc 8a: nvtop's horizontal scroll and its `F9` signal menu, in the
+/// zoom-only `full` tier only. No process is touched: the action is read
+/// as data.
+#[test]
+fn the_full_tier_scrolls_columns_and_offers_the_signal_menu() {
+    use gridwatch_ui::component::Command;
+    let store = demo_store(42, 6);
+    let th = theme("modern");
+    let caps = gridwatch_store::CapSet::default();
+    let mut g = Gpu::new(Options::default());
+    tick(&mut g, &store);
+    let zoom = Size::new(248, 66);
+    let cx = |inner: Rect| InputCx {
+        store: &store,
+        inner,
+        caps: &caps,
+        readonly: false,
+    };
+    let big = Rect::new(0, 0, zoom.w, zoom.h);
+    let small = Rect::new(0, 0, 80, 20);
+
+    // On the grid the keys do nothing: a 4x2 tile has nowhere to scroll.
+    assert!(matches!(
+        g.on_key(KeyEvent::plain(KeyCode::Char('l')), &cx(small)),
+        Outcome::Ignored
+    ));
+    assert_eq!(g.col_scroll(), 0);
+    assert!(matches!(
+        g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(small)),
+        Outcome::Ignored
+    ));
+
+    // Zoomed, `l` scrolls four columns and `h` comes back.
+    g.on_key(KeyEvent::plain(KeyCode::Char('l')), &cx(big));
+    assert_eq!(g.col_scroll(), 4);
+    let (_, buf) = render_component(&mut g, &store, &th, zoom, true);
+    let text = plain_text(&buf);
+    assert!(text.contains("PID"), "PID always survives a scroll: {text}");
+    assert!(text.contains("Command"), "and so does Command: {text}");
+    g.on_key(KeyEvent::plain(KeyCode::Char('h')), &cx(big));
+    assert_eq!(g.col_scroll(), 0);
+
+    // `F9` needs a selected row, then offers htop's signal list.
+    g.on_key(KeyEvent::plain(KeyCode::Down), &cx(big));
+    assert!(g.selected().is_some());
+    g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(big));
+    assert_eq!(g.signal_menu(), Some(0));
+    let (_, buf) = render_component(&mut g, &store, &th, zoom, true);
+    let text = plain_text(&buf);
+    assert!(text.contains("send a signal to"), "{text}");
+    assert!(text.contains("SIGTERM") && text.contains("SIGKILL"));
+
+    // Enter hands the shell an action naming that pid, and asks first.
+    let out = g.on_key(KeyEvent::plain(KeyCode::Enter), &cx(big));
+    let Outcome::Command(Command::Run(_, action)) = out else {
+        panic!("no action from the gpu signal menu");
+    };
+    assert!(format!("{action:?}").contains("SIGTERM"));
+    assert_eq!(action.pids().len(), 1);
+    assert!(action.confirm().is_some());
+    assert!(g.signal_menu().is_none());
+
+    // Esc closes it without building anything.
+    g.on_key(KeyEvent::plain(KeyCode::F(9)), &cx(big));
+    assert!(matches!(
+        g.on_key(KeyEvent::plain(KeyCode::Esc), &cx(big)),
+        Outcome::Consumed
+    ));
+    assert!(g.signal_menu().is_none());
 }

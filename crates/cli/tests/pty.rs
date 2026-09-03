@@ -74,6 +74,20 @@ struct Session {
 
 impl Session {
     fn start(tag: &str, rows: u16, cols: u16, args: &str) -> Session {
+        Session::start_with_env(tag, rows, cols, args, &[])
+    }
+
+    /// The same, with extra environment for the run. Arc 8a's action tests
+    /// use it to fence the executor to a pid nothing spawned, so a
+    /// confirmed action could not touch anything even if one slipped
+    /// through (D58).
+    fn start_with_env(
+        tag: &str,
+        rows: u16,
+        cols: u16,
+        args: &str,
+        env: &[(&str, &str)],
+    ) -> Session {
         let sandbox = Sandbox::new(tag);
         let inner = format!("stty rows {rows} cols {cols}; exec {} {args}", bin());
         let mut cmd = Command::new("script");
@@ -83,6 +97,9 @@ impl Session {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         sandbox.env(&mut cmd, tag);
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
         let child = cmd.spawn().expect("spawn script");
         Session {
             child,
@@ -1038,6 +1055,123 @@ fn a_config_rule_fires_against_the_demo_data() {
     assert!(text.contains("gpu.temp_c > 20"), "{text}");
     assert!(text.contains("Warn"), "{text}");
 
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}
+
+/// C.26 (arc 8a) — zoom the htop tile, search, and open the signal menu
+/// **and cancel it**. No signal is ever sent: the run is fenced to a pid
+/// nothing here spawned (`GRIDWATCH_ACTION_ALLOW_PIDS`), so even a
+/// confirmed action would be refused by the executor.
+#[test]
+fn zoomed_htop_searches_and_cancels_the_signal_menu() {
+    if skip("zoomed_htop_searches_and_cancels_the_signal_menu") {
+        return;
+    }
+    let mut s = Session::start_with_env(
+        "htopfull",
+        70,
+        250,
+        "run --demo",
+        &[("GRIDWATCH_ACTION_ALLOW_PIDS", "424242")],
+    );
+    let seen = s.wait_for(Duration::from_secs(4), |t| t.contains("retrowave"));
+    assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+    // The htop tile is the first placement on the Overview. Zoom first,
+    // then capture: a captured tile sees every key, so `z` would go to the
+    // component and be ignored.
+    s.keys("z");
+    std::thread::sleep(Duration::from_millis(300));
+    s.keys("\r");
+    let seen = s.wait_for(Duration::from_secs(3), |t| {
+        t.contains("F9") && t.to_lowercase().contains("kill")
+    });
+    assert!(
+        seen.is_some(),
+        "no F-key bar in the zoomed tile: {:?}",
+        s.screen()
+    );
+    // The demo's process table arrives on the scan cadence; until it does
+    // the tile says so, and a picker has nothing to act on.
+    let seen = s.wait_for(Duration::from_secs(6), |t| t.contains("TIME+"));
+    assert!(
+        seen.is_some(),
+        "no process table in the zoomed tile: {:?}",
+        s.screen()
+    );
+    // Search finds the game the demo set carries.
+    s.keys("/game");
+    let seen = s.wait_for(Duration::from_secs(2), |t| t.contains("search: game"));
+    assert!(seen.is_some(), "no search line: {:?}", s.screen());
+    s.keys("\r");
+    std::thread::sleep(Duration::from_millis(200));
+    // A picker opens and Esc closes it. Nothing is ever confirmed.
+    // `a` (the affinity picker) rather than F9 (the signal one): both go
+    // through the same open/answer/cancel path, and a plain character
+    // proves the key reached the tile without depending on how this
+    // terminal encodes a function key.
+    s.keys("a");
+    // The typescript is a diff stream, so the title line can arrive in
+    // pieces; the list of CPUs is what lands whole.
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
+        t.contains("Space choose") && t.contains("Esc cancel")
+    });
+    assert!(seen.is_some(), "no picker: {:?}", s.screen());
+    s.keys("\x1b");
+    std::thread::sleep(Duration::from_millis(300));
+    s.keys("\x1b");
+    std::thread::sleep(Duration::from_millis(200));
+    s.keys("z");
+    std::thread::sleep(Duration::from_millis(200));
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}
+
+/// C.27 (arc 8a) — `--readonly` refuses an action and says what it would
+/// have done. F8 is the one action that does not ask, so it is the one
+/// that proves the refusal happens before the question.
+#[test]
+fn readonly_refuses_an_action_and_says_so() {
+    if skip("readonly_refuses_an_action_and_says_so") {
+        return;
+    }
+    let mut s = Session::start_with_env(
+        "readonly",
+        70,
+        250,
+        "run --demo --readonly",
+        &[("GRIDWATCH_ACTION_ALLOW_PIDS", "424242")],
+    );
+    let seen = s.wait_for(Duration::from_secs(4), |t| t.contains("retrowave"));
+    assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+    s.keys("z");
+    std::thread::sleep(Duration::from_millis(300));
+    s.keys("\r");
+    let seen = s.wait_for(Duration::from_secs(3), |t| t.contains("F9"));
+    assert!(seen.is_some(), "not zoomed: {:?}", s.screen());
+    let seen = s.wait_for(Duration::from_secs(6), |t| t.contains("TIME+"));
+    assert!(seen.is_some(), "no process table: {:?}", s.screen());
+    // Put the cursor on a row, then ask for something that changes it.
+    // `i` (the I/O priority picker) confirms; under `--readonly` the
+    // refusal happens before any question, which is what this checks.
+    s.keys("\x1b[B"); // Down
+    std::thread::sleep(Duration::from_millis(200));
+    s.keys("i");
+    let seen = s.wait_for(Duration::from_secs(2), |t| {
+        t.contains("I/O priority for") || t.contains("best-effort")
+    });
+    assert!(seen.is_some(), "no io picker: {:?}", s.screen());
+    s.keys("\r");
+    let seen = s.wait_for(Duration::from_secs(2), |t| t.contains("read-only"));
+    assert!(seen.is_some(), "no read-only refusal: {:?}", s.screen());
+    s.keys("\x1b");
+    std::thread::sleep(Duration::from_millis(200));
+    s.keys("z");
+    std::thread::sleep(Duration::from_millis(200));
     s.keys("q");
     let (code, _, log) = s.finish();
     assert_eq!(code, 0);
