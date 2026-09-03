@@ -126,11 +126,15 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 2026-09-02 | 6 | quiet | demo Audio page 250x70 (pty, `--demo --page 2`), the winamp tile animating at 10 fps beside the audio tile at 30, 40 s window (**P1/P5/P6/P19**) | no | **3.95%** (render 3.75 · gw-audio 0.18 · gw-mpris 0.00) | 68 | 198 KB/s | 29.9 (29.9 anim) | — | — | n/a | n/a | — / 1.63 ms | 17480 kB |
 | 2026-09-02 | 7a | quiet | **live** overview 250x70 (pty), every source incl. the new `net` with its connection scan, 40 s window (**P1/P5/P6/P13**) | no | **2.67%** (render 0.42 · gw-gpu 0.97 · gw-cpu 0.65 · gw-net **0.52** · gw-sensors 0.07) | 33 | 4.1 KB/s | 2.15 | — | — | — | scan 3.3 ms | — / 2.20 ms | 49828 kB |
 | 2026-09-02 | 7b | — | **P18** rules cost: ten rules over a batch of 40 scalars, in `Store::apply` (`ten_rules_cost_microseconds_per_batch`) | no | — | — | — | — | — | — | — | — | **24 µs** release / 149 µs debug per batch | — |
+| 2026-09-02 | 7 (post-review) | quiet | **live** overview 250x70 (pty), every source, the probes now on their own thread, 40 s window (**P1/P5/P6/P13**) | no | **2.60%** (render 0.43 · gw-gpu 0.88 · gw-cpu 0.65 · gw-net 0.53 · gw-net-probe **0.00** · gw-sensors 0.07) | 33 | 3.9 KB/s | 2.17 | — | — | — | — | — / 2.25 ms | 50468 kB |
 
 
 
 
 
+
+
+**Arc 7 post-review note (2026-09-02).** Moving the latency probes off the source thread (D57 amendment 22) cost nothing measurable: the new `gw-net-probe` thread rounds to **0.00 %** — it spends its life blocked on a channel or in a socket timeout — and the process total came down slightly, to **2.60 %** with every source live. Wake-ups are unchanged at 33/s. What the change bought is that a silent probe target can no longer delay a rate sample: inline, two of them held the collector for up to 1.8 s a tick.
 
 **Arc 7b notes (2026-09-02).** The rules engine is name-indexed and sees only the scalars a batch carried, so its cost scales with *matches*, not with the store: ten rules against a forty-sample batch cost **24 µs** in release (149 µs in a debug build, which is what the gate measures). At the sensors source's one batch a second that is 0.002 % of a core, and the test fails above 0.5 ms a batch. A store with no rules does no work at all — the engine is skipped by an `is_empty` check before the samples are even collected, which is why the shipped `config.toml` keeps its four examples commented out.
 
