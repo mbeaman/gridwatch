@@ -8,7 +8,7 @@
 | `audio` | audio visualizer | `audio` | 4x2 | vu → mini → scope → spectrum → full | the default sink's spectrum, scope and VU — Winamp or cava ballistics, a sink picker |
 | `clock` | Clock | — | 2x1 | mini → big | wall-clock time |
 | `gpu` | GPU | `gpu`, `cpu`? | 6x3 | badge → gauges → header → charts → procs → full | nvtop's header, gauges, ten-minute charts and the GPU process table over NVML |
-| `htop` | CPU | `cpu` | 6x3 | tiny → big-number → meters → cores → table | htop's meters, per-core CCD blocks, memory, load and pressure |
+| `htop` | CPU | `cpu` | 6x3 | tiny → big-number → meters → cores → table → full | htop's meters, per-core CCD blocks, memory, load and pressure |
 | `net` | network | `net` | 4x2 | rates → sparks → table → conns → full | interface rates and link state, the default route and DNS, latency probes and the connection table |
 | `pins` | 12V-2x6 pins | `pins`, `gpu`? | 4x2 | watts-badge → mini-bars → bars → trend → full | astral-watch's per-pin amperage: bars, balance, the watts trend and the alert log |
 | `sensors` | sensors | `sensors`, `gpu`? | 6x1 | hottest → strip → table → chart → full | every hwmon chip's temperatures, fans, volts and power, hottest first; RAPL and the GPU row |
@@ -111,6 +111,7 @@ htop's meters, per-core CCD blocks, memory, load and pressure
 | `meters` | 30×6 | Meters | cpu/mem/swap meters, pids · tasks · load · uptime, PSI | `CPU` `MEM` `SWP` |
 | `cores` | 56×12 | Meters | per-core bars in CCD blocks, MHz, Tccd | `CPU` `MEM` `SWP` `CCD` `PSI` |
 | `table` | 56×18 | Table | top-N process table, kthr in the task line | `CCD` `kthr` `PID` `CPU%` `Command` |
+| `full` (zoom) | 100×24 | Table | Main and I/O screens, search, filter and tree, tags, follow and the thread toggles, the F-key bar and the process actions | `Main` `I/O` `PID` `Command` `F9` |
 
 Keys once captured with `Enter`:
 

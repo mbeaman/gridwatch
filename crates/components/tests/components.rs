@@ -159,7 +159,9 @@ fn htop_tiers_match_the_real_grid_sizes() {
     assert_eq!(tier(38, 8, false), ("meters", false), "2x1 at 250x70");
     assert_eq!(tier(17, 8, false), ("big-number", false), "1x1 at 250x70");
     assert_eq!(tier(9, 5, false), ("tiny", false), "1x1 dense at 120x40");
-    assert_eq!(tier(248, 66, true), ("table", false), "zoomed");
+    // Arc 8a: zooming gives htop its whole face, not a wider dashboard.
+    assert_eq!(tier(248, 66, true), ("full", false), "zoomed");
+    assert_eq!(tier(122, 31, false), ("table", false), "a 6x3 tile is not");
     // A pinned view that does not fit falls back and raises the chip (§4.6).
     let (i, fallback) = pick_tier(c.tiers(), Size::new(17, 8), false, Some("cores"));
     assert_eq!((c.tiers()[i].name, fallback), ("big-number", true));

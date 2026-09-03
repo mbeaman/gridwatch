@@ -18,7 +18,9 @@ use gridwatch_ui::view::{Constraint, Dir, Span, View};
 use ratatui_core::layout::Rect;
 
 use super::format as fmt;
-use super::{Htop, ROWS_ABOVE_TABLE, TIER_BIG_NUMBER, TIER_CORES, TIER_METERS, TIER_TINY};
+use super::{
+    Htop, ROWS_ABOVE_TABLE, TIER_BIG_NUMBER, TIER_CORES, TIER_FULL, TIER_METERS, TIER_TINY,
+};
 
 /// How much history the sparkline shows at most; one bucket per cell. A run
 /// younger than this spans only what it has lived, so the line starts drawing
@@ -745,6 +747,9 @@ pub fn render(h: &Htop, cx: &RenderCx<'_>) -> View {
         TIER_BIG_NUMBER => big_number(cx),
         TIER_METERS => meters(cx),
         TIER_CORES => cores(cx),
-        _ => table(h, cx),
+        // `table` and anything between it and `full` (a tier that fits
+        // the table's min but not the full one).
+        t if t < TIER_FULL => table(h, cx),
+        _ => super::full::render(h, cx),
     }
 }
