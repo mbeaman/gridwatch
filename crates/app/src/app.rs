@@ -60,7 +60,14 @@ struct Toast {
     severity: Severity,
     /// A `Resolved` transition: drawn in `Role::Ok` with a tick.
     resolved: bool,
-    expires_at: Instant,
+    /// On the **run clock**, not `Instant::now()`. Live they are the same
+    /// thing; under `--replay` the run clock is the journal's, which is
+    /// what makes a replayed frame reproducible — a toast raised by a
+    /// recorded status used to expire on wall time, so replaying the same
+    /// journal twice could draw it once and not the other time (CI caught
+    /// it as a determinism failure; D47's promise is byte-identical
+    /// replay).
+    expires_at: Ts,
 }
 
 /// Per-source `Control` senders (D50 §6): `Command::Source(id, ctl)` lands
@@ -722,7 +729,7 @@ impl Shell {
                         text: format!("{} {}", ev.title, ev.detail),
                         severity: Severity::Info,
                         resolved: true,
-                        expires_at: Instant::now() + TOAST_TTL,
+                        expires_at: self.now().plus(TOAST_TTL),
                     });
                 }
             }
@@ -787,7 +794,7 @@ impl Shell {
             text: text.into(),
             severity,
             resolved: false,
-            expires_at: Instant::now() + TOAST_TTL,
+            expires_at: self.now().plus(TOAST_TTL),
         });
     }
 
@@ -1199,7 +1206,8 @@ impl Shell {
 
         // Overlays. Toasts yield on a body too small to share (the lattice
         // found them covering the only tile at 15×7).
-        self.toasts.retain(|t| t.expires_at > Instant::now());
+        let now = self.now();
+        self.toasts.retain(|t| t.expires_at > now);
         let toast_rows = if body.height >= 6 {
             self.toasts.len()
         } else {

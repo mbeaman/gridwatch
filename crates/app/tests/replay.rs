@@ -324,3 +324,30 @@ fn the_audio_fixture_replays_the_silence_path_deterministically() {
         assert!(a.contains("silent"), "the silence note:\n{a}");
     }
 }
+
+/// The determinism this file pins is byte-identical *frames*, and a toast
+/// is part of a frame. Toasts used to expire on wall time, so replaying a
+/// journal that raises one (a recorded source status, say) drew it or not
+/// depending on how long the machine took — CI found it as an intermittent
+/// failure of the test above. They expire on the run clock now, which is
+/// the journal's clock under `--replay`.
+#[test]
+fn a_toast_raised_during_replay_expires_on_the_journals_clock() {
+    let mut sh = shell(Clock::new_virtual());
+    sh.set_clock(Ts(10_000_000_000));
+    sh.warn_toast("something the journal said");
+    let text = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    assert!(text.contains("something the journal"), "{text}");
+    // Three seconds of journal time: still there, however long the machine
+    // took to get here.
+    sh.set_clock(Ts(13_000_000_000));
+    let text = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    assert!(text.contains("something the journal"));
+    // Five: gone, on the journal's clock rather than the wall's.
+    sh.set_clock(Ts(15_000_000_000));
+    let text = gridwatch_ui::dump::cells(&shot_frame(&mut sh, 250, 70));
+    assert!(
+        !text.contains("something the journal"),
+        "the toast outlived the run clock: {text}"
+    );
+}
