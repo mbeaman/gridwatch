@@ -529,7 +529,13 @@ fn table(
     if area.height == 0 {
         return;
     }
-    // Column x positions: fixed widths + one elastic (the last Elastic gets the rest).
+    // Column x positions: the fixed widths, then the spare shared between
+    // **every** elastic column (the last one takes the remainder). Giving
+    // it all to the last left an earlier elastic at zero, which this
+    // function then skipped entirely — the net tile's connection table
+    // drew its remote address under a `local` header and nobody could see
+    // the local one (arc 7a review, D57 amendment 19). A table with one
+    // elastic renders byte-identically to before.
     let mut widths: Vec<u16> = columns
         .iter()
         .map(|c| match c.width {
@@ -539,8 +545,19 @@ fn table(
         .collect();
     let fixed: u16 = widths.iter().sum::<u16>() + columns.len().saturating_sub(1) as u16;
     let spare = area.width.saturating_sub(fixed);
-    if let Some(i) = columns.iter().rposition(|c| c.width == ColWidth::Elastic) {
-        widths[i] = spare;
+    let elastic: Vec<usize> = columns
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.width == ColWidth::Elastic)
+        .map(|(i, _)| i)
+        .collect();
+    if !elastic.is_empty() {
+        let each = spare / elastic.len() as u16;
+        for &i in &elastic {
+            widths[i] = each;
+        }
+        // The remainder goes to the last, so the row still fills the rect.
+        widths[*elastic.last().expect("non-empty")] += spare % elastic.len() as u16;
     }
     // Header.
     let header_style = match theme.widgets.table_header {

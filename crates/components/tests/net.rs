@@ -190,3 +190,60 @@ fn a_quiet_interface_reads_zero() {
     assert!(text.contains("0B"), "{text}");
     assert!(text.contains("↓") && text.contains("↑"), "{text}");
 }
+
+/// Arc 7a review: the tiers below `table` and the probe strip's own
+/// branches had no test at all, and the connection table's assertions
+/// passed while its local-address column was invisible.
+#[test]
+fn the_small_tiers_and_the_probe_strip_say_what_they_mean() {
+    let store = store();
+    let th = theme("modern");
+    // `rates`: one interface's pair, with the arrows and a unit.
+    let mut c = tile();
+    let (tier, buf) = render_component(&mut c, &store, &th, Size::new(17, 8), false);
+    assert_eq!(c.tiers()[tier].name, "rates");
+    let text = plain_text(&buf);
+    assert!(text.contains("eno1"), "{text}");
+    assert!(text.contains("↓") && text.contains("↑"), "{text}");
+    assert!(
+        !text.contains("gateway"),
+        "no probe strip this small: {text}"
+    );
+    // The three-row shape and the one-row fallback both draw the pair.
+    let (_, short) = render_component(&mut tile(), &store, &th, Size::new(17, 4), false);
+    let short = plain_text(&short);
+    assert!(short.contains("↓") && short.contains("↑"), "{short}");
+    // `sparks`: + the link's own words.
+    let mut c = tile();
+    let (tier, buf) = render_component(&mut c, &store, &th, Size::new(38, 8), false);
+    assert_eq!(c.tiers()[tier].name, "sparks");
+    let text = plain_text(&buf);
+    assert!(text.contains("Gb/s") || text.contains("Mb/s"), "{text}");
+}
+
+/// The connection table draws **both** address columns. A renderer that
+/// gave all the spare width to the last elastic column left `local` at
+/// zero and drew the remote address under its header (arc 7a review).
+#[test]
+fn the_connection_table_shows_the_local_address_too() {
+    let store = store();
+    let th = theme("modern");
+    let mut c = tile();
+    let (_, buf) = render_component(&mut c, &store, &th, Size::new(90, 24), false);
+    let text = plain_text(&buf);
+    assert!(text.contains("local") && text.contains("remote"), "{text}");
+    // The demo's established row: a private source address and a public
+    // destination, each under its own heading.
+    let row = text
+        .lines()
+        .find(|l| l.contains("140.82.112.4:443"))
+        .unwrap_or_else(|| panic!("no established row: {text}"));
+    assert!(
+        row.contains("192.168."),
+        "the local address is missing from the row: {row}"
+    );
+    assert!(
+        row.find("192.168.").unwrap() < row.find("140.82.").unwrap(),
+        "local must come before remote: {row}"
+    );
+}
