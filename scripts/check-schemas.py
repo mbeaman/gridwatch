@@ -6,6 +6,8 @@ import sys
 import tomllib
 
 import jsonschema
+from referencing import Registry
+from referencing.jsonschema import DRAFT202012
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FAILED = False
@@ -51,5 +53,39 @@ for journal in sorted((ROOT / "fixtures/journals").glob("*.jsonl")):
         print(f"FAIL fixtures/journals/{journal.name}: first line is not a header")
     elif ok:
         print(f"ok   fixtures/journals/{journal.name} ({len(lines)} lines) vs journal.schema.json")
+
+# The plugin protocol (§4.7, arc 8b): `exec.schema.json` references the
+# manifest and view schemas, so it needs a registry rather than a bare
+# validator. Every line of the good fixture must validate, and every line
+# of the bad one must be refused — a schema that accepts nonsense is worse
+# than no schema, because the host trusts it.
+def exec_validator():
+    names = ["exec", "manifest", "view"]
+    docs = {n: json.loads((ROOT / "schema" / f"{n}.schema.json").read_text()) for n in names}
+    registry = Registry().with_resources(
+        [(f"{n}.schema.json", DRAFT202012.create_resource(d)) for n, d in docs.items()]
+    )
+    return jsonschema.Draft202012Validator(docs["exec"], registry=registry)
+
+
+plugin_dir = ROOT / "fixtures/plugins"
+if plugin_dir.is_dir():
+    validator = exec_validator()
+    for path in sorted(plugin_dir.glob("*.jsonl")):
+        must_pass = path.name != "bad.jsonl"
+        lines = [l for l in path.read_text().splitlines() if l.strip()]
+        bad_lines = []
+        for i, line in enumerate(lines):
+            errors = list(validator.iter_errors(json.loads(line)))
+            if bool(errors) == must_pass:
+                bad_lines.append((i + 1, errors[0].message if errors else "accepted"))
+        if bad_lines:
+            FAILED = True
+            for n, why in bad_lines:
+                verb = "rejected" if must_pass else "accepted"
+                print(f"FAIL fixtures/plugins/{path.name}:{n} {verb}: {why}")
+        else:
+            what = "validate" if must_pass else "are refused"
+            print(f"ok   fixtures/plugins/{path.name} ({len(lines)} lines) {what} vs exec.schema.json")
 
 sys.exit(1 if FAILED else 0)

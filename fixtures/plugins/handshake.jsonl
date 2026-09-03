@@ -1,0 +1,10 @@
+{"kind":"hello","contract":1,"capabilities":["Procfs","Nvml"],"keys":["cpu.total_pct","gpu.temp_c"]}
+{"kind":"manifest","manifest":{"kind":"weather","name":"weather","summary":"the temperature outside, for contrast with the one inside","contract":1,"footprints":[{"w":1,"h":1},{"w":2,"h":1}],"default_footprint":{"w":2,"h":1},"tiers":[{"name":"badge","min":{"w":8,"h":3},"adds":["the temperature"]},{"name":"full","min":{"w":24,"h":6},"adds":["the last hour","what it is doing"],"zoom_only":false}],"requires":[],"optional":[],"sources":["weather"],"produces":[{"key":"weather.temp_c","unit":"celsius","help":"outside temperature"}],"keys":[{"key":"r","does":"refresh"}],"options":["place"]}}
+{"kind":"status","state":"ok","reason":"reading /tmp/weather","hint":null}
+{"kind":"sample","key":"weather.temp_c","label":null,"at":1756800000000000000,"value":14.5}
+{"kind":"sample","key":"weather.temp_c","value":14.9}
+{"kind":"render","instance":"outside","tier":0,"inner":{"w":18,"h":4},"now":1756800001000000000,"focused":false,"captured":false}
+{"kind":"view","instance":"outside","tree":{"text":[[{"role":"text","text":"14.9°C"}]]}}
+{"kind":"key","instance":"outside","key":"r","mods":[]}
+{"kind":"command","command":{"toast":{"severity":"info","text":"refreshed"}}}
+{"kind":"log","level":"debug","text":"fetched in 4 ms"}

@@ -1,0 +1,7 @@
+{"kind":"sample","key":"Weather.Temp","value":1}
+{"kind":"sample","key":"weather.temp_c"}
+{"kind":"view","instance":"outside"}
+{"kind":"command","command":{"exec":"rm -rf /"}}
+{"kind":"status","state":"on fire"}
+{"kind":"nonsense","what":"ever"}
+{"kind":"command","command":{"toast":{"severity":"info"}}}

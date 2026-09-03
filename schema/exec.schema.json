@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gridwatch exec plugin protocol (§4.7, D32/D39, arc 8b) — one JSON object per line, both directions",
+  "description": "Every line a plugin writes is validated against this before the host looks at it. A line that does not validate is a protocol error, and three of them stop the plugin rather than restarting it. The host's own lines are validated in tests, so a plugin author can rely on their shape.",
+  "$ref": "#/$defs/message",
+  "$defs": {
+    "message": {
+      "oneOf": [
+        { "$ref": "#/$defs/hello" },
+        { "$ref": "#/$defs/manifest" },
+        { "$ref": "#/$defs/sample" },
+        { "$ref": "#/$defs/render" },
+        { "$ref": "#/$defs/view" },
+        { "$ref": "#/$defs/key" },
+        { "$ref": "#/$defs/command" },
+        { "$ref": "#/$defs/status" },
+        { "$ref": "#/$defs/log" }
+      ]
+    },
+
+    "hello": {
+      "type": "object",
+      "description": "host → plugin, once, first. `contract` is the compatibility promise.",
+      "required": ["kind", "contract"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "hello" },
+        "contract": { "type": "integer", "minimum": 1 },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "What this machine can do, by the host's names (Procfs, Nvml, …). A plugin should degrade rather than fail when one it wants is missing."
+        },
+        "keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Metric names already in the host's catalogue, so a plugin does not invent a colliding one."
+        }
+      }
+    },
+
+    "manifest": {
+      "type": "object",
+      "description": "plugin → host, once, in answer to hello. Validated against manifest.schema.json as well.",
+      "required": ["kind", "manifest"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "manifest" },
+        "manifest": { "$ref": "manifest.schema.json" }
+      }
+    },
+
+    "sample": {
+      "type": "object",
+      "description": "plugin → host, any time: one metric reading. A source plugin's whole job.",
+      "required": ["kind", "key", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "sample" },
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+          "description": "`<source>.<metric>`, lower case. The host prefixes it with the plugin's own id, so a plugin cannot publish over a built-in key."
+        },
+        "label": {
+          "type": ["string", "integer", "null"],
+          "description": "A name or an index; null (or absent) for an unlabelled key."
+        },
+        "at": {
+          "type": ["integer", "null"],
+          "description": "Nanoseconds since the epoch. Absent means 'now' by the host's clock, which is what a plugin should send unless it is replaying."
+        },
+        "value": { "type": "number" }
+      }
+    },
+
+    "render": {
+      "type": "object",
+      "description": "host → plugin: draw this instance at this size. Sent only when a visible tile's inputs changed.",
+      "required": ["kind", "instance", "tier", "inner"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "render" },
+        "instance": { "type": "string" },
+        "tier": { "type": "integer", "minimum": 0 },
+        "inner": {
+          "type": "object",
+          "required": ["w", "h"],
+          "additionalProperties": false,
+          "properties": {
+            "w": { "type": "integer", "minimum": 0 },
+            "h": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "now": { "type": "integer" },
+        "focused": { "type": "boolean" },
+        "captured": { "type": "boolean" }
+      }
+    },
+
+    "view": {
+      "type": "object",
+      "description": "plugin → host: the view tree for a render. No cells and no colours — the host's renderer draws it through the theme, which is why a plugin cannot break the look of the dashboard.",
+      "required": ["kind", "instance", "tree"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "view" },
+        "instance": { "type": "string" },
+        "tree": { "$ref": "view.schema.json" }
+      }
+    },
+
+    "key": {
+      "type": "object",
+      "description": "host → plugin: a keystroke, while the tile is captured.",
+      "required": ["kind", "instance", "key"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "key" },
+        "instance": { "type": "string" },
+        "key": {
+          "type": "string",
+          "description": "A single character, or a name: up down left right enter esc tab backspace home end pgup pgdn f1..f12."
+        },
+        "mods": {
+          "type": "array",
+          "items": { "enum": ["ctrl", "alt", "shift"] }
+        }
+      }
+    },
+
+    "command": {
+      "type": "object",
+      "description": "plugin → host: a side effect. Deliberately a small set — a plugin may ask for a toast or a page, and may not signal a process, write a file or run a program.",
+      "required": ["kind", "command"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "command" },
+        "command": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["toast"],
+              "additionalProperties": false,
+              "properties": {
+                "toast": {
+                  "type": "object",
+                  "required": ["severity", "text"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": { "enum": ["info", "warn", "crit"] },
+                    "text": { "type": "string", "maxLength": 200 }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["page"],
+              "additionalProperties": false,
+              "properties": { "page": { "type": "integer", "minimum": 0 } }
+            },
+            {
+              "type": "object",
+              "required": ["zoom"],
+              "additionalProperties": false,
+              "properties": { "zoom": { "type": "boolean" } }
+            }
+          ]
+        }
+      }
+    },
+
+    "status": {
+      "type": "object",
+      "description": "plugin → host: health, like a source's. `unavailable` with a reason is how a plugin says it cannot work here — it is not an error and does not count as a strike.",
+      "required": ["kind", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "status" },
+        "state": { "enum": ["starting", "ok", "degraded", "unavailable", "stopped"] },
+        "reason": { "type": ["string", "null"], "maxLength": 200 },
+        "hint": { "type": ["string", "null"], "maxLength": 200 }
+      }
+    },
+
+    "log": {
+      "type": "object",
+      "description": "plugin → host: a line for the log file, never the screen. A plugin's stderr goes to the same place.",
+      "required": ["kind", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "log" },
+        "level": { "enum": ["trace", "debug", "info", "warn", "error"] },
+        "text": { "type": "string", "maxLength": 2000 }
+      }
+    }
+  }
+}
