@@ -70,6 +70,10 @@ HEADER
 
 if [ "${1:-}" = "--check" ]; then
   if ! git diff --exit-code --stat -- "$OUT"; then
+    # A drift check that only says "it drifted" makes you reproduce it to find
+    # out what; print the head of the diff so a CI log is enough.
+    echo "--- what changed (first 60 lines) ---" >&2
+    git --no-pager diff -- "$OUT" | head -60 >&2
     echo "THIRD_PARTY.md drift: regenerate with scripts/third-party.sh and commit" >&2
     exit 1
   fi
