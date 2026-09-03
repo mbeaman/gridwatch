@@ -33,7 +33,7 @@ Arc 2 journal + CI screenshots · arc 3 astral-watch v0.8.0 pre-req + capability
 ## Backlog — hardening and environment
 
 - **Focus events under tmux/ssh** — the P4/P21 unfocused throttle rides DECSET 1004; verify behaviour inside tmux and over ssh, and define the safe degrade (no focus events ⇒ assume focused; `space` remains the manual throttle). *(verify during arc 1a's P21 check)*
-- **exec-plugin security posture** — arc 8 must spec input limits (max line length, schema-validated only, reject unknown kinds), resource caps (kill on runaway CPU/RSS), and no shell interpretation of plugin commands.
+- ~~**exec-plugin security posture**~~ — **done, arc 8b**: no shell, `env_clear`, a 1 MiB line cap, schema validation before anything is read, unknown kinds refused, three strikes, `RLIMIT_AS`/`RLIMIT_CPU`, a 64-deep drop-oldest queue, a 500 messages/s read budget and a 50 %-of-a-core-for-10 s runaway check (P22, D58 amendments 28–30).
 - **Wayland clipboard for `S` screenshot** (copy path or content) — nice-to-have.
 
 ## Won't do (recorded)
@@ -64,9 +64,9 @@ Raised by the arc-1b review (2026-08-31), verified real, deliberately not fixed 
 - **PCIe link maximum from the gpu source** (`gpu.pcie_gen_max`/`width_max` via NVML, or a spec-row field — a seam addition): the pins header's `↓` means "below Gen5×16" until then (arc 3a review).
 - **Per-bar role override for `View::Bars`** so the pin bars' fill could follow the amps band (red over 9.2 A) as tui.rs does; today the fill is the `Power` gradient by height and the bands colour the values row (arc 3a review; a `View` change).
 - **pins CSV-tail backend** (arc 8): the digest's third mode — `stat`-poll a root logger's rotating CSV, local naive timestamps, `chrono` for freshness; deferred by D50 §5 because the i2c path works beside that logger.
-- **gpu `full` tier's nvtop keys** (arc 8 with the other Actions): `+`/`−` sort direction, `F9` signal menu, `h`/`l` column scroll; the Power sub-panel's pin bars land with arc 3.
+- ~~**gpu `full` tier's nvtop keys**~~ — **done, arc 8a**: `+`/`−` sort direction, `F9` signal menu and `h`/`l` column scroll all ship; the Power sub-panel's pin bars landed with arc 3.
 - **The nvidia-smi fallback tier is untested live** (arc 2b): torch loads `libnvidia-ml.so.1`, so `gpu::smi` only has its parser under test. Exercise it in a container or by hiding the library once; the same goes for `LibRmVersionMismatch` and `GpuLost`.
-- **Table paging when zoomed**: `PgUp`/`PgDn` and selection-follow in both tables page by the grid's row budget even in the zoomed body, because `InputCx` does not say whether the tile is zoomed (a seam addition). htop has the same limit.
+- **Table paging when zoomed**: `PgUp`/`PgDn` and selection-follow in both tables page by the grid's row budget even in the zoomed body. The stated blocker is gone — `InputCx` has carried `zoomed` and `tier` since arc 8a (D58 amendment 7) — so this is now a small change nobody has made rather than a seam addition. htop has the same limit.
 - **`config check` does not build components**, so an option `run` rejects (`sort = "nonsense"`) passes the check — an arc-1 gap the 2b review surfaced.
 - **`samples(Power)` runs for any visible gpu tile** (D49 §2), 0.65 ms/s; a `Demand` hint finer than `Detail` would let a badge-only layout skip it. Escalate if a layout ever needs the 0.65 ms.
 - **`/proc/stat` CPU lines are positional**: entry *i* is assumed to be CPU *i*, which an offline CPU would break while `cpu.topology` still indexed by CPU id. Torch never offlines a CPU; revisit with the hotplug path in arc 2.
