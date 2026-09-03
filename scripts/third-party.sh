@@ -18,7 +18,7 @@ TARGET="${TARGET:-x86_64-unknown-linux-gnu}"
 OUT=THIRD_PARTY.md
 
 deps() {
-  cargo tree --all-features --target "$TARGET" -e normal --prefix none \
+  cargo tree --locked --all-features --target "$TARGET" -e normal --prefix none \
     --format "{p}|{l}" 2>/dev/null |
     sed 's/ (proc-macro)//' |
     grep -v '^gridwatch' |
