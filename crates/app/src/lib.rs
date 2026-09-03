@@ -391,7 +391,11 @@ pub fn run_terminal(mut registry: Registry, opts: RunOpts) -> Result<(), String>
 
 /// Build the headless shell every `shot` variant shares: embedded defaults,
 /// no env, TrueColor, virtual clock (§12.5, D41).
-fn headless_shell(registry: Registry, theme_name: &str, page: usize) -> Result<Shell, String> {
+/// A shell with no terminal: the embedded defaults, a virtual clock and no
+/// source threads. `shot` builds one, and so do the benches, which is why it
+/// is public — a bench that constructed its own would be measuring something
+/// the product never does.
+pub fn headless_shell(registry: Registry, theme_name: &str, page: usize) -> Result<Shell, String> {
     let loaded = config::load_embedded().map_err(|e| e.to_string())?;
     headless_from(registry, &loaded, theme_name, page)
 }

@@ -52,6 +52,11 @@ astral-watch     = { git = "https://github.com/mbeaman/astral-watch", rev = "dce
 # dev
 insta            = { version = "1.48", features = ["yaml"] }
 proptest         = "1.11"
+# Benches only, and deliberately not a gate (D59 seam 3): a timing assertion on
+# a shared machine is a flake generator, so the numbers live in PERFORMANCE.md
+# where a person reads them. `html_reports` pulls plotters and a font stack for
+# a chart nobody opens from a terminal.
+criterion        = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
 
 [profile.release]
 lto = true

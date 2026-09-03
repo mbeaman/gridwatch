@@ -27,6 +27,7 @@ if [ "$QUICK" = 0 ]; then
   step "features"  bash -c 'cargo check -p gridwatch --no-default-features && cargo check -p gridwatch --all-features'
   step "schemas"   python3 scripts/check-schemas.py
   step "docs drift" env GRIDWATCH_BIN=target/release/gridwatch scripts/shots.sh --check
+  step "third-party" scripts/third-party.sh --check
   if command -v cargo-deny >/dev/null; then step "deny" cargo deny check; else echo "deny: cargo-deny not installed"; fi
   step "dup guard" bash -c '! cargo tree -d -p gridwatch 2>/dev/null | grep -E "^(ratatui-core|crossterm) "'
 fi

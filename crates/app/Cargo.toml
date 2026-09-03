@@ -39,3 +39,10 @@ net-probe = ["net", "gridwatch-sources/net-probe"]
 
 [dev-dependencies]
 proptest.workspace = true
+criterion.workspace = true
+
+# The three costs the design rests on (D59 seam 3). Not a commit gate; run it
+# by hand and record the numbers in docs/PERFORMANCE.md.
+[[bench]]
+name = "frame"
+harness = false

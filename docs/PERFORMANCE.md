@@ -144,6 +144,26 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 2026-09-02 | 8b | quiet | a plugin writing samples in a loop, **before** the read-rate budget existed (**P22, failing**) | no | **62.05%** (gw-plugin-flood 55.53 · gw-plugins 5.22 · gw-pins 0.83 · render 0.45; the python3 child **99.95%**) | **578457** | 0.7 KB/s | 4.2 | — | — | n/a | n/a | 0.49 / 0.98 ms | 56716 kB |
 | 2026-09-02 | 8b | quiet | the same flooding plugin **after** the budget (**P22** ✓) | no | **0.97%** (gw-pins 0.85 · render 0.07 · **gw-plugins 0.00 · gw-plugin-flood 0.00**; the python3 child **0.10%**) | 35 | 0.6 KB/s | 1.4 | — | — | n/a | n/a | 0.69 / 1.51 ms | 43764 kB |
 
+## Benches (arc 9a, D59 seam 3) — the layer under the ceilings
+
+The rows above gate the **product**: CPU, wake-ups and bytes on a real run, measured with `pidstat`. These gate nothing. They are the four functions every one of those ceilings assumes a cost for, isolated with criterion so a regression in one is legible instead of arriving as "the dashboard got slower". `scripts/gate.sh` does not run them on purpose — a timing assertion on a machine that is also running a game is a flake generator, and a red build meaning "the box was busy" teaches people to ignore red builds.
+
+```console
+$ cargo bench -p gridwatch-app
+```
+
+| bench | what it is | torch, 2026-09-02 (release, idle, no game) |
+|---|---|---|
+| `store/apply/cpu batch` | one cpu batch — ~40 scalars plus the process table — through `Store::apply`, rules engine included, over a store already holding a minute of history | **2.48 µs** |
+| `store/resample/60` · `/120` · `/240` | a ten-minute window into a chart's buckets | **0.93 µs** · 0.69 · 0.61 |
+| `render/frame/250x70 configured` | the **whole** Overview solved, ticked, viewed, rendered and diffed with nothing cached | **513 µs** |
+| `render/frame/120x40 dense` | the same page in dense mode | **267 µs** |
+| `theme/load retrowave` | parse + build a theme, WCAG gate included — what every `t` press pays | **26.5 µs** |
+
+What they say about the ceilings above: P19 allows **8 ms p95** for a frame, and a *completely uncached* Overview costs 0.51 ms — which is why the render cache buys what it does, and why the live p50 is 0.04 ms (arc 8a's row: most frames are a blit). `Store::apply` at 2.5 µs means the data path is not the cost of anything; at the Overview's ~40 batches a second it is 0.1 ms of CPU per second. And `resample` costing *less* at more buckets is not a mistake in the table — the work is per point, and the per-bucket aggregation gets cheaper as the buckets get smaller.
+
+Re-take them on a machine change and put the new column here rather than overwriting: the point is the comparison.
+
 **Arc 8b notes (2026-09-02) — P22, and the row that failed first.** Same protocol (release binary, `script` pty at 250×70, an idle torch with no game, per-thread `pidstat`, task-summed context switches, Δ`wchar`). The Overview was measured with and without a plugin in the clock's slot, so the two rows differ only by the plugin.
 
 **The host is free at 1 Hz — and the honest form of that claim is a comparison, not a number.** With `plugins/examples/weather.py` rendering once a second, both host threads read **0.00 %** at `pidstat`'s resolution and so does the python3 child. The whole process reads 0.95 % against the control's 1.27 %, which is *lower* with the plugin than without it: the difference is `gw-gpu`, idle in one run and not the other. So the row is not "the host costs 0.1 %" — that is below what this instrument can see — it is "no measurable delta against the same page with no plugin configured", which is what the two rows above show and what a re-take can check. It adds **+5 wake-ups/s**, **no measurable bytes**, and **+0.9 frames/s** — one frame for the sample it publishes, which is a generation change and therefore a frame P8 allows.
