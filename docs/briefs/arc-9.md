@@ -59,3 +59,10 @@ Any change to `Binding`/`Manifest.keys` beyond seam 1; any change that would mak
 
 ## Done when
 The gate is green; one table feeds the key bar, the help overlay and a generated `docs/KEYBINDINGS.md` that CI drift-checks; `theme import` turns all three foreign formats into a theme the loader accepts and reports its contrast; the four documents exist and `ADDING-A-COMPONENT.md` was written by following it; benches run with committed baselines and are not a gate; `release.yml` builds and *asserts* its artifacts on an ordinary push; the deb, rpm, PKGBUILD and flake exist with the unverified ones marked; the crates.io decision is recorded; and `v0.9.0` is **not** tagged, because tags are Matt's.
+
+
+---
+
+## What was owed at the end (2026-09-03)
+
+Recorded here as well as in `PLAN.md`, because a brief that ends without saying what it did not do is the kind of document this project exists not to write. Three of the release triggers, only one is proven: `workflow_dispatch` was dispatched and green; `pull_request` on a packaging path is **written and unfired** (proving it means opening a PR, which is outward-facing); the tag path has never run because nothing is tagged. The PKGBUILD and the flake are written and marked UNVERIFIED in their own first lines.
