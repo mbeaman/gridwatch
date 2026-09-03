@@ -154,7 +154,8 @@ pub struct Manifest {
     pub sources: &'static [SourceId], pub optional_sources: &'static [SourceId],   // both contribute to Demand; absence of an optional one degrades a tier
     pub chrome: Chrome, pub keys: &'static [KeyHint], pub example_options: &'static str,
 }
-pub struct ComponentDef { pub manifest: &'static Manifest, pub build: fn(&mut BuildCx<'_>) -> Result<Box<dyn Component>, BuildError> }
+pub type Build = Box<dyn Fn(&mut BuildCx<'_>) -> Result<Box<dyn Component>, BuildError> + Send + Sync>;   // a closure, not a `fn`: a plugin's builder captures its instance and its channel (arc 8b)
+pub struct ComponentDef { pub manifest: &'static Manifest, pub build: Build }
 pub struct Registry { components: BTreeMap<&'static str, ComponentDef>, sources: BTreeMap<&'static str, SourceDef> }
 
 pub struct RenderCx<'a> { pub inner: Rect, pub tier: usize, pub view_fallback: bool, pub focused: bool, pub captured: bool, pub zoomed: bool,

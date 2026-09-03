@@ -16,7 +16,7 @@ pub mod theme;
 pub mod view;
 
 pub use component::{
-    Action, BuildCx, BuildError, Chrome, Command, Component, ComponentDef, Footprint, HERO,
+    Action, Build, BuildCx, BuildError, Chrome, Command, Component, ComponentDef, Footprint, HERO,
     InputCx, KeyHint, Manifest, Outcome, PANEL, Redraw, RedrawPolicy, Registry, RenderCx, Size,
     TILE, TickCx, Tier, WIDE, pick_tier,
 };

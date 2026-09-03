@@ -121,9 +121,18 @@ pub struct BuildCx<'a> {
     pub caps: &'a CapSet,
 }
 
+/// How a kind is built. A **closure**, not a bare `fn`: a plugin's builder has
+/// to capture the instance it speaks for and the channel it speaks over (arc
+/// 8b), and a function pointer cannot carry either. Built-ins pass their plain
+/// `fn` through `Box::new` and are unchanged in every other respect — which is
+/// the point: a plugin kind is an ordinary registry entry, so the edit-mode
+/// picker, `config check` and `build_instances` need no plugin special case.
+pub type Build =
+    Box<dyn Fn(&mut BuildCx<'_>) -> Result<Box<dyn Component>, BuildError> + Send + Sync>;
+
 pub struct ComponentDef {
     pub manifest: &'static Manifest,
-    pub build: fn(&mut BuildCx<'_>) -> Result<Box<dyn Component>, BuildError>,
+    pub build: Build,
 }
 
 /// Static registry assembled by the binary from Cargo features (§4.6, §4.7).

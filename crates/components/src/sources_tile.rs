@@ -54,7 +54,7 @@ fn build(_cx: &mut BuildCx<'_>) -> Result<Box<dyn Component>, BuildError> {
 
 pub const DEF: fn() -> ComponentDef = || ComponentDef {
     manifest: &MANIFEST,
-    build,
+    build: Box::new(build),
 };
 
 /// The NOTE column: the status reason, plus the cpu source's last pid-level
