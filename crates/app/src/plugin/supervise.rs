@@ -179,13 +179,15 @@ impl Plugin {
             }
         };
         let mut stdin = child.stdin.take();
-        // The hello goes first, before anything is read.
+        // The hello goes first, before anything is read. A plugin that
+        // never reads its input is unusual but not broken — it may be a
+        // pure source that only writes — so a failed write here is a log
+        // line, not a death: what the plugin *says* decides its fate.
         if let Some(w) = stdin.as_mut() {
             let line = serde_json::to_string(&hello).unwrap_or_default();
-            if writeln!(w, "{line}").is_err() {
-                let _ = tx.send(Report::Stopped("the plugin closed its input".into()));
+            if writeln!(w, "{line}").is_err() || w.flush().is_err() {
+                tracing::debug!(id = %config.id, "the plugin did not read its hello");
             }
-            let _ = w.flush();
         }
         let stdout = child.stdout.take();
         let id = config.id.clone();

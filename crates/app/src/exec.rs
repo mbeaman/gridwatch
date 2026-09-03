@@ -25,9 +25,13 @@ use std::time::{Duration, Instant};
 use gridwatch_store::{ActionId, ControlMsg};
 use gridwatch_ui::component::Action;
 
-/// How long an action may take before the executor reports a timeout and
-/// moves on. It cannot be killed — a `kill(2)` that hangs is the kernel's
-/// business — so this is a report, not a cancellation.
+/// How long an action may take before the executor says so.
+///
+/// It is **not** a cancellation: an action is a syscall, and a `kill(2)`
+/// that hangs is the kernel's business, not something a timer can undo.
+/// So this is a report — and, at shutdown, how long `Drop` will wait for
+/// the action in flight before leaving it to the process exit (arc 8a
+/// review found the label promised more than the code did).
 pub const ACTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The env var the tests use to fence the executor to their own children.
@@ -57,7 +61,13 @@ pub fn fence_from_env() -> Option<Vec<u32>> {
 /// Why an action was refused before it ran.
 fn refusal(action: &dyn Action, fence: Option<&Vec<u32>>) -> Option<String> {
     let allowed = fence?;
-    let named = action.pids();
+    // An action that does not say which processes it touches cannot be
+    // let through a fence whose whole job is to know (arc 8a review).
+    let Some(named) = action.pids() else {
+        return Some(format!(
+            "refused: {action:?} does not say which processes it touches, and {ALLOW_PIDS} is set"
+        ));
+    };
     let stray: Vec<u32> = named
         .iter()
         .copied()
@@ -93,9 +103,16 @@ impl Executor {
                                 action.run()
                             }));
                             let took = t0.elapsed();
+                            // A slow action is reported as slow whichever
+                            // way it went: the queue behind it waited, and
+                            // saying so is the honest thing.
+                            let slow = took > ACTION_TIMEOUT;
                             match r {
-                                Ok(Ok(msg)) if took > ACTION_TIMEOUT => {
-                                    Err(format!("{msg} — but it took {:.1}s", took.as_secs_f64()))
+                                Ok(Ok(msg)) if slow => {
+                                    Err(format!("{msg} — after {:.1}s", took.as_secs_f64()))
+                                }
+                                Ok(Err(e)) if slow => {
+                                    Err(format!("{e} (after {:.1}s)", took.as_secs_f64()))
                                 }
                                 Ok(other) => other,
                                 Err(_) => Err(format!("{what} panicked")),
@@ -128,11 +145,21 @@ impl Executor {
 
 impl Drop for Executor {
     fn drop(&mut self) {
-        // Close the queue, then wait for the action in flight.
+        // Close the queue, then wait for the action in flight — but not
+        // for ever: quitting the dashboard must not wait on a syscall
+        // that has stopped answering (arc 8a review). A thread left
+        // behind here holds nothing the process needs.
         self.tx = None;
-        if let Some(h) = self.worker.take() {
-            let _ = h.join();
+        let Some(h) = self.worker.take() else { return };
+        let deadline = Instant::now() + ACTION_TIMEOUT;
+        while !h.is_finished() {
+            if Instant::now() >= deadline {
+                tracing::warn!("an action is still running; leaving it to the process exit");
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
         }
+        let _ = h.join();
     }
 }
 
@@ -140,6 +167,7 @@ impl Drop for Executor {
 mod tests {
     use super::*;
 
+    /// An action that touches nothing outside this process, and says so.
     #[derive(Debug)]
     struct Says(&'static str, bool);
 
@@ -150,6 +178,20 @@ mod tests {
             } else {
                 Err(self.0.to_string())
             }
+        }
+
+        fn pids(&self) -> Option<Vec<u32>> {
+            Some(Vec::new())
+        }
+    }
+
+    /// An action that forgot to say. The fence must refuse it.
+    #[derive(Debug)]
+    struct Silent;
+
+    impl Action for Silent {
+        fn run(self: Box<Self>) -> Result<String, String> {
+            Ok("this should never run behind a fence".into())
         }
     }
 
@@ -170,8 +212,8 @@ mod tests {
             Ok(format!("touched {}", self.0))
         }
 
-        fn pids(&self) -> Vec<u32> {
-            vec![self.0]
+        fn pids(&self) -> Option<Vec<u32>> {
+            Some(vec![self.0])
         }
     }
 
@@ -227,10 +269,13 @@ mod tests {
         let ex = Executor::with_fence(tx, Some(vec![424_242]));
         ex.run(ActionId(1), Box::new(Touches(1))).unwrap();
         ex.run(ActionId(2), Box::new(Touches(424_242))).unwrap();
-        // An action that names no pid at all is unaffected.
+        // An action that says it touches nothing runs.
         ex.run(ActionId(3), Box::new(Says("no pids", true)))
             .unwrap();
-        let done = drain(&rx, 3);
+        // One that does not say is refused: `pids()` fails closed, the way
+        // `confirm()` does (arc 8a review).
+        ex.run(ActionId(4), Box::new(Silent)).unwrap();
+        let done = drain(&rx, 4);
         assert!(
             done[0].1.as_ref().unwrap_err().contains("refused"),
             "pid 1 must be refused: {:?}",
@@ -238,11 +283,52 @@ mod tests {
         );
         assert_eq!(done[1].1, Ok("touched 424242".into()));
         assert_eq!(done[2].1, Ok("no pids".into()));
-        // With no fence, the same action runs.
+        assert!(
+            done[3].1.as_ref().unwrap_err().contains("does not say"),
+            "an action that declares nothing must not pass a fence: {:?}",
+            done[3].1
+        );
+        // With no fence, both run: the fence is a test harness, not a
+        // permission system.
         let (tx, rx) = channel();
         let open = Executor::with_fence(tx, None);
-        open.run(ActionId(4), Box::new(Touches(1))).unwrap();
-        assert_eq!(drain(&rx, 1)[0].1, Ok("touched 1".into()));
+        open.run(ActionId(5), Box::new(Touches(1))).unwrap();
+        open.run(ActionId(6), Box::new(Silent)).unwrap();
+        let done = drain(&rx, 2);
+        assert_eq!(done[0].1, Ok("touched 1".into()));
+        assert!(done[1].1.is_ok());
+    }
+
+    /// An action that runs long is reported as long, and dropping the
+    /// executor while one runs does not hang the caller (arc 8a review:
+    /// the timeout was a label with no test).
+    #[test]
+    fn a_slow_action_does_not_hold_shutdown() {
+        #[derive(Debug)]
+        struct Slow;
+
+        impl Action for Slow {
+            fn run(self: Box<Self>) -> Result<String, String> {
+                std::thread::sleep(Duration::from_millis(400));
+                Ok("eventually".into())
+            }
+
+            fn pids(&self) -> Option<Vec<u32>> {
+                Some(Vec::new())
+            }
+        }
+
+        let (tx, _rx) = channel();
+        let ex = Executor::new(tx);
+        ex.run(ActionId(1), Box::new(Slow)).unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        let t0 = Instant::now();
+        drop(ex);
+        assert!(
+            t0.elapsed() < ACTION_TIMEOUT,
+            "shutdown waited {:?}",
+            t0.elapsed()
+        );
     }
 
     /// Dropping the executor waits for the action in flight rather than

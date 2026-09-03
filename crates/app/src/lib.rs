@@ -259,7 +259,7 @@ pub fn run_terminal(registry: Registry, opts: RunOpts) -> Result<(), String> {
     // turns a `ProcAction` into a syscall — installed once, here.
     proc_actions::install();
     shell.attach_executor(ch.control.clone());
-    shell.set_readonly(loaded.config.readonly || opts.readonly);
+    shell.set_readonly(loaded.config.readonly || opts.readonly, opts.readonly);
     shell.set_theme_ref(theme_name.clone());
     shell.age_after_journal = true;
     shell.set_effects(effects_on, loaded.config.effects.budget_ms);

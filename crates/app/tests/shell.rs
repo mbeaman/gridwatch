@@ -2134,7 +2134,7 @@ fn an_action_asks_before_it_runs_and_readonly_refuses_it() {
     assert!(text.contains("no executor"), "{text}");
 
     // Read-only refuses before any question is asked.
-    sh.set_readonly(true);
+    sh.set_readonly(true, false);
     sh.run_command(Command::Run(gridwatch_store::ActionId(0), action()));
     assert!(
         sh.pending_question().is_none(),
@@ -2163,4 +2163,81 @@ fn a_pending_question_takes_the_next_key() {
     sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('q'))));
     assert!(!sh.quit, "`q` answered the question instead of quitting");
     assert!(sh.pending_question().is_none(), "and it was answered");
+}
+
+/// Arc 8a review (D58 amendment 8): a finished action was logged and
+/// dropped — `ControlMsg::Done` had a producer and no consumer, while D58
+/// and the CHANGELOG both said the result reached the user. This drives
+/// the whole path: an action is confirmed, the executor runs it, and what
+/// it said reaches the screen.
+///
+/// The action here touches nothing: it reports a string. The executor is
+/// fenced to a pid nothing spawned as well, so even a mistake could not
+/// reach a process.
+#[test]
+fn a_finished_action_reaches_the_screen() {
+    use gridwatch_ui::component::{Action, Command};
+
+    #[derive(Debug)]
+    struct Reports(&'static str, bool);
+
+    impl Action for Reports {
+        fn run(self: Box<Self>) -> Result<String, String> {
+            if self.1 {
+                Ok(self.0.to_string())
+            } else {
+                Err(self.0.to_string())
+            }
+        }
+
+        fn confirm(&self) -> Option<String> {
+            Some("do the thing?".into())
+        }
+
+        fn pids(&self) -> Option<Vec<u32>> {
+            Some(Vec::new())
+        }
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut sh = shell();
+    sh.set_clock(Ts(60_000_000_000));
+    sh.attach_executor(tx);
+
+    // Ask, confirm, and wait for the executor's answer to come back the
+    // way a source's status does.
+    sh.run_command(Command::Run(
+        gridwatch_store::ActionId(0),
+        Box::new(Reports("it worked", true)),
+    ));
+    assert_eq!(sh.pending_question(), Some("do the thing?"));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Char('y'))));
+    let msg = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the executor answered");
+    sh.apply_control(msg);
+    assert!(matches!(sh.last_done(), Some((_, Ok(m))) if m == "it worked"));
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("it worked"), "no toast: {text}");
+
+    // And a failure is a warning, not silence.
+    sh.run_command(Command::Run(
+        gridwatch_store::ActionId(0),
+        Box::new(Reports("not yours to change (EPERM)", false)),
+    ));
+    sh.handle_input(InputEvent::Key(KeyEvent::plain(KeyCode::Enter)));
+    let msg = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the executor answered");
+    sh.apply_control(msg);
+    assert!(
+        matches!(sh.last_done(), Some((_, Err(e))) if e.contains("EPERM")),
+        "the failure did not come back: {:?}",
+        sh.last_done()
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        text.contains("not yours") || text.contains("EPERM"),
+        "no failure toast: {text}"
+    );
 }

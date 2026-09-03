@@ -195,9 +195,15 @@ pub struct Shell {
     /// `--readonly` (or `readonly = true`): actions are refused with a
     /// sentence saying what would have happened.
     pub readonly: bool,
+    /// `--readonly` was given on the command line, so a config reload
+    /// cannot turn it off (§9's layering: the CLI beats the file).
+    readonly_locked: bool,
     /// The id of the next action, so "keys in, commands out" tests can
     /// name one (D42).
     next_action: u64,
+    /// What the executor last reported, so a test can drive key → confirm
+    /// → executor → toast end to end.
+    last_done: Option<(gridwatch_store::ActionId, Result<String, String>)>,
 }
 
 impl Shell {
@@ -232,7 +238,9 @@ impl Shell {
             executor: None,
             pending_action: None,
             readonly: false,
+            readonly_locked: false,
             next_action: 0,
+            last_done: None,
             store,
             registry,
             theme,
@@ -431,6 +439,13 @@ impl Shell {
             .store
             .set_rules(gridwatch_store::rules::Rules::new(loaded.rules.clone()));
         self.route_alerts(resolved);
+        // `readonly` follows a reload: editing it and being told "reloaded"
+        // while actions kept running was the wrong answer (arc 8a review,
+        // D58 amendment 14). A `--readonly` on the command line still
+        // wins, as every CLI flag does over the file (§9).
+        if !self.readonly_locked {
+            self.readonly = loaded.config.readonly;
+        }
         self.fps = loaded.config.fps; // as at start; `set_fps` is the CLI's clamp
         self.fps_max = loaded.config.fps_max;
         self.unfocused_fps = loaded.config.perf.unfocused_fps;
@@ -659,8 +674,26 @@ impl Shell {
             let reason = st.reason.as_deref().unwrap_or("no reason given");
             self.toast(Severity::Warn, format!("{id} unavailable: {reason}"));
         }
+        // An action's result (§4.6, arc 8a): the store has nothing to do
+        // with it, but the person who pressed `y` is waiting to hear.
+        // Before this it was logged and dropped, and D58 claimed
+        // otherwise (arc 8a review, D58 amendment 8).
+        if let ControlMsg::Done(id, result) = &c {
+            match result {
+                Ok(msg) => self.toast(Severity::Info, msg.clone()),
+                Err(e) => self.toast(Severity::Warn, e.clone()),
+            }
+            tracing::info!(action = id.0, ok = result.is_ok(), "action reported");
+            self.last_done = Some((*id, result.clone()));
+            return;
+        }
         let events = self.store.apply(&Msg::Control(c));
         self.route_alerts(events);
+    }
+
+    /// The last action result, for the tests that drive the whole path.
+    pub fn last_done(&self) -> Option<&(gridwatch_store::ActionId, Result<String, String>)> {
+        self.last_done.as_ref()
     }
 
     /// Toast and un-acknowledge whatever the store just raised. A source's
@@ -2216,16 +2249,29 @@ impl Shell {
             .map(|c| c.inner)
             .unwrap_or_default();
         let caps = self.caps;
+        let zoomed = self.zoom == Some(f);
+        let readonly = self.readonly;
         let mut outcome = Outcome::Ignored;
         let mut key_panicked = false;
         if let Some(inst) = self.instances.get_mut(&key)
             && let Some(component) = &mut inst.component
         {
+            // The tier the component is *drawing* — the same call the
+            // render path makes. A zoom-only tier's keys must not answer
+            // on the grid, where its chrome is not drawn (arc 8a review).
+            let (tier, _) = gridwatch_ui::component::pick_tier(
+                component.tiers(),
+                Size::new(inner.width, inner.height),
+                zoomed,
+                p.view.as_deref(),
+            );
             let cx = gridwatch_ui::component::InputCx {
                 store: &self.store,
                 inner,
                 caps: &caps,
-                readonly: false,
+                readonly,
+                zoomed,
+                tier,
             };
             crate::terminal::CONTAINED.with(|c| c.set(true));
             let r =
@@ -2374,8 +2420,11 @@ impl Shell {
         self.executor = Some(crate::exec::Executor::new(done));
     }
 
-    pub fn set_readonly(&mut self, readonly: bool) {
+    /// `locked` is "the command line said so", which a reload may not
+    /// undo.
+    pub fn set_readonly(&mut self, readonly: bool, locked: bool) {
         self.readonly = readonly;
+        self.readonly_locked = locked;
     }
 
     /// Test seam: is an action waiting for an answer, and what does it ask?

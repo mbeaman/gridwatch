@@ -57,6 +57,14 @@ fn check(pids: &[u32]) -> Result<(), String> {
     }
     let me = std::process::id();
     for &p in pids {
+        // A pid above `i32::MAX` would cast to a negative `pid_t`, and
+        // `kill(-N, sig)` signals a **process group** — the same hazard
+        // the pid-0 guard exists for. Unreachable from `/proc` today
+        // (`pid_max` is at most 2^22), and one line to close for good
+        // (arc 8a review, D58 amendment 13).
+        if i32::try_from(p).is_err() {
+            return Err(format!("pid {p} is not a pid — refused"));
+        }
         if p == 0 {
             // `kill(0, sig)` signals the whole process group.
             return Err("pid 0 means every process in the group — refused".into());
@@ -102,12 +110,19 @@ fn signal_them(pids: &[u32], signal: i32) -> Result<String, String> {
     let name = signal_name(signal);
     let mut sent = 0;
     for pid in pids {
-        // SAFETY: kill(2) with a pid `check` proved is not 0, 1 or
-        // ourselves, and a signal number from the table above. It passes no
-        // pointers and touches nothing of ours.
+        // SAFETY: kill(2) with a pid `check` proved is not 0, 1, ourselves
+        // or out of `pid_t` range, and a signal number from the table
+        // above. It passes no pointers and touches nothing of ours.
         let rc = unsafe { libc::kill(*pid as libc::pid_t, signal) };
         if rc != 0 {
-            return Err(errno_says(&format!("{name} to {pid}")));
+            let why = errno_says(&format!("{name} to {pid}"));
+            // Over a tag set, some processes may already have been
+            // signalled; a bare failure would hide that (arc 8a review).
+            return Err(if sent > 0 {
+                format!("{why} — {sent} of {} were signalled first", pids.len())
+            } else {
+                why
+            });
         }
         sent += 1;
     }
@@ -185,12 +200,18 @@ fn ioprio(pid: u32, class: IoClass, level: u8) -> Result<String, String> {
     // built from a 2-bit class and a 3-bit level. It passes no pointers.
     // There is no `nix` binding and no libc wrapper for this call, which is
     // why this file carries the `unsafe` allowance (D58).
+    //
+    // Every argument is widened to `c_long` first. `syscall` is variadic
+    // (`c_long, ...`), and passing a 32-bit `int` where the callee reads a
+    // `long` leaves the upper half of the register undefined by the C ABI
+    // — it happens to work because LLVM zero-extends, which is luck rather
+    // than contract (arc 8a review, D58 amendment 13).
     let rc = unsafe {
         libc::syscall(
             libc::SYS_ioprio_set,
-            IOPRIO_WHO_PROCESS,
-            pid as libc::c_int,
-            value,
+            IOPRIO_WHO_PROCESS as libc::c_long,
+            libc::c_long::from(pid),
+            libc::c_long::from(value),
         )
     };
     if rc != 0 {
