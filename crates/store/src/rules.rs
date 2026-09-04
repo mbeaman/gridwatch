@@ -373,6 +373,48 @@ impl Rules {
         out
     }
 
+    /// Whether any rule watching `key`/`label` is **currently raised** — the
+    /// one reason retention must keep a series alive past its data (arc 10b,
+    /// D60). An `absent` rule steps its state from `Series::last_at()`, so a
+    /// series evicted under a raised alert would freeze that alert: nothing
+    /// would ever call `step` for it again, and it could not resolve when the
+    /// label came back.
+    pub fn raised_for(&self, key: &str, label: &str) -> bool {
+        self.rules.iter().any(|r| {
+            r.key == key
+                && glob(&r.label, label)
+                && self
+                    .states
+                    .get(&(r.name.clone(), label.to_string()))
+                    .is_some_and(|s| s.raised)
+        })
+    }
+
+    /// Drop the states for a label whose series retention has just evicted
+    /// (arc 10b, D60). Never called for a raised state — `raised_for` is
+    /// asked first — so this cannot lose an alert that still has to resolve.
+    /// A label that comes back gets a fresh state, which is what it would
+    /// have had anyway.
+    pub fn forget(&mut self, key: &str, label: &str) {
+        let names: Vec<String> = self
+            .rules
+            .iter()
+            .filter(|r| r.key == key && glob(&r.label, label))
+            .map(|r| r.name.clone())
+            .collect();
+        for name in names {
+            self.states.remove(&(name, label.to_string()));
+        }
+    }
+
+    /// How many (rule, label) states are held. `Rules::states` grows one
+    /// entry per label ever seen, which is bounded for every catalogued key
+    /// except a `*`-labelled rule over interfaces a machine creates and
+    /// destroys (arc 7b review) — this is what the eviction test watches.
+    pub fn state_count(&self) -> usize {
+        self.states.len()
+    }
+
     /// Everything currently raised, for the tests and `config check`.
     pub fn raised(&self) -> Vec<(String, String)> {
         self.states

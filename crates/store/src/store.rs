@@ -36,6 +36,11 @@ static DEFAULT_STATUS: LazyLock<SourceStatus> = LazyLock::new(|| SourceStatus::s
 pub struct Store {
     latest: Ts,
     retention: Retention,
+    /// The store `Ts` at which the next retention sweep runs (arc 10b, D60).
+    /// **Store time, never wall clock**: arc 2a's determinism test replays a
+    /// fixture twice and compares frame hashes, and a sweep on the wall clock
+    /// would make that a coin toss.
+    next_sweep: Ts,
     series: BTreeMap<MetricId, Series>,
     /// The `[[rules]]` this run watches (§9, arc 7b); empty by default, so
     /// a store with no rules pays nothing.
@@ -55,6 +60,7 @@ impl Store {
         Store {
             rules: crate::rules::Rules::default(),
             latest: Ts::ZERO,
+            next_sweep: Ts::ZERO.plus(sweep_every(&retention)),
             retention,
             series: BTreeMap::new(),
             sources: BTreeMap::new(),
@@ -92,6 +98,54 @@ impl Store {
 
     pub fn rules(&self) -> &crate::rules::Rules {
         &self.rules
+    }
+
+    /// Retention's other half: drop what stopped arriving (arc 10b, D60).
+    ///
+    /// `Series::push` prunes a scalar ring by `max_age`, but pruning is
+    /// **push-driven** — a series nothing publishes to any more never prunes,
+    /// so it keeps up to `max_len` points (2 400, ≈ 38 KB) and its map entry
+    /// for the life of the process. That is bounded for every catalogued key,
+    /// whose label set is static, *except* `net.*{iface}` on a machine that
+    /// creates and destroys interfaces: nine scalar series per veth, tun or
+    /// docker interface that ever existed (arc 7a/7b reviews).
+    ///
+    /// So the sweep prunes every scalar ring by the same `max_age` the push
+    /// path uses, and drops the series when nothing is left — which loses
+    /// nothing renderable, because a chart's window is `max_age` and an empty
+    /// ring has no point inside it. `Record` and `Vector` series are
+    /// deliberately **not** touched: `sensor.info` is published exactly once
+    /// and would be evicted by any age rule, and telling "published once and
+    /// static" from "published often and now gone" needs the catalogue to say
+    /// which keys have dynamic labels — a `KeyMeta` change, escalated to a
+    /// seam session in `BACKLOG.md` rather than guessed at here.
+    fn sweep(&mut self) {
+        let cutoff = self.latest;
+        let max_age = self.retention.max_age;
+        let mut dropped: Vec<MetricId> = Vec::new();
+        for (id, series) in self.series.iter_mut() {
+            let Series::Scalar(ring) = series else {
+                continue;
+            };
+            ring.prune_front(|(t, _)| cutoff.since(*t) > max_age);
+            if ring.is_empty() {
+                dropped.push(id.clone());
+            }
+        }
+        for id in dropped {
+            let label = crate::rules::label_text(&id.label);
+            // A raised alert keeps its series alive: an `absent` rule steps
+            // from `last_at()`, so evicting under a raised state would freeze
+            // that alert with no way to resolve when the label returns.
+            if self.rules.raised_for(id.name, &label) {
+                continue;
+            }
+            self.series.remove(&id);
+            // The states go with it, which is the `Rules::states` half of the
+            // same leak: a `*`-labelled rule accrued one entry per interface
+            // ever seen.
+            self.rules.forget(id.name, &label);
+        }
     }
 
     /// The `absent` rules, on the frame's clock rather than a batch's.
@@ -132,6 +186,10 @@ impl Store {
         match msg {
             Msg::Batch(b) => {
                 self.latest = self.latest.max(b.at);
+                if self.latest >= self.next_sweep {
+                    self.next_sweep = self.latest.plus(sweep_every(&self.retention));
+                    self.sweep();
+                }
                 for s in &b.samples {
                     let series = self
                         .series
@@ -298,4 +356,10 @@ impl Store {
     pub fn alerts(&self) -> &AlertLog {
         &self.alerts
     }
+}
+
+/// How often the retention sweep runs, in store time. Not per `apply`: P18
+/// gives a batch 24 µs and a sweep walks every series (arc 10b, D60).
+fn sweep_every(retention: &Retention) -> Duration {
+    (retention.max_age / 10).max(Duration::from_secs(10))
 }
