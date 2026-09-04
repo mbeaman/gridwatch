@@ -826,3 +826,106 @@ mod theme_4b {
         assert!(report.iter().all(|l| !l.contains("WARN")), "{report:?}");
     }
 }
+
+/// Arc 10a (D60) — a multi-segment meter has to survive a theme with no
+/// colour. Every segment used to draw the same `|`, so under `mono` the MEM
+/// bar's used/buffers/shared/cache boundaries vanished and it read as one
+/// solid bar, far fuller than it was.
+mod segmented_without_colour {
+    use gridwatch_ui::theme::{
+        ColorMode, Role, SegmentedStyle, build_theme, load_builtin, load_theme_file,
+    };
+    use gridwatch_ui::view::View;
+    use ratatui_core::buffer::Buffer;
+    use ratatui_core::layout::Rect;
+
+    /// The distinct fill glyphs a three-segment meter draws, in order.
+    fn fills(theme: &gridwatch_ui::theme::Theme) -> Vec<char> {
+        let area = Rect::new(0, 0, 40, 1);
+        let mut buf = Buffer::empty(area);
+        let view = View::Segmented {
+            label: "MEM".into(),
+            segments: vec![(Role::Ok, 0.3), (Role::Warn, 0.3), (Role::Info, 0.3)],
+            text: None,
+        };
+        theme.renderer().render(&view, area, theme, &mut buf);
+        let mut seen: Vec<char> = Vec::new();
+        for x in 0..area.width {
+            let sym = buf.cell((x, 0)).map(|c| c.symbol().to_string());
+            let Some(c) = sym.and_then(|s| s.chars().next()) else {
+                continue;
+            };
+            // The fill glyphs only: not the label, the brackets or the gaps.
+            if c.is_ascii_alphanumeric() || c == ' ' || c == '[' || c == ']' {
+                continue;
+            }
+            if !seen.contains(&c) {
+                seen.push(c);
+            }
+        }
+        seen
+    }
+
+    #[test]
+    fn mono_draws_a_glyph_per_segment_and_a_colour_theme_does_not() {
+        let mono = load_builtin("mono", ColorMode::TrueColor).unwrap();
+        let drawn = fills(&mono);
+        assert!(
+            drawn.len() >= 3,
+            "three segments must be three distinguishable glyphs under mono, got {drawn:?}"
+        );
+
+        // A theme with colour keeps htop's single fill: the segments are told
+        // apart by their roles, and changing that would be a look change.
+        for name in ["modern", "retrowave", "phosphor-green"] {
+            let t = load_builtin(name, ColorMode::TrueColor).unwrap();
+            assert_eq!(
+                fills(&t),
+                vec!['|'],
+                "{name} has colour and must keep the single fill"
+            );
+        }
+    }
+
+    /// The case a static `[widgets]` key could never cover: `ColorMode` drops
+    /// *any* theme to monochrome at runtime, so `auto` has to ask the
+    /// resolved theme rather than the file.
+    #[test]
+    fn a_colour_theme_forced_to_mono_gets_the_glyphs_too() {
+        let modern = load_builtin("modern", ColorMode::TrueColor).unwrap();
+        assert!(!modern.segmented_glyphs());
+        let forced = load_builtin("modern", ColorMode::Mono).unwrap();
+        assert!(
+            forced.segmented_glyphs(),
+            "--color mono / NO_COLOR reaches every theme, not just `mono`"
+        );
+        assert!(fills(&forced).len() >= 3);
+    }
+
+    /// And the knob still wins in both directions.
+    #[test]
+    fn the_widgets_key_overrides_the_default_either_way() {
+        let base = std::fs::read_to_string("../../themes/mono.toml").unwrap();
+        let forced_bar = base.replace("[widgets]", "[widgets]\nsegmented = \"bar\"");
+        let t = build_theme(
+            &load_theme_file(&forced_bar).unwrap(),
+            None,
+            ColorMode::TrueColor,
+        )
+        .unwrap();
+        assert_eq!(t.widgets.segmented, SegmentedStyle::Bar);
+        assert!(!t.segmented_glyphs(), "an explicit `bar` wins over `auto`");
+        assert_eq!(fills(&t), vec!['|']);
+
+        let modern = std::fs::read_to_string("../../themes/modern.toml").unwrap();
+        let forced_glyphs = modern.replace("[widgets]", "[widgets]\nsegmented = \"glyphs\"");
+        let t = build_theme(
+            &load_theme_file(&forced_glyphs).unwrap(),
+            None,
+            ColorMode::TrueColor,
+        )
+        .unwrap();
+        assert!(t.segmented_glyphs(), "an explicit `glyphs` wins too");
+        assert!(fills(&t).len() >= 3);
+    }
+}

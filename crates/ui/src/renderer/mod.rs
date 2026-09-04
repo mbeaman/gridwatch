@@ -226,12 +226,25 @@ fn segmented(
     }
     let mut cursor = 0u16;
     let mut acc = 0.0f32;
-    for (role, frac) in segments {
+    // Every segment used to draw the same `|`, so with no colour the
+    // boundaries vanished and the meter read as one solid bar — far fuller
+    // than it was (arc-1b review, fixed in arc 10a, D60). A theme with no
+    // colour to give gets a glyph per segment instead; `[widgets] segmented`
+    // can force either, and `auto` decides from the *resolved* theme, because
+    // `--color mono` and `NO_COLOR` reach every theme.
+    let per_segment = theme.segmented_glyphs();
+    let mut glyph = [0u8; 4];
+    for (i, (role, frac)) in segments.iter().enumerate() {
         acc += frac.clamp(0.0, 1.0);
         let upto = (f32::from(fill_w) * acc.clamp(0.0, 1.0)).round() as u16;
         let style = theme.style(*role);
+        let fill: &str = if per_segment {
+            theme.glyphs.segment(i).encode_utf8(&mut glyph)
+        } else {
+            "|"
+        };
         while cursor < upto.min(fill_w) {
-            buf.set_string(fill_x + cursor, y, "|", style);
+            buf.set_string(fill_x + cursor, y, fill, style);
             cursor += 1;
         }
     }

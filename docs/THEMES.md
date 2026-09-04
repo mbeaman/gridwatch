@@ -72,11 +72,32 @@ Every built-in is in the `t` cycle in this order: retrowave, modern, mono, termi
 
 A theme owns **paint and form**: the 19 role colours, the eight gradients, the
 glyph tier, borders, title style, and the widget variants in `[widgets]`
-(`gauge`, `bars`, `sparkline`, `table_header`, `big_number`). A component owns
-**content**: which roles and which gradient a value is drawn with. That split is
-why the htop tile looks like htop in every theme without naming a single colour
-— its CPU meter asks for `Ok`, `Crit`, `AccentTertiary` and `Info`, and each
-theme answers in its own palette.
+(`gauge`, `bars`, `sparkline`, `segmented`, `table_header`, `big_number`). A
+component owns **content**: which roles and which gradient a value is drawn
+with. That split is why the htop tile looks like htop in every theme without
+naming a single colour — its CPU meter asks for `Ok`, `Crit`,
+`AccentTertiary` and `Info`, and each theme answers in its own palette.
+
+### `[widgets] segmented` — a meter that survives having no colour
+
+`segmented` decides how a multi-segment meter (htop's CPU and MEM bars) tells
+its segments apart: `bar` draws one fill glyph and lets the roles do the work,
+`glyphs` draws a distinct glyph per segment index, and the default `auto`
+chooses `glyphs` exactly when the theme has no colour to give.
+
+`auto` is the default and not just a convenience. `ColorMode` can drop **any**
+theme to monochrome at runtime — `--color mono`, `NO_COLOR`, a terminal that
+reports no truecolor — so a key in the file cannot know whether this frame will
+have colour. Before arc 10a every segment drew the same `|`, and under `mono` a
+memory meter's used/buffers/shared/cache boundaries vanished completely: the
+bar read as one solid fill and looked far fuller than it was. Note that
+`mono.toml` deliberately does **not** set the key, because `phosphor-green`
+`inherits = "mono"` and does have colour to distinguish its segments with.
+
+The glyphs come from the theme's glyph tier, so an `ascii` theme gets
+`# = * - + : .` where a `unicode` one gets `█ ▓ ▒ ░ ▄ ▀ ▌`. The index is the
+segment's position, not its share, so a segment that happens to be empty does
+not shift the glyph of the ones after it.
 
 Role swatches for all seven built-ins are pinned by
 `crates/ui/tests/ui.rs::role_swatches_pin_the_palettes`, so a palette edit shows

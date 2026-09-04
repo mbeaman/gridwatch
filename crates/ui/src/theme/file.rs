@@ -15,7 +15,7 @@ use super::gradient::Gradient;
 use super::{
     AmbientSpec, BarStyle, BorderKind, BorderSpec, ChartMarker, EffectHooks, EffectSpec, Flourish,
     GRADIENTS, GaugeStyle, GlyphSet, GlyphTier, HeaderStyle, Light, PerfClass, PixelStyle,
-    RainGlyphs, Role, Theme, ThemeError, TitleSpec, TitleStyle, WidgetSet,
+    RainGlyphs, Role, SegmentedStyle, Theme, ThemeError, TitleSpec, TitleStyle, WidgetSet,
 };
 
 /// A parsed theme file. Every section is optional at parse time so a child
@@ -263,6 +263,8 @@ pub struct WidgetsSect {
     #[serde(default)]
     pub sparkline: Option<String>,
     #[serde(default)]
+    pub segmented: Option<String>,
+    #[serde(default)]
     pub table_header: Option<String>,
     #[serde(default)]
     pub big_number: Option<String>,
@@ -452,6 +454,7 @@ pub fn merge(child: &ThemeFile, parent: &ThemeFile) -> ThemeFile {
             gauge: or(&child.widgets.gauge, &parent.widgets.gauge),
             bars: or(&child.widgets.bars, &parent.widgets.bars),
             sparkline: or(&child.widgets.sparkline, &parent.widgets.sparkline),
+            segmented: or(&child.widgets.segmented, &parent.widgets.segmented),
             table_header: or(&child.widgets.table_header, &parent.widgets.table_header),
             big_number: or(&child.widgets.big_number, &parent.widgets.big_number),
         },
@@ -669,6 +672,16 @@ pub fn build_theme(
                 ("shade", BarStyle::Shade),
             ],
             "sparkline style",
+        )?
+        .unwrap_or_default(),
+        segmented: pick(
+            &file.widgets.segmented,
+            &[
+                ("auto", SegmentedStyle::Auto),
+                ("bar", SegmentedStyle::Bar),
+                ("glyphs", SegmentedStyle::Glyphs),
+            ],
+            "segmented meter style",
         )?
         .unwrap_or_default(),
         table_header: pick(

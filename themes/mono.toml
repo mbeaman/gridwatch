@@ -57,5 +57,10 @@ bold = true
 gauge = "bar"
 bars = "eighths"
 sparkline = "eighths"
+# `segmented` is deliberately left at its `auto` default: it resolves to one
+# glyph per segment exactly when the theme has no colour to give, which is
+# this theme and also any other theme under `--color mono` or NO_COLOR. Saying
+# "glyphs" out loud here would also say it for `phosphor-green`, which
+# `inherits = "mono"` and does have colour to tell its segments apart with.
 table_header = "reverse"
 big_number = "quadrant"

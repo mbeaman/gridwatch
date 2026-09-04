@@ -185,6 +185,20 @@ impl GlyphSet {
         }
     }
 
+    /// One fill glyph per segment index, for a meter whose segments cannot be
+    /// told apart by colour (arc 10a, D60). Ordered by weight, so a meter
+    /// still reads as "how much of this is the first thing" — under `mono`
+    /// the MEM bar's used/buffers/shared/cache boundaries had vanished
+    /// entirely and it read as one solid bar, far fuller than it was.
+    pub fn segment(&self, i: usize) -> char {
+        const UNICODE: [char; 7] = ['█', '▓', '▒', '░', '▄', '▀', '▌'];
+        const ASCII: [char; 7] = ['#', '=', '*', '-', '+', ':', '.'];
+        match self.tier {
+            GlyphTier::Ascii => ASCII[i.min(ASCII.len() - 1)],
+            _ => UNICODE[i.min(UNICODE.len() - 1)],
+        }
+    }
+
     pub fn empty(&self) -> char {
         match self.tier {
             GlyphTier::Ascii => '.',
@@ -259,6 +273,24 @@ pub enum BarStyle {
     Dots,
 }
 
+/// How a multi-segment meter tells its segments apart (arc 10a, D60).
+///
+/// The default is `Auto`, and it has to be: `ColorMode` can drop *any* theme
+/// to monochrome at runtime (`--color mono`, `NO_COLOR`, a 16-colour
+/// terminal), so a static `[widgets]` key cannot know whether this frame will
+/// have colour to give.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SegmentedStyle {
+    /// Glyphs when the resolved theme has no colour to give, one fill
+    /// otherwise.
+    #[default]
+    Auto,
+    /// One fill glyph; the segments are told apart by colour alone.
+    Bar,
+    /// A distinct glyph per segment, always.
+    Glyphs,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HeaderStyle {
     Underline,
@@ -281,6 +313,7 @@ pub struct WidgetSet {
     pub gauge: GaugeStyle,
     pub bars: BarStyle,
     pub sparkline: BarStyle,
+    pub segmented: SegmentedStyle,
     pub table_header: HeaderStyle,
     pub big_number: PixelStyle,
 }
@@ -544,6 +577,17 @@ impl Theme {
 
     pub fn style(&self, r: Role) -> Style {
         Style::new().fg(self.color(r))
+    }
+
+    /// Whether a `View::Segmented` should draw a glyph per segment. `Auto`
+    /// asks `monochrome()`, which is a property of the *resolved* theme —
+    /// `--color mono` and `NO_COLOR` reach every theme, not just `mono`.
+    pub fn segmented_glyphs(&self) -> bool {
+        match self.widgets.segmented {
+            SegmentedStyle::Bar => false,
+            SegmentedStyle::Glyphs => true,
+            SegmentedStyle::Auto => self.monochrome(),
+        }
     }
 
     pub fn span_style(&self, s: &Span) -> Style {
