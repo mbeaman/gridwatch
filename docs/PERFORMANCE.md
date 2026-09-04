@@ -266,10 +266,11 @@ stats log's own growth**; frames, frame times and both P18 timestamps from
   are why it holds.
 - **The retention sweep** (arc 10b, D60) runs on a **retention boundary in
   store time** — `max_age / 10`, floored at 10 s — not per `apply`, because
-  P18 gives a whole batch 0.5 ms and the sweep walks every series. Measured on
+  the rules engine's own measured cost is 24 µs a batch and the store test
+  asserts 500 µs, and the sweep walks every series. Measured on
   a store of **400 labelled series** (torch runs about 150 with every source
   live), a batch of 400 samples costs **123 µs** amortised over the sweeps it
-  triggers, against P18's 500 µs. Store time rather than the wall clock is what
+  triggers, against that 500 µs assertion. Store time rather than the wall clock is what
   keeps arc 2a's determinism test meaningful: a replay evicts at exactly the
   message the live run did.
 - **Scan cost:** a full meters pass (`/proc/stat` + `meminfo` + `loadavg` +

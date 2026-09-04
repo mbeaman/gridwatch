@@ -817,7 +817,9 @@ for_s = 5"#));
 }
 
 /// The sweep is not free, so it runs on a retention boundary rather than per
-/// `apply` — P18 gives a whole batch 0.5 ms and the sweep walks every series.
+/// `apply` — the rules pass alone measures 24 µs (arc 7b) and the sweep walks
+/// every series. There is no P-row for per-batch apply cost; 500 µs is this
+/// suite's own assertion, kept in step with `ten_rules_cost_microseconds_per_batch`.
 /// This pins both halves: the amortised cost of a store that is sweeping, and
 /// the sweep's own walk over a store far larger than torch's.
 #[test]
