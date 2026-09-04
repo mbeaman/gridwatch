@@ -3720,3 +3720,145 @@ pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
         }
     }
 }
+
+/// What `gridwatch config check` learned about the configured components
+/// (arc 10a, D60): the lines to print, and the failures that make the check
+/// exit non-zero. Both, because a check that fails without printing what it
+/// found tells you less than one that never ran.
+pub(crate) struct ComponentReport {
+    pub lines: Vec<String>,
+    pub failures: Vec<String>,
+}
+
+/// `config check`'s component pass. Every configured instance is really
+/// **built**, because the option types the components declare carry
+/// `deny_unknown_fields` and their own value parsing, and nothing reached
+/// them: `sort = "nonsense"` passed the check that exists to catch it, and
+/// only `run` rejected it (2b review, scheduled by D60).
+///
+/// Capabilities are **assumed present**. A component whose hardware is
+/// missing is chipped rather than built (§6), so checking against the real
+/// `CapSet` would answer a question about *this machine* when the question
+/// asked is about the config file — a laptop with no GPU must still be able
+/// to check the workstation's config. `run` on the machine itself is what
+/// reports missing hardware, and `doctor` is what explains it.
+pub(crate) fn check_components(
+    registry: &Registry,
+    loaded: &Loaded,
+    plugin_ids: &std::collections::BTreeSet<String>,
+) -> ComponentReport {
+    let caps: CapSet = gridwatch_store::ALL_CAPABILITIES.iter().copied().collect();
+    let mut out = ComponentReport {
+        lines: Vec::new(),
+        failures: Vec::new(),
+    };
+    // Anonymous `kind = "..."` placements build with default options (§9), so
+    // they are checked too — a layout naming a kind nothing provides is the
+    // same mistake as a `[[components]]` entry naming one.
+    let empty = toml::Table::new();
+    let mut anon: Vec<&str> = Vec::new();
+    for page in &loaded.pages {
+        for p in &page.place {
+            if let PlaceTarget::Kind(k) = &p.target
+                && !anon.contains(&k.as_str())
+                && !loaded.config.components.iter().any(|c| c.id == *k)
+            {
+                anon.push(k);
+            }
+        }
+    }
+    let entries = loaded
+        .config
+        .components
+        .iter()
+        .map(|c| (c.id.as_str(), c.kind.as_str(), &c.options))
+        .chain(anon.iter().map(|k| (*k, *k, &empty)));
+    let mut n = 0usize;
+    let mut built = BTreeMap::new();
+    // Every instance a placement may name, whether or not it built: an id
+    // that failed to build is a build error and must not *also* be reported
+    // as an id config.toml does not define.
+    let mut configured: std::collections::BTreeSet<String> = Default::default();
+    for (instance, kind, options) in entries {
+        n += 1;
+        configured.insert(instance.to_string());
+        // The same three cases `build_instance` distinguishes, in the same
+        // order — a plugin kind whose manifest never arrived is not an
+        // unknown kind, and saying so is the difference between "fix your
+        // layout" and "look at your plugin's log".
+        match registry.component(kind) {
+            None if crate::plugin::host::looks_like_plugin_kind(kind, plugin_ids) => {
+                out.lines.push(format!(
+                    "  {instance} — {kind}: this plugin sent no manifest"
+                ));
+                out.failures.push(format!(
+                    "{instance}: the plugin behind `{kind}` sent no manifest"
+                ));
+            }
+            None => {
+                let known: Vec<&str> = registry.components().map(|d| d.manifest.kind).collect();
+                out.lines
+                    .push(format!("  {instance} — {kind}: no such component"));
+                out.failures.push(format!(
+                    "{instance}: no component of kind `{kind}` (have {})",
+                    known.join(", ")
+                ));
+            }
+            Some(def) => {
+                let mut cx = BuildCx {
+                    options,
+                    caps: &caps,
+                    instance,
+                };
+                match (def.build)(&mut cx) {
+                    Ok(c) => {
+                        let opts = if options.is_empty() {
+                            String::new()
+                        } else {
+                            let mut k: Vec<&str> = options.keys().map(String::as_str).collect();
+                            k.sort_unstable();
+                            format!(" · options {}", k.join(", "))
+                        };
+                        out.lines.push(format!("  {instance} — {kind} ok{opts}"));
+                        built.insert(instance.to_string(), c);
+                    }
+                    Err(e) => {
+                        out.lines.push(format!("  {instance} — {kind}: {}", e.0));
+                        out.failures.push(format!("{instance}: {}", e.0));
+                    }
+                }
+            }
+        }
+    }
+    out.lines.insert(0, format!("components: {n}"));
+    // A `view = "..."` naming a tier the component does not have, and an id no
+    // `[[components]]` entry defines: `run` warns about both on every reload
+    // and the check never mentioned them (§4.6).
+    for page in &loaded.pages {
+        for p in &page.place {
+            match &p.target {
+                PlaceTarget::Id(id) if !configured.contains(id) => {
+                    out.lines.push(format!(
+                        "  warning: page '{}': id \"{id}\" is not in config.toml — drawn as a chip",
+                        page.name
+                    ));
+                    continue;
+                }
+                _ => {}
+            }
+            let (Some(view), Some(c)) = (&p.view, built.get(p.target.label())) else {
+                continue;
+            };
+            if !c.tiers().iter().any(|t| t.name == view) {
+                let known: Vec<&str> = c.tiers().iter().map(|t| t.name).collect();
+                out.lines.push(format!(
+                    "  warning: {}: view = \"{view}\" is not a tier of `{}` (have {}) — ignored",
+                    p.target.label(),
+                    c.manifest().kind,
+                    known.join(", ")
+                ));
+            }
+        }
+    }
+    out
+}

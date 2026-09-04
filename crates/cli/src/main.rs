@@ -326,9 +326,23 @@ fn main() -> std::process::ExitCode {
         },
         Cmd::Config { what } => match what {
             ConfigCmd::Check { theme } => {
-                gridwatch_app::config_check(theme.as_deref()).map(|lines| {
-                    for l in lines {
+                gridwatch_app::config_check(registry(), theme.as_deref()).and_then(|report| {
+                    for l in &report.lines {
                         println!("{l}");
+                    }
+                    // Print everything the check learned, then fail on it: a
+                    // component whose options `run` would reject is a failed
+                    // check, and a check that says "error" and exits 0 is no
+                    // check (arc 10a, D60 — the same rule the theme row follows).
+                    if report.failures.is_empty() {
+                        Ok(())
+                    } else {
+                        Err(format!(
+                            "{} component{} would not build: {}",
+                            report.failures.len(),
+                            if report.failures.len() == 1 { "" } else { "s" },
+                            report.failures.join("; ")
+                        ))
                     }
                 })
             }

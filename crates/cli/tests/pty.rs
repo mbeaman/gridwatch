@@ -666,6 +666,109 @@ fn config_check_fails_on_a_theme_that_does_not_load() {
     assert!(text.contains("text on panel: 15.93:1  ok"), "{text}");
 }
 
+/// C.31 (arc 10a, D60) — `config check` **builds** every configured
+/// component, so the option types the components declare are actually
+/// reached. Before this, `sort = "nonsense"` passed the check that exists to
+/// catch it and only `run` rejected it (2b review). Three failure modes and a
+/// clean pass, because the check has to be trustworthy in both directions.
+#[test]
+fn config_check_builds_every_component() {
+    let sandbox = Sandbox::new("checkbuild");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let check = |sandbox: &Sandbox| {
+        let mut cmd = Command::new(bin());
+        cmd.args(["config", "check"]);
+        sandbox.env(&mut cmd, "checkbuild");
+        cmd.output().expect("run config check")
+    };
+
+    // A value the option type rejects.
+    std::fs::write(
+        dir.join("config.toml"),
+        gridwatch_app::config::DEFAULT_CONFIG.replace(
+            "id = \"cpu\"\nkind = \"htop\"",
+            "id = \"cpu\"\nkind = \"htop\"\noptions = { sort = \"nonsense\" }",
+        ),
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stdout: {text}\nstderr: {err}");
+    // The lines are printed even though the check fails: a check that fails
+    // without saying what it found tells you less than one that never ran.
+    assert!(text.contains("components: "), "{text}");
+    assert!(
+        text.contains("cpu — htop: sort = \"nonsense\" is not one of"),
+        "{text}"
+    );
+    assert!(text.contains("gpu — gpu ok"), "{text}");
+    assert!(err.contains("1 component would not build"), "{err}");
+    // An instance that fails to *build* must not also be reported as an id
+    // config.toml does not define — it is right there.
+    assert!(
+        !text.contains("id \"cpu\" is not in config.toml"),
+        "a build failure was reported as a missing id: {text}"
+    );
+
+    // A kind no component provides, and a `view` naming a tier that does not
+    // exist — the second is a warning, not a failure, because `run` ignores it.
+    std::fs::write(
+        dir.join("config.toml"),
+        gridwatch_app::config::DEFAULT_CONFIG.replace("kind = \"gpu\"", "kind = \"gpuu\""),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("layout.toml"),
+        gridwatch_app::config::DEFAULT_LAYOUT
+            .replace("{ id = \"pins\",", "{ id = \"pins\", view = \"nonsense\","),
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stdout: {text}\nstderr: {err}");
+    assert!(text.contains("gpu — gpuu: no such component"), "{text}");
+    assert!(
+        err.contains("no component of kind `gpuu` (have "),
+        "the error must name what is available: {err}"
+    );
+    assert!(
+        text.contains("view = \"nonsense\" is not a tier of `pins`"),
+        "{text}"
+    );
+
+    // The defaults, which must pass — including the anonymous `kind = "..."`
+    // placements, which are built with default options like any other.
+    std::fs::write(
+        dir.join("config.toml"),
+        gridwatch_app::config::DEFAULT_CONFIG,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("layout.toml"),
+        gridwatch_app::config::DEFAULT_LAYOUT,
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "the shipped defaults must check clean: {text}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    for kind in ["htop", "gpu", "pins", "net", "audio", "winamp", "sensors"] {
+        assert!(
+            text.contains(&format!("— {kind} ok")),
+            "no {kind} row: {text}"
+        );
+    }
+    // The anonymous placements: `kind = "sources"` and `kind = "clock"`.
+    assert!(text.contains("sources — sources ok"), "{text}");
+    assert!(text.contains("clock — clock ok"), "{text}");
+}
+
 /// C.15 (arc 4a) — edit mode under a pty: `e`, `L` twice on the cpu tile
 /// after narrowing it, `w`, and the sandbox's `layout.toml` carries the
 /// move; `q` exits 0 with no ERROR in the log.

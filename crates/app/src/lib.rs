@@ -790,10 +790,19 @@ Keys once captured with `Enter`:
     out
 }
 
-/// `gridwatch config check [--theme NAME]`: the two files, then the theme —
-/// the config's or the named one — with its loader warnings and the WCAG
-/// contrast report (D52).
-pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
+/// What a `gridwatch config check` found (arc 10a, D60). `failures` is what
+/// makes the check exit non-zero; the lines are printed either way, because a
+/// check that fails without saying what it found tells you less than one that
+/// never ran.
+pub struct CheckReport {
+    pub lines: Vec<String>,
+    pub failures: Vec<String>,
+}
+
+/// `gridwatch config check [--theme NAME]`: the two files, every configured
+/// component **built**, then the theme — the config's or the named one — with
+/// its loader warnings and the WCAG contrast report (D52, D60).
+pub fn config_check(mut registry: Registry, theme: Option<&str>) -> Result<CheckReport, String> {
     let loaded = config::load().map_err(|e| e.to_string())?;
     let mut lines = vec![
         format!(
@@ -862,6 +871,10 @@ pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
             ));
         }
     }
+    let mut failures: Vec<String> = Vec::new();
+    let mut plugin_ids: std::collections::BTreeSet<String> = Default::default();
+    // Dropped after the component pass: dropping the host stops every child.
+    let mut alive = None;
     // The plugins this config would start, and the manifests it would accept
     // (§4.7). They are really started: a check that only echoed the argv back
     // would say nothing a person could not read for themselves.
@@ -896,11 +909,24 @@ pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
             }
         }
         lines.extend(started.warnings.iter().map(|w| format!("warning: {w}")));
-        // Stop the children before the check returns; the receivers outlive
-        // the senders so nothing is blocked on the way out.
-        drop(started);
-        drop(inbox);
+        // The defs move into the registry so the component pass below builds
+        // a plugin's tile like any other: reporting a placeable plugin kind as
+        // an unknown component would be worse than not checking it (D60). The
+        // host and the inbox stay alive until the pass has run — dropping the
+        // host stops every child.
+        let plugin::host::Started { host, defs, .. } = started;
+        for d in defs {
+            registry.register_component(d);
+        }
+        plugin_ids.extend(loaded.config.plugins.iter().map(|p| p.id.clone()));
+        alive = Some((host, inbox));
     }
+    // Every configured component, actually built (D60). Held until after the
+    // plugin children are stopped only in the sense that `alive` outlives it.
+    let report = app::check_components(&registry, &loaded, &plugin_ids);
+    lines.extend(report.lines);
+    failures.extend(report.failures);
+    drop(alive);
     let name = theme.unwrap_or(&loaded.config.theme);
     // A theme that does not load is a failed check (exit 1), as `run` would
     // fail on it — a check that prints "error" and exits 0 is no check.
@@ -914,7 +940,7 @@ pub fn config_check(theme: Option<&str>) -> Result<Vec<String>, String> {
     if !kinds.is_empty() {
         lines.push(format!("component overrides: {}", kinds.join(", ")));
     }
-    Ok(lines)
+    Ok(CheckReport { lines, failures })
 }
 
 pub fn config_default() -> (&'static str, &'static str) {
