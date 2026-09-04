@@ -478,3 +478,67 @@ fn the_full_tier_scrolls_columns_and_offers_the_signal_menu() {
     ));
     assert!(g.signal_menu().is_none());
 }
+
+/// Arc 10a (D60) — `PgDn` moves the rows the table **draws**. `on_key` passed
+/// `TIER_PROCS` and `zoomed = false` as literals to the same `body_rows`
+/// `view::table` calls with `cx.tier`/`cx.zoomed`, so a zoomed table paged by
+/// the grid's `table_rows` (10) however many rows were on screen. The demo
+/// set has five GPU processes, so this needs a table long enough to page
+/// through.
+#[test]
+fn paging_the_zoomed_gpu_table_moves_the_rows_that_are_on_screen() {
+    let rows: Vec<GpuProcRow> = (0..60)
+        .map(|i| row(1000 + i, GpuProcKind::Compute, 64 + i as u64, 1))
+        .collect();
+    let store = procs_store(rows, None, 1);
+    let mut g = gpu();
+    gridwatch_ui::testkit::tick(&mut g, &store, TIER_FULL);
+    assert_eq!(g.rows().len(), 60);
+    let caps = gridwatch_store::CapSet::empty();
+    let cx = |tier: usize, zoomed: bool| InputCx {
+        store: &store,
+        inner: Rect::new(0, 0, 248, 66),
+        caps: &caps,
+        readonly: false,
+        zoomed,
+        tier,
+    };
+    let key = |c: KeyCode| KeyEvent {
+        code: c,
+        mods: Mods::NONE,
+    };
+    let index = |g: &Gpu| {
+        g.selected()
+            .and_then(|pid| g.rows().iter().position(|r| r.pid == pid))
+    };
+
+    // The zoomed body on this machine: what is left of 66 rows after the
+    // header, the chart band, the column header and the power panel — far
+    // more than `table_rows`, which is the whole point.
+    let body = g.body_rows(TIER_FULL, 66, true);
+    assert!(
+        body > usize::from(Options::default().table_rows),
+        "the zoomed body must exceed the grid's budget for this to test anything: \
+         body {body}, table_rows {}",
+        Options::default().table_rows
+    );
+    g.on_key(key(KeyCode::Home), &cx(TIER_FULL, true));
+    assert_eq!(index(&g), Some(0));
+    g.on_key(key(KeyCode::PageDown), &cx(TIER_FULL, true));
+    assert_eq!(
+        index(&g),
+        Some(body),
+        "PgDn in the zoomed body must move the drawn rows, not `table_rows`"
+    );
+    g.on_key(key(KeyCode::PageUp), &cx(TIER_FULL, true));
+    assert_eq!(index(&g), Some(0), "and back");
+
+    // On the grid the `procs` table is a dashboard, and it still pages by its
+    // own top-N budget.
+    g.on_key(key(KeyCode::PageDown), &cx(TIER_PROCS, false));
+    assert_eq!(
+        index(&g),
+        Some(g.body_rows(TIER_PROCS, 66, false)),
+        "the grid tier still pages by its own budget"
+    );
+}

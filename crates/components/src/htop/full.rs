@@ -367,9 +367,15 @@ pub fn render(h: &Htop, cx: &RenderCx<'_>) -> View {
         };
     }
     let rows = h.visible_rows();
-    let body = usize::from(cx.inner.height)
-        .saturating_sub(children.len() + 2)
-        .max(1);
+    // One method owns this budget; `on_key` reads the same one, so `PgDn`
+    // moves exactly what is drawn even with the search line open (D60).
+    let body = h.full_body_rows(cx.inner.height);
+    debug_assert_eq!(
+        body,
+        usize::from(cx.inner.height)
+            .saturating_sub(children.len() + 2)
+            .max(1)
+    );
     let cursor = h
         .selected()
         .and_then(|pid| rows.iter().position(|r| r.pid == pid));

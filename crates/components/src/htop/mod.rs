@@ -820,12 +820,45 @@ impl Htop {
         self.follow = false;
     }
 
-    /// The body rows a table in `inner` shows on the grid (§8.1's budget);
-    /// the zoomed body is larger, which only makes this a conservative page.
+    /// The body rows a table in `inner` shows on the grid (§8.1's budget).
     fn page_rows(&self, inner_height: u16) -> usize {
         usize::from(inner_height.saturating_sub(ROWS_ABOVE_TABLE + 1))
             .min(usize::from(self.options.table_rows))
             .max(1)
+    }
+
+    /// Whether the `full` tier is drawing its search/filter line, which costs
+    /// a row. Both `full::render` and `full_body_rows` ask this rather than
+    /// each deciding for itself.
+    pub fn has_search_line(&self) -> bool {
+        match (self.typing(), self.search(), self.filter()) {
+            (Some(Typing::Search), Some(_), _) | (Some(Typing::Filter), _, Some(_)) => true,
+            (None, _, Some(f)) => !f.is_empty(),
+            (None, Some(s), _) => !s.is_empty(),
+            _ => false,
+        }
+    }
+
+    /// The rows the **zoomed** `full` table actually draws: the tabs row, the
+    /// search line when one is open, the column header and the F-key bar come
+    /// off `inner`. `full::render` derives its own `top` from this same
+    /// number, so a page that computed the budget independently would drift by
+    /// a row the moment the search line opened (D60).
+    pub(crate) fn full_body_rows(&self, inner_height: u16) -> usize {
+        let chrome = 3 + usize::from(self.has_search_line());
+        usize::from(inner_height).saturating_sub(chrome).max(1)
+    }
+
+    /// The page a `PgUp`/`PgDn` moves, which is what is on screen — the grid's
+    /// top-N budget in a grid tile, the drawn body in the zoomed `full` tier.
+    /// Asks the shell which tier is being drawn rather than comparing sizes:
+    /// a 6x3 tile on a large screen clears `full`'s minimum (D58 amendment 7).
+    fn keys_page_rows(&self, cx: &InputCx<'_>) -> usize {
+        if cx.tier >= TIER_FULL {
+            self.full_body_rows(cx.inner.height)
+        } else {
+            self.page_rows(cx.inner.height)
+        }
     }
 
     /// Keep the selected row inside `[scroll, scroll + rows)`.
@@ -996,7 +1029,7 @@ impl Component for Htop {
     }
 
     fn on_key(&mut self, key: KeyEvent, cx: &InputCx<'_>) -> Outcome {
-        let rows = self.page_rows(cx.inner.height);
+        let rows = self.keys_page_rows(cx);
         let page = rows as isize;
         self.keep_followed();
         // The zoom-only tier's keys, which the grid tiers never see: a

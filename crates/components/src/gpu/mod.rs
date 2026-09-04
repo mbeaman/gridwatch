@@ -518,7 +518,12 @@ impl Component for Gpu {
     }
 
     fn on_key(&mut self, key: KeyEvent, cx: &InputCx<'_>) -> Outcome {
-        let rows = self.body_rows(TIER_PROCS, cx.inner.height, false);
+        // What is on screen, not what the grid's `procs` tier would show:
+        // `view::table` derives its own row budget from `cx.tier`/`cx.zoomed`
+        // through this same method, and passing literals here made `PgDn`
+        // move ten rows in a sixty-row zoomed table (D60). `InputCx` has
+        // carried both since arc 8a (D58 amendment 7).
+        let rows = self.body_rows(cx.tier, cx.inner.height, cx.zoomed);
         let page = rows as isize;
         // The signal picker owns every key while it is open.
         if let Some(at) = self.signal_menu {

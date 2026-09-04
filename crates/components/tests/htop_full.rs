@@ -583,3 +583,71 @@ fn zoomed_full_tier_render_is_inside_p19() {
         "one render took {per:?}"
     );
 }
+
+/// Arc 10a (D60) — `PgDn` moves what is **drawn**, not the grid's top-N
+/// budget. `page_rows` clamped the page to `table_rows` (10) at every tier,
+/// so a long zoomed table paged ten rows at a time. And the budget is one
+/// method: deriving it independently from `full::render`'s would drift by a
+/// row the moment the search line opened.
+#[test]
+fn paging_the_zoomed_table_moves_the_rows_that_are_on_screen() {
+    let store = store();
+    let caps = gridwatch_store::CapSet::default();
+    let mut h = tile(&store);
+    let rows = h.visible_rows().len();
+    // The `full` tier's own minimum, 100x24, so the demo set is longer than
+    // the body and there is somewhere to page to.
+    let small = |zoomed: bool| InputCx {
+        store: &store,
+        inner: Rect::new(0, 0, 100, 24),
+        caps: &caps,
+        readonly: false,
+        zoomed,
+        tier: TIER_FULL,
+    };
+    // 24 rows of inner, less the tabs row, the column header and the F-key bar.
+    let body = 24 - 3;
+    assert!(
+        rows > body + 1,
+        "the demo set must be longer than the body: {rows} rows, body {body}"
+    );
+
+    let index = |h: &Htop| {
+        h.selected()
+            .and_then(|pid| h.visible_rows().iter().position(|r| r.pid == pid))
+    };
+    h.on_key(key(KeyCode::Home), &small(true));
+    assert_eq!(index(&h), Some(0), "Home selects the first row");
+    h.on_key(key(KeyCode::PageDown), &small(true));
+    assert_eq!(
+        index(&h),
+        Some(body),
+        "PgDn in the zoomed body must move the drawn rows, not `table_rows`"
+    );
+    h.on_key(key(KeyCode::PageUp), &small(true));
+    assert_eq!(index(&h), Some(0), "and back");
+
+    // The same tile on the grid still pages by the top-N budget: a 6x3 tile
+    // is a dashboard showing ten rows, and paging twenty-one would be a lie.
+    h.on_key(key(KeyCode::PageDown), &grid_cx(&store, &caps));
+    assert_eq!(
+        index(&h),
+        Some(usize::from(Options::default().table_rows)),
+        "the grid tier still pages by its own budget"
+    );
+
+    // A settled search leaves a line on screen, so the body is one row
+    // shorter — and the page has to lose that row too. This is the drift the
+    // single method exists to stop.
+    h.on_key(ch('/'), &small(true));
+    h.on_key(ch('z'), &small(true));
+    h.on_key(key(KeyCode::Enter), &small(true));
+    assert!(h.has_search_line(), "a settled search still draws its line");
+    h.on_key(key(KeyCode::Home), &small(true));
+    h.on_key(key(KeyCode::PageDown), &small(true));
+    assert_eq!(
+        index(&h),
+        Some(body - 1),
+        "the search line costs a row, and the page must lose it too"
+    );
+}
