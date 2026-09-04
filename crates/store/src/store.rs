@@ -100,51 +100,56 @@ impl Store {
         &self.rules
     }
 
-    /// Retention's other half: drop what stopped arriving (arc 10b, D60).
+    /// Retention's other half: shrink what stopped arriving (arc 10b, D60;
+    /// corrected by the arc-10 review).
     ///
     /// `Series::push` prunes a scalar ring by `max_age`, but pruning is
     /// **push-driven** — a series nothing publishes to any more never prunes,
-    /// so it keeps up to `max_len` points (2 400, ≈ 38 KB) and its map entry
-    /// for the life of the process. That is bounded for every catalogued key,
-    /// whose label set is static, *except* `net.*{iface}` on a machine that
-    /// creates and destroys interfaces: nine scalar series per veth, tun or
-    /// docker interface that ever existed (arc 7a/7b reviews).
+    /// so it kept up to `max_len` points (2 400, ≈ 38 KB) for the life of the
+    /// process. Bounded for every catalogued key, whose label set is static,
+    /// *except* `net.*{iface}` on a machine that creates and destroys
+    /// interfaces: nine scalar series per veth, tun or docker interface that
+    /// ever existed (arc 7a/7b reviews).
     ///
-    /// So the sweep prunes every scalar ring by the same `max_age` the push
-    /// path uses, and drops the series when nothing is left — which loses
-    /// nothing renderable, because a chart's window is `max_age` and an empty
-    /// ring has no point inside it. `Record` and `Vector` series are
-    /// deliberately **not** touched: `sensor.info` is published exactly once
-    /// and would be evicted by any age rule, and telling "published once and
-    /// static" from "published often and now gone" needs the catalogue to say
-    /// which keys have dynamic labels — a `KeyMeta` change, escalated to a
-    /// seam session in `BACKLOG.md` rather than guessed at here.
+    /// **The newest point is never pruned, and no series is ever removed.**
+    /// The first version of this did both, on the reasoning that a chart's
+    /// window is `max_age` so an empty ring holds nothing renderable. That is
+    /// true of charts and false of `Store::last`, which is how every tile
+    /// reads a current value — and six catalogued scalars are published
+    /// *once*: `sensor.max_c` and `sensor.crit_c` (three lines above the
+    /// `sensor.info` Record the first version carefully spared),
+    /// `net.speed_mbps`, and the three static gpu clocks. Eleven minutes into
+    /// any default run they were gone, permanently, taking the sensors tile's
+    /// limits and sort key and any rule using `value = "sensor.crit_c"` with
+    /// them (arc 10 review).
+    ///
+    /// Keeping one point costs 16 bytes per dead series against 38 KB, so the
+    /// leak this was written for is still closed 2 400-fold, and nothing a
+    /// component can read is ever lost. Dropping the entry itself needs the
+    /// catalogue to say which keys have dynamic labels — a `KeyMeta` change,
+    /// escalated in `BACKLOG.md` rather than guessed at.
     fn sweep(&mut self) {
         let cutoff = self.latest;
         let max_age = self.retention.max_age;
-        let mut dropped: Vec<MetricId> = Vec::new();
+        // The rule states *are* evictable, because losing one is not losing
+        // data: a label that comes back gets a fresh state, which is what it
+        // would have had anyway. A **raised** state is kept, since an
+        // `absent` rule must still be able to resolve.
+        let mut quiet: Vec<(&'static str, String)> = Vec::new();
         for (id, series) in self.series.iter_mut() {
             let Series::Scalar(ring) = series else {
                 continue;
             };
-            ring.prune_front(|(t, _)| cutoff.since(*t) > max_age);
-            if ring.is_empty() {
-                dropped.push(id.clone());
+            let newest = ring.back().map(|(t, _)| *t);
+            ring.prune_front(|(t, _)| cutoff.since(*t) > max_age && Some(*t) != newest);
+            if newest.is_some_and(|t| cutoff.since(t) > max_age) {
+                quiet.push((id.name, crate::rules::label_text(&id.label)));
             }
         }
-        for id in dropped {
-            let label = crate::rules::label_text(&id.label);
-            // A raised alert keeps its series alive: an `absent` rule steps
-            // from `last_at()`, so evicting under a raised state would freeze
-            // that alert with no way to resolve when the label returns.
-            if self.rules.raised_for(id.name, &label) {
-                continue;
+        for (name, label) in quiet {
+            if !self.rules.raised_for(name, &label) {
+                self.rules.forget(name, &label);
             }
-            self.series.remove(&id);
-            // The states go with it, which is the `Rules::states` half of the
-            // same leak: a `*`-labelled rule accrued one entry per interface
-            // ever seen.
-            self.rules.forget(id.name, &label);
         }
     }
 

@@ -395,20 +395,44 @@ fn ten_rules_cost_microseconds_per_batch() {
             datum: Datum::Scalar(60.0),
         })
         .collect();
+    // Measured against a **control**, not against an absolute number. The
+    // absolute form asserted 500 µs, took 180 µs on this box and 500.9 µs on
+    // a shared CI runner in a debug build — a coin toss, for the reason D59
+    // gave when it refused to make the benches a gate. What the test is
+    // named for is the *marginal* cost of ten rules, and a control run over
+    // the same batches with no rules scales with the runner the same way.
     let n = 200;
-    let t0 = std::time::Instant::now();
-    for i in 0..n {
-        store.apply(&Msg::Batch(Batch {
-            source: SourceId("sensors"),
-            at: Ts(i * 1_000_000_000),
-            samples: samples.clone(),
-        }));
-    }
-    let per_batch = t0.elapsed() / n as u32;
-    println!("rules: {per_batch:?} per batch of 40 samples against 10 rules");
+    let time = |store: &mut Store| {
+        let t0 = std::time::Instant::now();
+        for i in 0..n {
+            store.apply(&Msg::Batch(Batch {
+                source: SourceId("sensors"),
+                at: Ts(i * 1_000_000_000),
+                samples: samples.clone(),
+            }));
+        }
+        t0.elapsed() / n as u32
+    };
+    let mut control = Store::default();
+    let without = time(&mut control);
+    let with = time(&mut store);
+    let cost = with.saturating_sub(without);
+    // Per rule-evaluation is the quantity that should be stable: ten rules
+    // over forty labelled samples is 400 of them a batch.
+    let each = cost / 400;
+    println!(
+        "rules: {with:?} per batch of 40 samples against 10 rules, {without:?} with none — \
+         the rules cost {cost:?}, {each:?} per evaluation"
+    );
+    // 5 µs is ~11x this box's debug figure (0.45 µs) and ~4x a shared CI
+    // runner's. The old assertion was 500 µs against a batch measuring 180 µs
+    // here and **500.9 µs on CI** — under 3x headroom for a debug build on a
+    // two-core shared runner, which is not a gate but a coin toss. A real
+    // regression in the rules engine is an order of magnitude, not 2 %, and
+    // this still catches one. PERFORMANCE.md's 24 µs is the *release* figure.
     assert!(
-        per_batch < Duration::from_micros(500),
-        "the rules cost {per_batch:?} a batch — the ceiling is 0.5 ms (P18)"
+        each < Duration::from_micros(5),
+        "a rule evaluation cost {each:?} ({cost:?} for 400 of them) — the ceiling is 5 µs"
     );
     // And they raised: forty labels over ten thresholds, each once.
     assert_eq!(store.alerts().active().count(), 400);
@@ -596,13 +620,14 @@ fn a_rule_that_cannot_work_is_refused_at_parse_time() {
 
 // ---------------------------------------------------------------- arc 10b
 
-/// Arc 10b (D60) — retention's other half. `Series::push` prunes a scalar
-/// ring by `max_age`, but pruning is **push-driven**: a series nothing
-/// publishes to any more never prunes, so it kept up to `max_len` points and
-/// its map entry for the life of the process. Bounded for every catalogued
-/// key except `net.*{iface}` on a machine that makes and destroys interfaces.
+/// Arc 10b (D60), corrected by the arc-10 review — retention's other half.
+/// `Series::push` prunes a scalar ring by `max_age`, but pruning is
+/// **push-driven**: a series nothing publishes to any more never prunes, so
+/// it kept up to `max_len` points and its map entry for the life of the
+/// process. Bounded for every catalogued key except `net.*{iface}` on a
+/// machine that makes and destroys interfaces.
 #[test]
-fn retention_evicts_a_label_that_stopped_arriving() {
+fn retention_shrinks_a_label_that_stopped_arriving_without_losing_its_value() {
     let mut store = Store::new(Retention {
         max_len: 2400,
         max_age: Duration::from_secs(60),
@@ -619,87 +644,107 @@ fn retention_evicts_a_label_that_stopped_arriving() {
             }],
         })
     };
-    let ifaces = |s: &Store| -> Vec<String> {
-        s.labels("net.rx_bps")
-            .map(gridwatch_store::rules::label_text)
-            .collect()
-    };
+    let veth = gridwatch_store::keys::net::RX_BPS.named(&Arc::from("veth9a1"));
+    let all = Duration::from_secs(u32::MAX as u64);
+    let stored = |s: &Store| s.window(&veth, all).count();
 
     // A permanent interface and a container's veth, both publishing.
-    for t in 0..20 {
+    for t in 0..40 {
         store.apply(&bps("eno1", t, 1000.0));
         store.apply(&bps("veth9a1", t, 20.0));
     }
-    assert_eq!(ifaces(&store), vec!["eno1", "veth9a1"]);
+    assert_eq!(stored(&store), 40);
 
-    // The container goes away; eno1 keeps publishing. Nothing is evicted
+    // The container goes away; eno1 keeps publishing. Nothing is dropped
     // while the veth's points are still inside the window a chart draws.
-    for t in 20..70 {
+    for t in 40..90 {
+        store.apply(&bps("eno1", t, 1000.0));
+    }
+    assert!(
+        stored(&store) > 1,
+        "a merely quiet series is still on the chart and must keep its points"
+    );
+
+    // Far past `max_age` the ring collapses to its newest point — 16 bytes
+    // instead of up to 2 400 — and the value is still readable.
+    for t in 90..300 {
         store.apply(&bps("eno1", t, 1000.0));
     }
     assert_eq!(
-        ifaces(&store),
-        vec!["eno1", "veth9a1"],
-        "a merely quiet series is still on the chart and must stay"
+        stored(&store),
+        1,
+        "shrunk to the one point that must survive"
     );
-
-    // Past `max_age` its last point is outside every window, so it holds
-    // nothing anything could render.
-    for t in 70..140 {
-        store.apply(&bps("eno1", t, 1000.0));
-    }
-    assert_eq!(ifaces(&store), vec!["eno1"], "the veth is gone");
+    assert_eq!(
+        store.last(&veth).map(|(_, v)| v),
+        Some(20.0),
+        "the last reading a tile could show is never thrown away"
+    );
+    // And a chart still sees nothing from it, because its point is outside
+    // every window — which is why keeping it costs nothing.
+    assert_eq!(store.window(&veth, Duration::from_secs(60)).count(), 0);
     assert!(
         store
-            .last(&gridwatch_store::keys::net::RX_BPS.named(&Arc::from("eno1")))
-            .is_some()
+            .labels("net.rx_bps")
+            .map(gridwatch_store::rules::label_text)
+            .any(|l| l == "veth9a1"),
+        "the series itself stays: telling a dead label from a static one needs \
+         the catalogue to say which keys have dynamic labels (BACKLOG)"
     );
 }
 
-/// The sweep runs on **store time**, so a replay evicts at exactly the same
-/// message as the live run did — arc 2a's determinism test compares frame
-/// hashes across two replays, and a wall-clock sweep would make that a coin
-/// toss.
+/// The sweep runs on **store time**, so a replay shrinks at exactly the same
+/// message the live run did — arc 2a's determinism test compares frame hashes
+/// across two replays, and a wall-clock sweep would make that a coin toss.
 #[test]
-fn eviction_is_driven_by_store_time_not_the_wall_clock() {
+fn the_sweep_is_driven_by_store_time_not_the_wall_clock() {
     let feed = |store: &mut Store| {
-        for t in 0..140u64 {
+        for t in 0..300u64 {
             store.apply(&Msg::Batch(Batch {
                 source: SourceId("net"),
                 at: Ts(t * 1_000_000_000),
                 samples: vec![Sample {
                     id: gridwatch_store::keys::net::RX_BPS
-                        .named(&Arc::from(if t < 20 { "veth9a1" } else { "eno1" }))
+                        .named(&Arc::from(if t < 40 { "veth9a1" } else { "eno1" }))
                         .id,
                     datum: Datum::Scalar(1000.0),
                 }],
             }));
         }
-        store
-            .labels("net.rx_bps")
-            .map(gridwatch_store::rules::label_text)
-            .collect::<Vec<_>>()
+        let all = Duration::from_secs(u32::MAX as u64);
+        [
+            store
+                .window(
+                    &gridwatch_store::keys::net::RX_BPS.named(&Arc::from("veth9a1")),
+                    all,
+                )
+                .count(),
+            store
+                .window(
+                    &gridwatch_store::keys::net::RX_BPS.named(&Arc::from("eno1")),
+                    all,
+                )
+                .count(),
+        ]
     };
-    let mut a = Store::new(Retention {
+    let retention = Retention {
         max_len: 2400,
         max_age: Duration::from_secs(60),
-    });
-    let mut b = Store::new(Retention {
-        max_len: 2400,
-        max_age: Duration::from_secs(60),
-    });
+    };
+    let mut a = Store::new(retention);
+    let mut b = Store::new(retention);
     let first = feed(&mut a);
+    assert_eq!(first[0], 1, "the veth shrank to its last point");
     std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(first, feed(&mut b), "two runs must evict identically");
+    assert_eq!(first, feed(&mut b), "two runs must shrink identically");
 }
 
-/// A `Record` is never evicted, and that is deliberate: `sensor.info` is
-/// published exactly once, so any age rule would drop a static inventory the
-/// tile needs forever. Telling "published once and static" from "published
-/// often and now gone" needs the catalogue to say which keys have dynamic
-/// labels, which is a seam change (BACKLOG).
+/// A `Record` is never touched, and neither is a scalar's newest point. Six
+/// catalogued scalars are published **once** — `sensor.max_c`/`crit_c`,
+/// `net.speed_mbps` and the three static gpu clocks — so an age rule that
+/// could empty a ring would delete them eleven minutes into any default run.
 #[test]
-fn a_record_published_once_survives_any_amount_of_silence() {
+fn a_value_published_once_survives_any_amount_of_silence() {
     let mut store = Store::new(Retention {
         max_len: 2400,
         max_age: Duration::from_secs(60),
@@ -721,14 +766,121 @@ fn a_record_published_once_survives_any_amount_of_silence() {
     );
 }
 
-/// The `Rules::states` half of the same leak (arc 7b review, fixed in 10b):
-/// a `*`-labelled rule accrued one state per label ever seen. The states go
-/// when the series does — **except** under a raised alert, which is the
-/// ordering that matters: an `absent` rule steps its state from
-/// `Series::last_at()`, so evicting a series out from under a raised alert
-/// would freeze it with no way to resolve when the label came back.
+/// The sweep is not free, so it runs on a retention boundary rather than per
+/// `apply` — the rules pass alone measures 24 µs (arc 7b) and the sweep walks
+/// every series. There is no P-row for per-batch apply cost; 500 µs is this
+/// suite's own assertion, kept in step with `ten_rules_cost_microseconds_per_batch`.
+/// This pins both halves: the amortised cost of a store that is sweeping, and
+/// the sweep's own walk over a store far larger than torch's.
 #[test]
-fn evicting_a_series_takes_its_rule_state_but_never_a_raised_one() {
+fn the_retention_sweep_stays_inside_the_batch_budget() {
+    let retention = Retention {
+        max_len: 2400,
+        max_age: Duration::from_secs(60),
+    };
+    let mut store = Store::new(retention);
+    // 400 labelled series — torch runs about 150 with every source live.
+    let samples: Vec<Sample> = (0..400)
+        .map(|i| Sample {
+            id: gridwatch_store::keys::sensors::TEMP_C
+                .named(&Arc::from(format!("chip{i}:Sensor").as_str()))
+                .id,
+            datum: Datum::Scalar(60.0),
+        })
+        .collect();
+    let n = 300u64;
+    let time = |store: &mut Store| {
+        let t0 = std::time::Instant::now();
+        for i in 0..n {
+            store.apply(&Msg::Batch(Batch {
+                source: SourceId("sensors"),
+                at: Ts(i * 1_000_000_000),
+                samples: samples.clone(),
+            }));
+        }
+        t0.elapsed() / n as u32
+    };
+    // The control never sweeps: `sweep_every` is `max_age / 10`, so a
+    // max_age far past the run's store time means no boundary is crossed.
+    // Comparing against it rather than against an absolute number is what
+    // keeps this from being a coin toss on a shared CI runner.
+    let mut control = Store::new(Retention {
+        max_len: 2400,
+        max_age: Duration::from_secs(100_000),
+    });
+    let without = time(&mut control);
+    let with = time(&mut store);
+    let cost = with.saturating_sub(without);
+    println!(
+        "sweep: {with:?} per batch of 400 samples sweeping every 10 s of store time,          {without:?} never sweeping — the sweep costs {cost:?}"
+    );
+    assert!(
+        cost < Duration::from_micros(500),
+        "the sweep costs {cost:?} a batch over the same work without it — the ceiling is 0.5 ms"
+    );
+    // Nothing was evicted: every series kept publishing.
+    assert_eq!(store.labels("sensor.temp_c").count(), 400);
+}
+
+/// Arc 10 review — the sweep must not delete a value that is only ever
+/// published once. D60 amendment 7 spared `Record` series because
+/// `sensor.info` is published once, and then swept scalars — two of which
+/// (`sensor.max_c`, `sensor.crit_c`) are published once by the same function,
+/// three lines above `sensor.info`. `net.speed_mbps` and the three static gpu
+/// clocks have the same shape. Eleven minutes into any default run they
+/// vanished, permanently.
+#[test]
+fn a_scalar_published_once_survives_the_sweep() {
+    let mut store = Store::default(); // the shipped Retention: 600 s
+    let once = |key: &str, at: u64| {
+        Msg::Batch(Batch {
+            source: SourceId("sensors"),
+            at: Ts(at * 1_000_000_000),
+            samples: vec![Sample {
+                id: gridwatch_store::keys::sensors::MAX_C
+                    .named(&Arc::from(key))
+                    .id,
+                datum: Datum::Scalar(100.0),
+            }],
+        })
+    };
+    let tick = |at: u64| {
+        Msg::Batch(Batch {
+            source: SourceId("sensors"),
+            at: Ts(at * 1_000_000_000),
+            samples: vec![Sample {
+                id: gridwatch_store::keys::sensors::TEMP_C
+                    .named(&Arc::from("k10temp:Tctl"))
+                    .id,
+                datum: Datum::Scalar(50.0),
+            }],
+        })
+    };
+    store.apply(&once("k10temp:Tctl", 0));
+    let max = gridwatch_store::keys::sensors::MAX_C.named(&Arc::from("k10temp:Tctl"));
+    assert!(store.last(&max).is_some(), "published at t=0");
+    // Twenty minutes of ordinary sampling; the threshold is never re-sent.
+    for t in 1..1200u64 {
+        store.apply(&tick(t));
+    }
+    assert!(
+        store.last(&max).is_some(),
+        "a threshold published once must outlive every sweep — the sensors tile \
+         reads it for `over_max`, the sort key, and a rule may use it as its \
+         right-hand side"
+    );
+    assert_eq!(store.last(&max).map(|(_, v)| v), Some(100.0));
+}
+
+/// The `Rules::states` half of the same leak (arc 7b review): a `*`-labelled
+/// rule accrued one state per label ever seen. States are evictable where
+/// values are not — losing one is not losing data, because a label that comes
+/// back gets a fresh state, which is what it would have had anyway. The
+/// exception is a **raised** state: an `absent` rule steps from
+/// `Series::last_at()`, so forgetting it under a live alert would leave the
+/// alert unable to resolve.
+#[test]
+fn a_quiet_label_loses_its_rule_state_but_never_a_raised_one() {
     use gridwatch_store::rules::{Rules, parse_all};
     let mk = |src: &str| -> Rules {
         let tables: Vec<toml::Table> = [src].iter().map(|t| toml::from_str(t).unwrap()).collect();
@@ -774,16 +926,16 @@ severity = "warn""#));
         3,
         "one state per interface seen"
     );
-    for t in 20..200u64 {
+    for t in 20..300u64 {
         store.apply(&bps("eno1", t));
     }
     assert_eq!(
         store.rules().state_count(),
         1,
-        "the vanished interfaces' states go with their series"
+        "the states of labels that went quiet are forgotten"
     );
 
-    // Now the same shape with an `absent` rule that is actually raised.
+    // Now an `absent` rule that is actually raised.
     let mut store = Store::new(retention);
     store.set_rules(mk(r#"
 name = "link quiet"
@@ -794,65 +946,21 @@ for_s = 5"#));
     for t in 0..5u64 {
         store.apply(&bps("veth1", t));
     }
-    // It goes quiet and the rule raises.
     let ev = store.tick_rules(Ts(30 * 1_000_000_000));
     assert_eq!(ev.len(), 1, "the veth went quiet: {ev:?}");
     assert_eq!(store.alerts().active().count(), 1);
-    // Sweeps run and must leave it alone, series and state both.
     for t in 30..300u64 {
         store.apply(&bps("eno1", t));
     }
-    assert!(
-        store
-            .labels("net.rx_bps")
-            .any(|l| gridwatch_store::rules::label_text(l) == "veth1"),
-        "a raised alert keeps its series alive so it can still resolve"
+    assert_eq!(
+        store.alerts().active().count(),
+        1,
+        "a raised alert keeps its state through every sweep"
     );
-    assert_eq!(store.alerts().active().count(), 1);
-    // And it does resolve when the interface comes back.
+    // And it resolves when the interface comes back — the assertion that
+    // fails if `raised_for` is not asked before `forget`.
     store.apply(&bps("veth1", 300));
     let ev = store.tick_rules(Ts(301 * 1_000_000_000));
     assert_eq!(ev.len(), 1, "it must be able to resolve: {ev:?}");
     assert_eq!(store.alerts().active().count(), 0);
-}
-
-/// The sweep is not free, so it runs on a retention boundary rather than per
-/// `apply` — the rules pass alone measures 24 µs (arc 7b) and the sweep walks
-/// every series. There is no P-row for per-batch apply cost; 500 µs is this
-/// suite's own assertion, kept in step with `ten_rules_cost_microseconds_per_batch`.
-/// This pins both halves: the amortised cost of a store that is sweeping, and
-/// the sweep's own walk over a store far larger than torch's.
-#[test]
-fn the_retention_sweep_stays_inside_the_batch_budget() {
-    let retention = Retention {
-        max_len: 2400,
-        max_age: Duration::from_secs(60),
-    };
-    let mut store = Store::new(retention);
-    // 400 labelled series — torch runs about 150 with every source live.
-    let samples: Vec<Sample> = (0..400)
-        .map(|i| Sample {
-            id: gridwatch_store::keys::sensors::TEMP_C
-                .named(&Arc::from(format!("chip{i}:Sensor").as_str()))
-                .id,
-            datum: Datum::Scalar(60.0),
-        })
-        .collect();
-    let n = 300u64;
-    let t0 = std::time::Instant::now();
-    for i in 0..n {
-        store.apply(&Msg::Batch(Batch {
-            source: SourceId("sensors"),
-            at: Ts(i * 1_000_000_000),
-            samples: samples.clone(),
-        }));
-    }
-    let per_batch = t0.elapsed() / n as u32;
-    println!("sweep: {per_batch:?} per batch of 400 samples, sweeping every 10 s of store time");
-    assert!(
-        per_batch < Duration::from_micros(500),
-        "a sweeping store costs {per_batch:?} a batch — the ceiling is 0.5 ms (P18)"
-    );
-    // Nothing was evicted: every series kept publishing.
-    assert_eq!(store.labels("sensor.temp_c").count(), 400);
 }

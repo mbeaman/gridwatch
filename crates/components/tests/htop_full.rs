@@ -804,4 +804,21 @@ fn reconciling_the_thread_flag_still_handles_the_key() {
         panic!("reconcile must fire at most once");
     }
     assert_ne!(h.selected(), after);
+
+    // A **rebuilt** tile re-asserts even when its state matches the default,
+    // because a hot reload that changes any htop option builds a fresh
+    // component while the source keeps whatever it was last told. The first
+    // version started `threads_sent` at `false`, which matched a default
+    // `show_userland` and left the source walking `task/` for rows the new
+    // tile filters away (arc 10 review).
+    let mut fresh = Htop::new(Options::default());
+    tick(&mut fresh, &store, TIER_FULL);
+    assert!(!fresh.show_userland(), "the default hides them");
+    match fresh.on_key(key(KeyCode::Down), &cx(&store, &caps)) {
+        Outcome::Command(Command::Source(_, gridwatch_store::Control::SetOption(k, v))) => {
+            assert_eq!(k, "threads");
+            assert_eq!(v.as_bool(), Some(false), "and says so out loud");
+        }
+        _ => panic!("a rebuilt tile must re-assert what the source should do"),
+    }
 }

@@ -266,13 +266,21 @@ stats log's own growth**; frames, frame times and both P18 timestamps from
   are why it holds.
 - **The retention sweep** (arc 10b, D60) runs on a **retention boundary in
   store time** — `max_age / 10`, floored at 10 s — not per `apply`, because
-  the rules engine's own measured cost is 24 µs a batch and the store test
-  asserts 500 µs, and the sweep walks every series. Measured on
-  a store of **400 labelled series** (torch runs about 150 with every source
-  live), a batch of 400 samples costs **123 µs** amortised over the sweeps it
-  triggers, against that 500 µs assertion. Store time rather than the wall clock is what
-  keeps arc 2a's determinism test meaningful: a replay evicts at exactly the
-  message the live run did.
+  the sweep walks every series. Measured against a control that never sweeps,
+  on a store of **400 labelled series** (torch runs about 150 with every
+  source live): **2.3 µs** a batch, on top of the store's own 127 µs for the
+  same 400 samples in a debug build. Store time rather than the wall clock is
+  what keeps arc 2a's determinism test meaningful: a replay shrinks at exactly
+  the message the live run did.
+  It **shrinks, and never deletes**: a scalar ring is pruned to its newest
+  point and no series is removed. The first version emptied the ring and
+  dropped the entry, on the reasoning that a chart's window is `max_age` so an
+  empty ring holds nothing renderable — true of charts, false of `Store::last`,
+  which is how every tile reads a current value. Six catalogued scalars are
+  published **once** (`sensor.max_c`, `sensor.crit_c`, `net.speed_mbps` and
+  the three static gpu clocks), so they vanished eleven minutes into any
+  default run. Keeping one point is 16 bytes per dead series against 38 KB, so
+  the leak is still closed 2 400-fold.
 - **Scan cost:** a full meters pass (`/proc/stat` + `meminfo` + `loadavg` +
   `uptime` + 3 PSI files + one `/proc` readdir + 32 `scaling_cur_freq` + 3
   k10temp inputs) is **0.29 ms mean, 0.35 ms worst** over 20 runs — 0.06 % of a

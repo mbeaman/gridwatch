@@ -154,18 +154,26 @@ pub struct CpuSampler {
     /// htop's `H`, over the control channel (arc 10b, D60). It cannot ride
     /// `Detail` alone: the I/O screen raises `Detail::Columns` too and does
     /// not want a `task/` walk per process.
-    threads: Arc<AtomicBool>,
+    threads: &'static AtomicBool,
     /// Online CPUs per `/proc/stat` — htop's `activeCPUs` for the CPU% period.
     active_cpus: usize,
     mem_total_kib: u64,
 }
 
+/// htop's `H`, process-wide because the cpu source is a **singleton per kind**
+/// (§4.3) — and because the supervisor calls `mk()` *inside* its restart loop,
+/// so a flag owned by the sampler was rebuilt at `false` after a panic while
+/// the tile still showed `H` as on and never resent it (arc 10 review).
+/// `Demand` survives a restart for the same reason: it is created once,
+/// outside the loop.
+static THREADS: AtomicBool = AtomicBool::new(false);
+
 impl CpuSampler {
     /// The handle the source flips when htop's `H` asks for thread rows
     /// (arc 10b, D60): the sampler runs on the source thread, the control
     /// arrives on it too, so one relaxed flag is the whole mechanism.
-    pub fn threads_flag(&self) -> Arc<AtomicBool> {
-        self.threads.clone()
+    pub fn threads_flag(&self) -> &'static AtomicBool {
+        self.threads
     }
 
     pub fn new(roots: Roots) -> CpuSampler {
@@ -182,7 +190,7 @@ impl CpuSampler {
             topology_sent: false,
             probed: false,
             scanner,
-            threads: Arc::new(AtomicBool::new(false)),
+            threads: &THREADS,
             active_cpus: 0,
             mem_total_kib: 0,
         }

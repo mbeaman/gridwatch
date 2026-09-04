@@ -315,13 +315,15 @@ pub struct Htop {
     tree: bool,
     show_kernel: bool,
     show_userland: bool,
-    /// What the cpu source was last told about the `task/` walk (arc 10b,
-    /// D60). It starts `false` because a fresh source does, so a default
-    /// config never sends anything it does not have to; a config that set
-    /// `hide_userland_threads = false` starts out of sync and is reconciled
+    /// What this tile has told the cpu source about the `task/` walk (arc
+    /// 10b, D60). `None` until it has said anything, so a **rebuilt**
+    /// component always re-asserts: a hot reload that changes any htop option
+    /// builds a fresh tile, and the first version started at `false` and
+    /// matched a default `show_userland`, leaving the source walking `task/`
+    /// for rows the new tile filtered away (arc 10 review). It is reconciled
     /// on the first key the zoomed tile sees, because `tick` cannot return a
     /// `Command` and inventing a way for it to is a seam change.
-    threads_sent: bool,
+    threads_sent: Option<bool>,
     /// An open menu (`F9`, `a`, `i`) and where its cursor is.
     menu: Option<Menu>,
     /// Indices into `derived.rows`, in draw order, and each one's depth in
@@ -405,7 +407,7 @@ impl Htop {
             tree: options.tree,
             show_kernel: !options.hide_kernel_threads,
             show_userland: !options.hide_userland_threads,
-            threads_sent: false,
+            threads_sent: None,
             menu: None,
             visible: Vec::new(),
             depths: Vec::new(),
@@ -631,7 +633,7 @@ impl Htop {
             KeyCode::Char('H') => {
                 self.show_userland = !self.show_userland;
                 self.rederive(cx);
-                self.threads_sent = self.show_userland;
+                self.threads_sent = Some(self.show_userland);
                 // Until arc 10b this changed what was *asked for* and not
                 // what was shown: `demand` rose to `Detail::Columns` and the
                 // gated files were read, but nothing walked `task/`. The
@@ -1076,7 +1078,7 @@ impl Component for Htop {
         // dispatching swallowed the keystroke, which the review caught. It
         // fires at most once, and never for the default (both sides start
         // false).
-        let reconcile = cx.tier >= TIER_FULL && self.threads_sent != self.show_userland;
+        let reconcile = cx.tier >= TIER_FULL && self.threads_sent != Some(self.show_userland);
         if cx.tier >= TIER_FULL {
             match self.full_key(key, cx) {
                 Outcome::Ignored => {}
@@ -1085,7 +1087,7 @@ impl Component for Htop {
                 Outcome::Command(c) => return Outcome::Command(c),
                 other if reconcile => {
                     let _ = other;
-                    self.threads_sent = self.show_userland;
+                    self.threads_sent = Some(self.show_userland);
                     return Outcome::Command(self.threads_command());
                 }
                 other => return other,
@@ -1108,7 +1110,7 @@ impl Component for Htop {
         }
         self.follow_selection(rows);
         if reconcile {
-            self.threads_sent = self.show_userland;
+            self.threads_sent = Some(self.show_userland);
             return Outcome::Command(self.threads_command());
         }
         Outcome::Consumed

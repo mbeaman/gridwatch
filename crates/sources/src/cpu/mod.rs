@@ -161,7 +161,10 @@ impl Source for CpuSource {
             });
         }
         // htop's `H` (arc 10b, D60). The flag cannot ride `Detail`: the I/O
-        // screen raises `Detail::Columns` too and wants no `task/` walk.
+        // screen raises `Detail::Columns` too and wants no `task/` walk. It is
+        // process-wide, so it survives a supervisor restart the way `Demand`
+        // does — the arc-10 review found a per-sampler flag came back `false`
+        // after a panic while the tile still said `H` was on.
         let threads = self.sampler.threads_flag();
         loop {
             while let Some(c) = cx.try_control() {
