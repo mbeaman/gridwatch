@@ -328,7 +328,12 @@ impl ProcScanner {
             let comm: Arc<str> = Arc::from(st.comm.as_str());
             rows.push(ProcRow {
                 pid: tid,
-                ppid: leader.ppid,
+                // The **leader**, not the leader's parent: the tree groups by
+                // `ppid`, so a thread carrying its leader's parent renders as
+                // the leader's *sibling* rather than under it, which is not
+                // what htop shows and not what "lists threads under their
+                // process" means (arc 10 review).
+                ppid: pid,
                 tgid: pid,
                 state: st.state,
                 pri: st.priority.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16,

@@ -701,6 +701,13 @@ fn the_thread_toggle_asks_the_source_and_then_lists_threads() {
             t.pid
         );
         assert_eq!(t.nlwp, 1);
+        // The tree groups by `ppid`, so a thread whose ppid is its leader's
+        // *parent* renders as the leader's sibling — "under their process"
+        // has to mean under it (arc 10 review).
+        assert_eq!(
+            t.ppid, t.tgid,
+            "a thread's parent in the tree is its leader, not the leader's parent"
+        );
     }
     assert!(
         threads.iter().any(|t| t.cmdline.contains("RenderThread")),
@@ -715,4 +722,86 @@ fn the_thread_toggle_asks_the_source_and_then_lists_threads() {
         _ => panic!("H must return a SetOption command for the cpu source"),
     }
     assert_eq!(h.visible_rows().len(), leaders);
+}
+
+/// Arc 10 review — the two derivations of "is the search line drawn?" could
+/// disagree. `full::search_line` matches with **guards**, so a failed guard
+/// falls through to the next arm; `has_search_line` matched without them and
+/// stopped at the first arm whose shape fit. An empty filter alongside a
+/// settled search therefore drew a line that the row budget did not count:
+/// the `debug_assert` in `render` fired in a debug build, and a release build
+/// paged one row short. Four keys reach it.
+#[test]
+fn an_empty_filter_beside_a_search_still_costs_its_row() {
+    let store = store();
+    let caps = gridwatch_store::CapSet::default();
+    let mut h = tile(&store);
+    let small = InputCx {
+        store: &store,
+        inner: Rect::new(0, 0, 100, 24),
+        caps: &caps,
+        readonly: false,
+        zoomed: true,
+        tier: TIER_FULL,
+    };
+    // `/ab⏎` leaves a settled search; `\⏎` leaves an *empty* filter.
+    for k in ['/', 'a', 'b'] {
+        h.on_key(ch(k), &small);
+    }
+    h.on_key(key(KeyCode::Enter), &small);
+    h.on_key(ch('\\'), &small);
+    h.on_key(key(KeyCode::Enter), &small);
+    assert_eq!(h.typing(), None);
+    assert_eq!(h.filter(), Some(""), "an empty filter is in force");
+    assert_eq!(h.search(), Some("ab"));
+    assert!(
+        h.has_search_line(),
+        "a line is drawn for the settled search, so the budget must pay for it"
+    );
+
+    // The whole point: `render` must agree, and `PgDn` must move what it drew.
+    let view = gridwatch_ui::testkit::view_of(&mut h, &store, &theme("modern"), Size::new(100, 24));
+    let _ = view;
+    let body = 24 - 4;
+    let index = |h: &Htop| {
+        h.selected()
+            .and_then(|pid| h.visible_rows().iter().position(|r| r.pid == pid))
+    };
+    h.on_key(key(KeyCode::Home), &small);
+    h.on_key(key(KeyCode::PageDown), &small);
+    assert_eq!(index(&h), Some(body));
+}
+
+/// Arc 10 review — reconciling a config that asked for thread rows must not
+/// eat the keystroke that triggers it. The first version returned the command
+/// *instead of* dispatching the key, so a user with
+/// `hide_userland_threads = false` lost their first press in the zoomed tile.
+#[test]
+fn reconciling_the_thread_flag_still_handles_the_key() {
+    let store = store();
+    let caps = gridwatch_store::CapSet::default();
+    let mut h = Htop::new(Options {
+        hide_userland_threads: false,
+        ..Options::default()
+    });
+    tick(&mut h, &store, TIER_FULL);
+    assert!(h.show_userland(), "the config asked for thread rows");
+    let before = h.selected();
+
+    // A plain navigation key: it must move the cursor *and* tell the source.
+    match h.on_key(key(KeyCode::Down), &cx(&store, &caps)) {
+        Outcome::Command(Command::Source(_, gridwatch_store::Control::SetOption(k, v))) => {
+            assert_eq!(k, "threads");
+            assert_eq!(v.as_bool(), Some(true));
+        }
+        _ => panic!("the first key must reconcile the source"),
+    }
+    assert_ne!(h.selected(), before, "and the key still moved the cursor");
+
+    // Once reconciled it never fires again.
+    let after = h.selected();
+    if let Outcome::Command(_) = h.on_key(key(KeyCode::Down), &cx(&store, &caps)) {
+        panic!("reconcile must fire at most once");
+    }
+    assert_ne!(h.selected(), after);
 }

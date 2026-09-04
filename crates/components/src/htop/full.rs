@@ -84,7 +84,7 @@ fn tabs(h: &Htop) -> Line {
 }
 
 /// The line under the tabs: whatever is being typed, or what is in force.
-fn search_line(h: &Htop) -> Option<Line> {
+pub(super) fn search_line(h: &Htop) -> Option<Line> {
     match (h.typing(), h.search(), h.filter()) {
         (Some(Typing::Search), Some(s), _) => Some(vec![
             Span::new(Role::AccentPrimary, "search: "),

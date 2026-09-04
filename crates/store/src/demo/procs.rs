@@ -839,6 +839,9 @@ pub fn proc_table(tick: u64, seed: u64) -> ProcTable {
                 let jitter = (rng.jitter() as f32) * cpu * 0.15;
                 rows.push(ProcRow {
                     pid: leader.pid + 1 + i as i32,
+                    // The leader, so the tree nests them under it (the tree
+                    // groups by `ppid`).
+                    ppid: leader.pid,
                     tgid: leader.pid,
                     state: *state,
                     nlwp: 1,

@@ -365,6 +365,10 @@ fn the_task_walk_lists_threads_under_their_leader() {
             t.nlwp, 1,
             "a thread is one LWP; the count belongs to the group"
         );
+        assert_eq!(
+            t.ppid, t.tgid,
+            "the tree groups by ppid, so a thread's parent is its leader"
+        );
     }
     // A thread's leader is a real row in the same table — allowing for the
     // ones that exited between the two passes.

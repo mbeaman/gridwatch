@@ -857,15 +857,17 @@ impl Htop {
     }
 
     /// Whether the `full` tier is drawing its search/filter line, which costs
-    /// a row. Both `full::render` and `full_body_rows` ask this rather than
-    /// each deciding for itself.
+    /// a row.
+    ///
+    /// It asks the function that *draws* the line rather than re-deriving the
+    /// condition, because the first version of this did re-derive it and the
+    /// two disagreed (arc 10 review). `search_line` matches with **guards**,
+    /// so a failed guard falls through to the next arm; a copy without them
+    /// stops at the first arm whose shape fits. An empty filter alongside a
+    /// settled search — four keys away — drew a line the budget did not count.
+    /// Two derivations of one fact agree only until they don't.
     pub fn has_search_line(&self) -> bool {
-        match (self.typing(), self.search(), self.filter()) {
-            (Some(Typing::Search), Some(_), _) | (Some(Typing::Filter), _, Some(_)) => true,
-            (None, _, Some(f)) => !f.is_empty(),
-            (None, Some(s), _) => !s.is_empty(),
-            _ => false,
-        }
+        super::htop::full::search_line(self).is_some()
     }
 
     /// The rows the **zoomed** `full` table actually draws: the tabs row, the
@@ -1068,16 +1070,24 @@ impl Component for Htop {
         // minimum, so a size comparison had these keys (renice included)
         // answering on the grid where none of their chrome was drawn
         // (arc 8a review, D58 amendment 7).
+        // A config that asked for thread rows has to reach the source somehow,
+        // and only `on_key` can carry a `Command`. Handle the key **first**
+        // and reconcile afterwards: returning the command instead of
+        // dispatching swallowed the keystroke, which the review caught. It
+        // fires at most once, and never for the default (both sides start
+        // false).
+        let reconcile = cx.tier >= TIER_FULL && self.threads_sent != self.show_userland;
         if cx.tier >= TIER_FULL {
-            // A config that asked for thread rows has to reach the source
-            // somehow, and only `on_key` can carry a `Command`. This fires at
-            // most once, and never for the default (both sides start false).
-            if self.threads_sent != self.show_userland && key.code != KeyCode::Char('H') {
-                self.threads_sent = self.show_userland;
-                return Outcome::Command(self.threads_command());
-            }
             match self.full_key(key, cx) {
                 Outcome::Ignored => {}
+                // A key that produced its own command keeps it; the
+                // reconcile stays pending for the next one.
+                Outcome::Command(c) => return Outcome::Command(c),
+                other if reconcile => {
+                    let _ = other;
+                    self.threads_sent = self.show_userland;
+                    return Outcome::Command(self.threads_command());
+                }
                 other => return other,
             }
         }
@@ -1097,6 +1107,10 @@ impl Component for Htop {
             _ => return Outcome::Ignored,
         }
         self.follow_selection(rows);
+        if reconcile {
+            self.threads_sent = self.show_userland;
+            return Outcome::Command(self.threads_command());
+        }
         Outcome::Consumed
     }
 
