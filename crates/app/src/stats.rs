@@ -5,7 +5,12 @@ use std::time::Duration;
 #[derive(Default)]
 pub struct FrameStats {
     samples_us: Vec<u64>,
-    pub changed_cells: u64,
+    /// `None` when the changed-cell diff is not running (arc 10a, D60). The
+    /// diff clones the frame and compares every cell — 17 500 of them at
+    /// 250x70 — so a P-row taken with it on measures the product *plus its
+    /// instrument*. `null` rather than `0` in the JSON, because "not
+    /// measured" and "nothing changed" are different facts.
+    pub changed_cells: Option<u64>,
     pub frames: u64,
     pub redraw_data: u64,
     pub redraw_anim: u64,
@@ -70,7 +75,10 @@ impl FrameStats {
             self.frames,
             self.p50_us(),
             self.p95_us(),
-            self.changed_cells,
+            match self.changed_cells {
+                Some(n) => n.to_string(),
+                None => "null".into(),
+            },
             bytes,
             self.redraw_data,
             self.redraw_anim,

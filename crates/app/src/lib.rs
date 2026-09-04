@@ -44,6 +44,11 @@ pub struct RunOpts {
     pub no_effects: bool,
     pub stats: bool,
     pub stats_log: Option<std::path::PathBuf>,
+    /// Run the changed-cell diff for `--stats-log` (arc 10a, D60). Off by
+    /// default: the diff clones the frame and compares every cell, so a P-row
+    /// taken with it on measures the product plus its instrument. The `F12`
+    /// HUD always runs it — a person is looking at the number.
+    pub stats_cells: bool,
     /// `--record FILE`: journal every message the frame loop drains (§4.5).
     pub record: Option<PathBuf>,
     /// `--record-input`: journal input events too.
@@ -353,6 +358,7 @@ pub fn run_terminal(mut registry: Registry, opts: RunOpts) -> Result<(), String>
         shell.set_fps(fps); // CLI beats config (§9 layering)
     }
     shell.stats_log = opts.stats_log.clone();
+    shell.stats_cells = opts.stats_cells;
     if let Some(p) = opts.page {
         shell.set_page(p.saturating_sub(1));
     }

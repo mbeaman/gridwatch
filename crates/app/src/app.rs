@@ -189,6 +189,7 @@ pub struct Shell {
     fps_max: u16,
     unfocused_fps: u16,
     pub stats_log: Option<std::path::PathBuf>,
+    pub stats_cells: bool,
     view_warnings: Vec<String>,
     /// `--record`: the journal tee (§4.5). `r` toggles it; the HUD counts it.
     pub recorder: Option<Recorder>,
@@ -328,6 +329,7 @@ impl Shell {
             fps_max: loaded.config.fps_max,
             unfocused_fps: loaded.config.perf.unfocused_fps,
             stats_log: None,
+            stats_cells: false,
             view_warnings,
             recorder: None,
             plugin_host: None,
@@ -1630,9 +1632,13 @@ impl Shell {
             }
             buf.set_string(x, y, &line, self.theme.style(Role::Text));
         }
-        // Changed-cell accounting (own diff): only when the HUD or a stats
-        // log consumes it — a full clone + compare per frame is not free (P19).
-        if self.hud || self.stats_log.is_some() {
+        // Changed-cell accounting (own diff): only when the HUD is up or
+        // `--stats-cells` asked for it. A full clone and a 17 500-cell compare
+        // per frame is not free (P19), and `--stats-log` alone used to turn it
+        // on — so every P-row taken from a stats log measured the product plus
+        // its instrument (arc-1b review, scheduled by D60). Frames, timings
+        // and the redraw reasons cost nothing and are always counted.
+        if self.hud || self.stats_cells {
             if let Some(prev) = &self.prev_buf
                 && prev.area() == buf.area()
             {
@@ -1642,11 +1648,12 @@ impl Shell {
                     .zip(buf.content())
                     .filter(|(a, b)| a != b)
                     .count();
-                self.stats.changed_cells = changed as u64;
+                self.stats.changed_cells = Some(changed as u64);
             }
             self.prev_buf = Some(buf.clone());
         } else {
             self.prev_buf = None;
+            self.stats.changed_cells = None;
         }
     }
 

@@ -872,6 +872,63 @@ fn no_effects_runs_plain() {
     let _ = std::fs::remove_file(&stats);
 }
 
+/// C.32 (arc 10a, D60) — `--stats-log` no longer turns on the changed-cell
+/// diff. Frames, timings and the redraw reasons cost nothing and are always
+/// counted; the diff clones the frame and compares every cell, so a P-row
+/// taken from a stats log was measuring the product plus its instrument.
+/// `changed_cells` is `null` rather than `0`, because "not measured" and
+/// "nothing changed" are different facts.
+#[test]
+fn stats_log_does_not_run_the_cell_diff_unless_asked() {
+    if skip("stats_log_does_not_run_the_cell_diff_unless_asked") {
+        return;
+    }
+    let run = |tag: &str, extra: &str| -> String {
+        let stats =
+            std::env::temp_dir().join(format!("gridwatch-{tag}-{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&stats);
+        let args = format!(
+            "run --demo --no-effects --stats-log {}{extra}",
+            stats.display()
+        );
+        let mut s = Session::start(tag, 70, 250, &args);
+        let seen = s.wait_for(Duration::from_secs(3), |t| t.contains("CCD0"));
+        assert!(seen.is_some(), "no first frame; screen: {:?}", s.screen());
+        std::thread::sleep(Duration::from_millis(2500));
+        s.keys("q");
+        let (code, _, _) = s.finish();
+        assert_eq!(code, 0);
+        let text = std::fs::read_to_string(&stats).unwrap_or_default();
+        let last = text.lines().last().unwrap_or("").to_string();
+        let _ = std::fs::remove_file(&stats);
+        last
+    };
+
+    let plain = run("statsplain", "");
+    assert!(
+        plain.contains("\"changed_cells\":null"),
+        "the diff must not run for --stats-log alone: {plain}"
+    );
+    // Everything a P-row actually needs is still there.
+    assert!(plain.contains("\"frames\":"), "{plain}");
+    assert!(plain.contains("\"p95_us\":"), "{plain}");
+    assert!(plain.contains("\"redraw_data\":"), "{plain}");
+    let frames: u64 = plain
+        .split("\"frames\":")
+        .nth(1)
+        .and_then(|r| r.split(',').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0);
+    assert!(frames > 1, "frames are still counted: {plain}");
+
+    let cells = run("statscells", " --stats-cells");
+    assert!(
+        !cells.contains("\"changed_cells\":null"),
+        "--stats-cells must turn the diff on: {cells}"
+    );
+    assert!(cells.contains("\"changed_cells\":"), "{cells}");
+}
+
 /// C.18 (arc 5a) — `--demo --page 2` draws the audio tile's `Hz` axis and
 /// the bars keep moving: the terminal keeps receiving bar glyphs across
 /// half a second, and the stats log counts animation-caused frames.

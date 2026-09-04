@@ -236,11 +236,34 @@ stats log's own growth**; frames, frame times and both P18 timestamps from
   live source's ~95. It lands at 24.8 KB/s, just inside P6 — that is the
   headroom a genuinely busy machine has under the `cores` tier, and the honest
   reason to re-take P6 with the game running.
-- **The instrument costs something.** `--stats-log` (and the F12 HUD) turn on
-  changed-cell accounting, which clones the frame buffer and compares 17 500
-  cells per frame. The rows above therefore measure the product *plus its
-  instrument*; the direction is conservative for P1/P19, and P4's 0.3 % row
-  should be taken without `--stats-log`.
+- **The instrument cost something, and now it is measured and off by default**
+  (arc 10a, D60). `--stats-log` used to turn on changed-cell accounting, which
+  clones the frame buffer and compares 17 500 cells per frame; every row taken
+  from a stats log therefore measured the product *plus its instrument*. The
+  counter and the diff are separate now: `--stats-log` counts frames, times
+  them and attributes every redraw for free, and the diff runs only for the
+  `F12` HUD (a person is looking at the number) or `--stats-log --stats-cells`.
+  `changed_cells` is `null` rather than `0` when it did not run.
+  **What it was costing**, from a paired 40 s window on the Overview with the
+  visualizer animating (release binary, `script` pty at 250×70, `--demo
+  --no-effects`, the two runs back to back and reporting the *same* 1 698
+  frames, so the difference is like-for-like):
+
+  | | frame p50 | frame p95 | CPU |
+  |---|---|---|---|
+  | `--stats-log --stats-cells` | 1 072 µs | 1 599 µs | 3.60 % |
+  | `--stats-log` | 903 µs | 1 455 µs | 3.00 % |
+  | **the diff** | **+169 µs/frame** | +144 µs | **+0.60 pp** |
+
+  169 µs per frame is 0.47 % of a core at 28 fps, which agrees with the 0.60 pp
+  measured (the clone's allocator work is the rest). So it scales with the
+  frame rate and barely touches the rows that matter most: at P4's 2 fps it is
+  0.03 % of a core, so **P4's 0.3 % row was never meaningfully inflated** — but
+  **P2's 4.72 % arc-5a row was**, by roughly 0.6 pp of instrument, putting the
+  product itself nearer 4.1 %. This box was not idle during the pair (Firefox
+  and a game-shaped process were running), so these are not idle-torch absolute
+  rows; the *difference* is what they are for, and the identical frame counts
+  are why it holds.
 - **Scan cost:** a full meters pass (`/proc/stat` + `meminfo` + `loadavg` +
   `uptime` + 3 PSI files + one `/proc` readdir + 32 `scaling_cur_freq` + 3
   k10temp inputs) is **0.29 ms mean, 0.35 ms worst** over 20 runs — 0.06 % of a

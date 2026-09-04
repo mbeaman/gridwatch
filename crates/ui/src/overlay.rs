@@ -15,7 +15,9 @@ pub struct HudStats {
     pub sources_live_ms: u64,
     pub frame_p50_us: u64,
     pub frame_p95_us: u64,
-    pub changed_cells: u64,
+    /// `None` when the diff is not running (arc 10a): the HUD always runs it,
+    /// so the HUD always has a number.
+    pub changed_cells: Option<u64>,
     pub bytes_written: u64,
     pub frames: u64,
     pub redraw_data: u64,
@@ -34,7 +36,11 @@ pub fn hud(stats: &HudStats, area: Rect, theme: &Theme, buf: &mut Buffer) {
         ),
         format!(
             "cells Δ {:>8}   bytes {:>9}",
-            stats.changed_cells, stats.bytes_written
+            match stats.changed_cells {
+                Some(n) => n.to_string(),
+                None => "—".into(),
+            },
+            stats.bytes_written
         ),
         format!(
             "frames {:>5}  data {} anim {} beat {}",

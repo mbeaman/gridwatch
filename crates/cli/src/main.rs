@@ -46,6 +46,11 @@ enum Cmd {
         /// Append per-second stats JSON lines to a file.
         #[arg(long)]
         stats_log: Option<PathBuf>,
+        /// With --stats-log: also count changed cells. Off by default because
+        /// the diff clones and compares every cell of every frame, which a
+        /// performance row would then be measuring alongside the product.
+        #[arg(long, requires = "stats_log")]
+        stats_cells: bool,
         /// Record every message to a JSON Lines journal (`r` pauses/resumes).
         #[arg(long, value_name = "FILE")]
         record: Option<PathBuf>,
@@ -215,6 +220,7 @@ fn main() -> std::process::ExitCode {
         no_effects: false,
         stats: false,
         stats_log: None,
+        stats_cells: false,
         record: None,
         record_input: false,
         tables: "off".into(),
@@ -232,6 +238,7 @@ fn main() -> std::process::ExitCode {
             no_effects,
             stats,
             stats_log,
+            stats_cells,
             record,
             record_input,
             tables,
@@ -250,6 +257,7 @@ fn main() -> std::process::ExitCode {
                 no_effects,
                 stats,
                 stats_log,
+                stats_cells,
                 record,
                 record_input,
                 tables: tables == "on",
