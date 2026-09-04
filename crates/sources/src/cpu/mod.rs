@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gridwatch_store::{
-    Cadence, Detail, Level, Sampler, Source, SourceCtx, SourceInfo, SourceState, SourceStatus, Ts,
-    demo,
+    Cadence, Control, Detail, Level, Sampler, Source, SourceCtx, SourceInfo, SourceState,
+    SourceStatus, Ts, demo,
 };
 
 /// How long a paused source parks between checks of the stop flag. It never
@@ -160,8 +160,18 @@ impl Source for CpuSource {
                 restarts: cx.restarts,
             });
         }
+        // htop's `H` (arc 10b, D60). The flag cannot ride `Detail`: the I/O
+        // screen raises `Detail::Columns` too and wants no `task/` walk.
+        let threads = self.sampler.threads_flag();
         loop {
-            while cx.try_control().is_some() {}
+            while let Some(c) = cx.try_control() {
+                if let Control::SetOption(k, v) = c
+                    && k == "threads"
+                    && let Some(on) = v.as_bool()
+                {
+                    threads.store(on, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
             if cx.stopped() {
                 return;
             }

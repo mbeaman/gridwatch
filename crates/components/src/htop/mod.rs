@@ -315,6 +315,13 @@ pub struct Htop {
     tree: bool,
     show_kernel: bool,
     show_userland: bool,
+    /// What the cpu source was last told about the `task/` walk (arc 10b,
+    /// D60). It starts `false` because a fresh source does, so a default
+    /// config never sends anything it does not have to; a config that set
+    /// `hide_userland_threads = false` starts out of sync and is reconciled
+    /// on the first key the zoomed tile sees, because `tick` cannot return a
+    /// `Command` and inventing a way for it to is a seam change.
+    threads_sent: bool,
     /// An open menu (`F9`, `a`, `i`) and where its cursor is.
     menu: Option<Menu>,
     /// Indices into `derived.rows`, in draw order, and each one's depth in
@@ -398,6 +405,7 @@ impl Htop {
             tree: options.tree,
             show_kernel: !options.hide_kernel_threads,
             show_userland: !options.hide_userland_threads,
+            threads_sent: false,
             menu: None,
             visible: Vec::new(),
             depths: Vec::new(),
@@ -552,6 +560,19 @@ impl Htop {
     /// The row the cursor is on, in the `full` tier's row set.
     /// The `full` tier's keys. `Ignored` falls through to the shared table
     /// keys (selection, sort), which every tier has.
+    /// Tell the cpu source whether to walk `task/`. The demand alone cannot
+    /// carry it: the I/O screen raises `Detail::Columns` too and a walk per
+    /// process would cost it P15's whole budget for nothing.
+    fn threads_command(&self) -> Command {
+        Command::Source(
+            cpu::SOURCE,
+            gridwatch_store::Control::SetOption(
+                "threads".into(),
+                toml::Value::Boolean(self.show_userland),
+            ),
+        )
+    }
+
     fn full_key(&mut self, key: KeyEvent, cx: &InputCx<'_>) -> Outcome {
         // A menu owns every key while it is open.
         if self.menu.is_some() {
@@ -610,6 +631,14 @@ impl Htop {
             KeyCode::Char('H') => {
                 self.show_userland = !self.show_userland;
                 self.rederive(cx);
+                self.threads_sent = self.show_userland;
+                // Until arc 10b this changed what was *asked for* and not
+                // what was shown: `demand` rose to `Detail::Columns` and the
+                // gated files were read, but nothing walked `task/`. The
+                // demand alone cannot carry it — the I/O screen raises
+                // `Columns` too and wants no walk — so the toggle is a
+                // control the source acts on (D60).
+                return Outcome::Command(self.threads_command());
             }
             KeyCode::Tab => {
                 self.screen = match self.screen {
@@ -1040,6 +1069,13 @@ impl Component for Htop {
         // answering on the grid where none of their chrome was drawn
         // (arc 8a review, D58 amendment 7).
         if cx.tier >= TIER_FULL {
+            // A config that asked for thread rows has to reach the source
+            // somehow, and only `on_key` can carry a `Command`. This fires at
+            // most once, and never for the default (both sides start false).
+            if self.threads_sent != self.show_userland && key.code != KeyCode::Char('H') {
+                self.threads_sent = self.show_userland;
+                return Outcome::Command(self.threads_command());
+            }
             match self.full_key(key, cx) {
                 Outcome::Ignored => {}
                 other => return other,

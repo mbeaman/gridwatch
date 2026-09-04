@@ -651,3 +651,68 @@ fn paging_the_zoomed_table_moves_the_rows_that_are_on_screen() {
         "the search line costs a row, and the page must lose it too"
     );
 }
+
+/// Arc 10b (D60) — `H` now changes what is **shown**, not only what is asked
+/// for. Arc 8a raised the demand to `Detail::Columns` and read the gated
+/// files, but nothing walked `task/`, so the toggle moved a filter over rows
+/// that never existed. Two halves: the tile tells the source, and the tile
+/// shows the rows when they arrive.
+#[test]
+fn the_thread_toggle_asks_the_source_and_then_lists_threads() {
+    use gridwatch_store::Control;
+    let store = store();
+    let caps = gridwatch_store::CapSet::default();
+    let mut h = tile(&store);
+
+    // Hidden by default: a 6x3 tile must not be ten rows of one game's
+    // threads (PARITY records the deviation from htop's default).
+    assert!(!h.show_userland());
+    let leaders = h.visible_rows().len();
+    assert!(
+        h.visible_rows().iter().all(|r| r.tgid == r.pid),
+        "no thread rows until asked"
+    );
+
+    // `H` tells the cpu source to walk `task/`. The demand alone cannot
+    // carry it: the I/O screen raises the same `Detail::Columns`.
+    match h.on_key(ch('H'), &cx(&store, &caps)) {
+        Outcome::Command(Command::Source(id, Control::SetOption(k, v))) => {
+            assert_eq!(id, gridwatch_store::keys::cpu::SOURCE);
+            assert_eq!(k, "threads");
+            assert_eq!(v.as_bool(), Some(true), "H on asks for the walk");
+        }
+        _ => panic!("H must return a SetOption command for the cpu source"),
+    }
+    assert!(h.show_userland());
+
+    // And the rows the walk produces are shown, under their leader.
+    let shown = h.visible_rows();
+    assert!(
+        shown.len() > leaders,
+        "the demo set carries the game's threads: {} vs {leaders}",
+        shown.len()
+    );
+    let threads: Vec<_> = shown.iter().filter(|r| r.tgid != r.pid).collect();
+    assert!(!threads.is_empty(), "no thread rows appeared");
+    for t in &threads {
+        assert!(
+            shown.iter().any(|r| r.pid == t.tgid && r.tgid == r.pid),
+            "thread {} has no leader on screen",
+            t.pid
+        );
+        assert_eq!(t.nlwp, 1);
+    }
+    assert!(
+        threads.iter().any(|t| t.cmdline.contains("RenderThread")),
+        "a thread row carries its own name, not the leader's cmdline"
+    );
+
+    // Off again, and the source is told that too.
+    match h.on_key(ch('H'), &cx(&store, &caps)) {
+        Outcome::Command(Command::Source(_, Control::SetOption(_, v))) => {
+            assert_eq!(v.as_bool(), Some(false), "H off stops the walk");
+        }
+        _ => panic!("H must return a SetOption command for the cpu source"),
+    }
+    assert_eq!(h.visible_rows().len(), leaders);
+}

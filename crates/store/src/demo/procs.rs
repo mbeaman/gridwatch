@@ -766,10 +766,24 @@ const SET: &[Template] = &[
 /// windows. The wiggle draws from its own stream seeded by `(seed, tick)`, so
 /// the meters a synth publishes are the same whether or not a table tier is
 /// asking for the table (same seed → same meters, D41).
+/// The threads the synth's busiest process runs, as htop's `H` would list
+/// them (arc 10b, D60). Kept to the game, and hidden by every default filter
+/// (`hide_userland_threads`), so the grid tables are byte-identical with or
+/// without them — the `full` tier with `H` on is the only place they show.
+/// Named after the shape a game's threads really have, because a row of five
+/// identical cmdlines would prove nothing about the feature.
+const GAME_THREADS: &[(&str, f32, char)] = &[
+    ("RenderThread", 96.4, 'R'),
+    ("WorkerThread#0", 41.2, 'R'),
+    ("WorkerThread#1", 38.7, 'S'),
+    ("AudioMixer", 6.1, 'S'),
+    ("gc-thread", 2.3, 'S'),
+];
+
 pub fn proc_table(tick: u64, seed: u64) -> ProcTable {
     let mut rng = XorShift::new(seed ^ tick.wrapping_mul(0x9E37_79B9_7F4A_7C15));
     let present = (tick / 8).is_multiple_of(2);
-    let rows = SET
+    let rows: Vec<ProcRow> = SET
         .iter()
         .filter(|t| !t.flicker || present)
         .map(|t| {
@@ -815,6 +829,31 @@ pub fn proc_table(tick: u64, seed: u64) -> ProcTable {
             }
         })
         .collect();
+    // The game's threads, under their leader: same mm, same user, own
+    // identity and own CPU time — what `walk_tasks` reads from `task/`.
+    let mut rows = rows;
+    if let Some(leader) = SET.iter().find(|t| t.cmdline.contains("/game")) {
+        let base = rows.iter().find(|r| r.pid == leader.pid).cloned();
+        if let Some(base) = base {
+            for (i, (comm, cpu, state)) in GAME_THREADS.iter().enumerate() {
+                let jitter = (rng.jitter() as f32) * cpu * 0.15;
+                rows.push(ProcRow {
+                    pid: leader.pid + 1 + i as i32,
+                    tgid: leader.pid,
+                    state: *state,
+                    nlwp: 1,
+                    cpu_pct: (cpu + jitter).max(0.0),
+                    time_cs: (tick as f64 * f64::from(*cpu) * 1.5) as u64,
+                    cmdline: Arc::from(*comm),
+                    comm: Arc::from(*comm),
+                    read_bps: 0.0,
+                    write_bps: 0.0,
+                    io_readable: false,
+                    ..base.clone()
+                });
+            }
+        }
+    }
     ProcTable {
         rows,
         pid_digits: PID_DIGITS,

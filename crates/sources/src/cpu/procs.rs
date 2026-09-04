@@ -5,10 +5,13 @@
 //! active_cpus`, clamped to `active_cpus · 100`; MEM% is `resident /
 //! MemTotal`; a kernel thread is `PF_KTHREAD` (0x00200000) in stat field 9;
 //! deltas are keyed by `(pid, starttime)` so a reused PID never inherits a
-//! stranger's counters. Userland threads are **not** rows: the thread-group
-//! leader's `stat` already sums its threads, and the `task/` walk is
-//! `Detail::Columns` work (arc 8). No `libc::getpwuid_r`: the uid → name map
-//! is read from `passwd` by hand and cached.
+//! stranger's counters. Userland threads are not rows by default: the
+//! thread-group leader's `stat` already sums its threads. htop's `H` asks for
+//! them, and then the `task/` walk runs at `Detail::Columns` (arc 10b, D60 —
+//! arc 8a raised the demand and read the gated files but never wrote the
+//! walk, so the toggle changed what was asked for and not what was shown).
+//! No `libc::getpwuid_r`: the uid → name map is read from `passwd` by hand
+//! and cached.
 
 use std::collections::HashMap;
 use std::os::unix::fs::MetadataExt;
@@ -109,6 +112,7 @@ impl ProcScanner {
         mem_total_kib: u64,
         pid_digits: u8,
         columns: bool,
+        threads: bool,
     ) -> Scan {
         let t0 = Instant::now();
         // The I/O rates are per *measured* interval between two Columns
@@ -235,6 +239,21 @@ impl ProcScanner {
                 write_bps,
                 io_readable,
             });
+            // htop's `H`: one row per userland thread, under its leader.
+            // Only when asked (`Detail::Columns` *and* the toggle), because
+            // it is a readdir plus a `stat` read per thread — about 1 800 of
+            // them on this box (P15 budgets +30 ms for exactly this).
+            if threads && stat.num_threads > 1 {
+                self.walk_tasks(
+                    &dir,
+                    pid,
+                    &rows[rows.len() - 1].clone(),
+                    period,
+                    max_pct,
+                    &mut rows,
+                    &mut next_prev,
+                );
+            }
         }
         // Forget what vanished, so a reused pid starts from nothing.
         if columns {
@@ -246,6 +265,93 @@ impl ProcScanner {
             table: ProcTable { rows, pid_digits },
             kernel_threads,
             ms: t0.elapsed().as_secs_f64() * 1000.0,
+        }
+    }
+
+    /// One row per thread of `pid`, from `/proc/<pid>/task/` (arc 10b, D60).
+    ///
+    /// A thread shares its leader's address space, so VIRT/RES/SHR and MEM%
+    /// are the leader's — reading `statm` per thread would be the same number
+    /// at three more syscalls each. What is genuinely per-thread is the
+    /// identity, the state and the CPU time, and those are read from the
+    /// thread's own `stat`. Deltas are keyed by `(tid, starttime)` like any
+    /// other row, so a reused tid inherits nothing.
+    ///
+    /// **Deviation from htop, recorded in PARITY:** the Command cell carries
+    /// the thread's own `comm` rather than the leader's cmdline. htop shows
+    /// the cmdline unless `Show custom thread names` is on; the comm is the
+    /// only per-thread identity there is, and a screen full of identical
+    /// cmdlines is the one thing this feature exists to avoid.
+    #[allow(clippy::too_many_arguments)]
+    fn walk_tasks(
+        &mut self,
+        dir: &Path,
+        pid: i32,
+        leader: &ProcRow,
+        period: Option<f64>,
+        max_pct: f32,
+        rows: &mut Vec<ProcRow>,
+        next_prev: &mut HashMap<Ident, u64>,
+    ) {
+        let Ok(tasks) = std::fs::read_dir(dir.join("task")) else {
+            return;
+        };
+        for task in tasks.flatten() {
+            let Some(tid) = task
+                .file_name()
+                .to_str()
+                .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|n| n.parse::<i32>().ok())
+            else {
+                continue;
+            };
+            // The leader is already a row; `task/<pid>` is that same thread.
+            if tid == pid {
+                continue;
+            }
+            // A thread can exit between readdir and here.
+            let Ok(text) = std::fs::read(task.path().join("stat")) else {
+                continue;
+            };
+            let Ok(st) = Stat::from_read(text.as_slice()) else {
+                continue;
+            };
+            let ident: Ident = (tid, st.starttime);
+            let ticks = st.utime + st.stime;
+            let cpu_pct = match (self.prev.get(&ident), period) {
+                (Some(prev), Some(period)) => {
+                    ((ticks.saturating_sub(*prev) as f64 / period * 100.0) as f32).min(max_pct)
+                }
+                _ => 0.0,
+            };
+            next_prev.insert(ident, ticks);
+            let comm: Arc<str> = Arc::from(st.comm.as_str());
+            rows.push(ProcRow {
+                pid: tid,
+                ppid: leader.ppid,
+                tgid: pid,
+                state: st.state,
+                pri: st.priority.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16,
+                nice: st.nice.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16,
+                // A thread is one LWP; the count belongs to the group.
+                nlwp: 1,
+                cpu_pct,
+                time_cs: ticks_to_cs(ticks),
+                starttime: st.starttime,
+                cmdline: comm.clone(),
+                comm,
+                // Shared with the leader: same mm, same uid, same io gating.
+                uid: leader.uid,
+                user: leader.user.clone(),
+                virt_kib: leader.virt_kib,
+                res_kib: leader.res_kib,
+                shr_kib: leader.shr_kib,
+                mem_pct: leader.mem_pct,
+                kthread: leader.kthread,
+                read_bps: 0.0,
+                write_bps: 0.0,
+                io_readable: false,
+            });
         }
     }
 

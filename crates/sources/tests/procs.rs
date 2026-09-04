@@ -62,7 +62,7 @@ fn cpu_percent_is_irix_mode_over_the_aggregate_period() {
     std::fs::create_dir_all(&dir).unwrap();
     let pw = passwd(&dir);
     let mut sc = ProcScanner::new(tick(1), pw.clone());
-    let first = sc.scan(total_ticks(&tick(1)), 32, 91 * 1024 * 1024, 7, false);
+    let first = sc.scan(total_ticks(&tick(1)), 32, 91 * 1024 * 1024, 7, false, false);
     assert!(first.ms >= 0.0);
     let row = first
         .table
@@ -216,14 +216,14 @@ fn live_scan_is_inside_p15() {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    let _ = sc.scan(total, cpus, 91 * 1024 * 1024, 7, false);
+    let _ = sc.scan(total, cpus, 91 * 1024 * 1024, 7, false, false);
     let mut worst = 0.0f64;
     let mut sum = 0.0f64;
     let n = 10;
     for _ in 0..n {
         std::thread::sleep(std::time::Duration::from_millis(300));
         let total = total_ticks(Path::new("/proc"));
-        let s = sc.scan(total, cpus, 91 * 1024 * 1024, 7, false);
+        let s = sc.scan(total, cpus, 91 * 1024 * 1024, 7, false, false);
         worst = worst.max(s.ms);
         sum += s.ms;
         println!(
@@ -249,7 +249,7 @@ fn the_io_columns_are_read_only_when_asked_for() {
     let mut sc = ProcScanner::new(PathBuf::from("/proc"), PathBuf::from("/etc/passwd"));
     let total = total_ticks(Path::new("/proc"));
     // Without the flag: nothing is read, and every row says so.
-    let plain = sc.scan(total, 32, 91 * 1024 * 1024, 7, false);
+    let plain = sc.scan(total, 32, 91 * 1024 * 1024, 7, false, false);
     assert!(!plain.table.rows.is_empty());
     assert!(
         plain.table.rows.iter().all(|r| !r.io_readable),
@@ -264,7 +264,7 @@ fn the_io_columns_are_read_only_when_asked_for() {
     );
     // With it: our own rows are readable, and another user's are not — the
     // scan says which rather than showing zeroes as if they were idle.
-    let first = sc.scan(total, 32, 91 * 1024 * 1024, 7, true);
+    let first = sc.scan(total, 32, 91 * 1024 * 1024, 7, true, false);
     let me = std::process::id() as i32;
     let ours = first
         .table
@@ -280,7 +280,7 @@ fn the_io_columns_are_read_only_when_asked_for() {
     // A second pass has one, and the rate is finite and not negative.
     std::thread::sleep(std::time::Duration::from_millis(20));
     let _ = std::fs::read_to_string("/proc/self/stat");
-    let second = sc.scan(total, 32, 91 * 1024 * 1024, 7, true);
+    let second = sc.scan(total, 32, 91 * 1024 * 1024, 7, true, false);
     let ours = second
         .table
         .rows
@@ -308,13 +308,13 @@ fn live_scan_with_the_gated_files_is_inside_p15() {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    let _ = sc.scan(total, cpus, 91 * 1024 * 1024, 7, true);
+    let _ = sc.scan(total, cpus, 91 * 1024 * 1024, 7, true, false);
     let mut worst = 0.0f64;
     let mut sum = 0.0f64;
     let n = 10;
     let mut readable = 0;
     for _ in 0..n {
-        let s = sc.scan(total, cpus, 91 * 1024 * 1024, 7, true);
+        let s = sc.scan(total, cpus, 91 * 1024 * 1024, 7, true, false);
         readable = s.table.rows.iter().filter(|r| r.io_readable).count();
         println!(
             "columns scan: {} rows, {readable} readable io, {:.2} ms",
@@ -329,4 +329,92 @@ fn live_scan_with_the_gated_files_is_inside_p15() {
     // P15's ceiling is 12 ms; the pid-level pass measures ~6 ms, so the
     // gated read has ~6 ms of room and this fails if it eats it.
     assert!(worst < 12.0, "the gated pass took {worst:.2} ms");
+}
+
+/// Arc 10b (D60) — htop's `H`: the `task/` walk arc 8a's demand path asked
+/// for and nobody wrote, so the toggle changed what was asked for and not
+/// what was shown. Live, because the fixtures have no `task/` directories and
+/// a fixture that pretended to would prove nothing about the real layout.
+#[test]
+fn the_task_walk_lists_threads_under_their_leader() {
+    let mut sc = ProcScanner::new(PathBuf::from("/proc"), PathBuf::from("/etc/passwd"));
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let total = || total_ticks(Path::new("/proc"));
+    sc.scan(total(), cpus, 91 * 1024 * 1024, 7, false, false);
+    let without = sc.scan(total(), cpus, 91 * 1024 * 1024, 7, true, false);
+    let with = sc.scan(total(), cpus, 91 * 1024 * 1024, 7, true, true);
+
+    // The I/O screen raises the same `Detail::Columns` and must not pay for
+    // a walk it has no use for.
+    assert!(
+        without.table.rows.iter().all(|r| r.tgid == r.pid),
+        "the walk must not run unless asked"
+    );
+    let leaders: std::collections::HashSet<i32> =
+        without.table.rows.iter().map(|r| r.pid).collect();
+    let threads: Vec<_> = with.table.rows.iter().filter(|r| r.tgid != r.pid).collect();
+    assert!(
+        threads.len() > 10,
+        "this box runs thousands of threads; the walk found {}",
+        threads.len()
+    );
+    for t in &threads {
+        assert_ne!(t.pid, t.tgid, "a thread row is never its own leader");
+        assert!(!t.comm.is_empty(), "a thread row carries its own name");
+        assert_eq!(
+            t.nlwp, 1,
+            "a thread is one LWP; the count belongs to the group"
+        );
+    }
+    // A thread's leader is a real row in the same table — allowing for the
+    // ones that exited between the two passes.
+    let orphans = threads
+        .iter()
+        .filter(|t| !leaders.contains(&t.tgid))
+        .count();
+    assert!(
+        orphans * 20 < threads.len().max(20),
+        "{orphans} of {} threads claim a leader that is not in the table",
+        threads.len()
+    );
+    println!(
+        "task walk: {} leaders, {} thread rows",
+        leaders.len(),
+        threads.len()
+    );
+}
+
+/// P15's `task/` row: the walk is budgeted at **+30 ms** on top of the
+/// pid-level pass, and only ever runs at `Detail::Columns` with `H` on.
+/// Timing, so ignored by default like the pass it sits on:
+/// `cargo test -p gridwatch-sources --release --test procs -- --ignored`.
+#[test]
+#[ignore = "timing; run in release on torch"]
+fn the_task_walk_is_inside_p15() {
+    let mut sc = ProcScanner::new(PathBuf::from("/proc"), PathBuf::from("/etc/passwd"));
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let total = || total_ticks(Path::new("/proc"));
+    sc.scan(total(), cpus, 91 * 1024 * 1024, 7, true, true);
+    let (mut plain, mut walked, mut rows, mut threads) = (0.0f64, 0.0f64, 0usize, 0usize);
+    let n = 10;
+    for _ in 0..n {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        plain += sc.scan(total(), cpus, 91 * 1024 * 1024, 7, true, false).ms;
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let s = sc.scan(total(), cpus, 91 * 1024 * 1024, 7, true, true);
+        walked += s.ms;
+        rows = s.table.rows.len();
+        threads = s.table.rows.iter().filter(|r| r.tgid != r.pid).count();
+    }
+    let (plain, walked) = (plain / f64::from(n), walked / f64::from(n));
+    println!(
+        "P15 task walk: {plain:.1} ms without, {walked:.1} ms with ({threads} thread rows of \
+         {rows}), +{:.1} ms",
+        walked - plain
+    );
+    assert!(
+        walked - plain <= 30.0,
+        "P15 budgets +30 ms for the task walk; it cost +{:.1} ms",
+        walked - plain
+    );
 }

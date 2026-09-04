@@ -11,6 +11,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use gridwatch_store::keys::cpu::CoreBreakdown;
 use gridwatch_store::keys::{cpu, sys};
@@ -150,12 +151,23 @@ pub struct CpuSampler {
     probed: bool,
     /// The pid-level scan (§8.1), run only at `Detail::Table` and richer.
     scanner: ProcScanner,
+    /// htop's `H`, over the control channel (arc 10b, D60). It cannot ride
+    /// `Detail` alone: the I/O screen raises `Detail::Columns` too and does
+    /// not want a `task/` walk per process.
+    threads: Arc<AtomicBool>,
     /// Online CPUs per `/proc/stat` — htop's `activeCPUs` for the CPU% period.
     active_cpus: usize,
     mem_total_kib: u64,
 }
 
 impl CpuSampler {
+    /// The handle the source flips when htop's `H` asks for thread rows
+    /// (arc 10b, D60): the sampler runs on the source thread, the control
+    /// arrives on it too, so one relaxed flag is the whole mechanism.
+    pub fn threads_flag(&self) -> Arc<AtomicBool> {
+        self.threads.clone()
+    }
+
     pub fn new(roots: Roots) -> CpuSampler {
         let scanner = ProcScanner::new(roots.proc.clone(), roots.passwd.clone());
         CpuSampler {
@@ -170,6 +182,7 @@ impl CpuSampler {
             topology_sent: false,
             probed: false,
             scanner,
+            threads: Arc::new(AtomicBool::new(false)),
             active_cpus: 0,
             mem_total_kib: 0,
         }
@@ -416,6 +429,7 @@ impl gridwatch_store::Sampler for CpuSampler {
         if detail >= Detail::Table
             && let Some(total) = self.prev_total
         {
+            let threads = detail >= Detail::Columns && self.threads.load(Ordering::Relaxed);
             let digits = sysfs::pid_digits(&self.roots.proc);
             let scan = self.scanner.scan(
                 total.total(),
@@ -425,6 +439,7 @@ impl gridwatch_store::Sampler for CpuSampler {
                 // htop's gated files: only when a `full` tier asked for
                 // them (§4.3, D58 — `H` and the I/O screen).
                 detail >= Detail::Columns,
+                threads,
             );
             out.push(scalar(&sys::TASKS_KERNEL, scan.kernel_threads as f64));
             out.push(scalar(&sys::SCAN_MS, scan.ms));
