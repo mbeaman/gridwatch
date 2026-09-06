@@ -30,8 +30,8 @@ pub use journal::{
     Replay,
 };
 pub use key::{
-    CATALOGUE, Datum, DatumKind, Key, KeyMeta, Label, MetricId, RecordValue, Unit, Vec32,
-    intern_source, lookup, parse_name,
+    CATALOGUE, Datum, DatumKind, Key, KeyMeta, Label, LabelSet, MetricId, RecordValue, Unit, Vec32,
+    domain, intern_source, labels_dynamic, lookup, parse_name,
 };
 pub use msg::{
     ActionId, Batch, Channels, ControlMsg, DATA_BOUND, Inbox, Msg, Reload, ReloadKind, Sample,

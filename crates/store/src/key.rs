@@ -158,6 +158,17 @@ pub enum Unit {
 /// Revives a Record from its journal JSON (§4.1/§4.5).
 pub type DecodeFn = fn(serde_json::Value) -> Result<Arc<dyn RecordValue>, JournalError>;
 
+/// Can the kernel or the config add and remove this key's labels while
+/// gridwatch runs (D61)? `Dynamic` for interfaces, probe targets and hwmon
+/// chips; `Static` for cores, devices, pins and channels. Retention removes
+/// the series of a `Dynamic` key whose label has been quiet for `max_age`
+/// and never touches a `Static` one — see `Store::sweep`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LabelSet {
+    Static,
+    Dynamic,
+}
+
 /// One catalogue row per key name (§4.1). `decode` revives a Record from its
 /// journal JSON; scalar/vector rows leave it `None`.
 pub struct KeyMeta {
@@ -167,6 +178,7 @@ pub struct KeyMeta {
     pub source: SourceId,
     pub doc: &'static str,
     pub decode: Option<DecodeFn>,
+    pub labels: LabelSet,
 }
 
 /// The whole vocabulary: one slice per `keys/<domain>.rs`.
@@ -188,6 +200,23 @@ pub fn lookup(name: &str) -> Option<&'static KeyMeta> {
         .iter()
         .flat_map(|d| d.iter())
         .find(|m| m.name == name)
+}
+
+/// Whether retention may remove a quiet label of this key (D61): the row's
+/// `labels == Dynamic`, and **`true` for a name the catalogue does not know**
+/// — a plugin's — because plugin labels come straight off the wire and are
+/// the least bounded thing in the store.
+pub fn labels_dynamic(name: &str) -> bool {
+    lookup(name).is_none_or(|m| m.labels == LabelSet::Dynamic)
+}
+
+/// The key's domain: the name before its first `.` (`net`, `sensor`, a
+/// plugin's id). Retention's liveness is per `(domain, label)` (D61), and it
+/// is a string operation rather than `KeyMeta.source` because the cpu source
+/// publishes `sensor.*` k10temp keys when the sensors feature is off (§16)
+/// and they share the same label vocabulary.
+pub fn domain(name: &str) -> &str {
+    name.split('.').next().unwrap_or(name)
 }
 
 /// Every `SourceId` the catalogue knows plus the journal's own, so a source

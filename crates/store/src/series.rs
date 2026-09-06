@@ -12,6 +12,14 @@ use crate::ts::Ts;
 pub struct Retention {
     pub max_len: usize,
     pub max_age: Duration,
+    /// The most series one domain of **uncatalogued** names — a plugin's —
+    /// may hold (D61). `Ring::new` preallocates `max_len` slots (38 KB at the
+    /// default) per scalar series, and a plugin's labels come off the wire
+    /// uncapped, so eviction alone would bound them in time but not in the
+    /// ten minutes before a sweep. A sample that would create one more
+    /// series is refused and counted in `Store::capped`. Catalogued keys are
+    /// not counted: hardware bounds their labels, or the sweep evicts them.
+    pub max_uncatalogued: usize,
 }
 
 impl Default for Retention {
@@ -19,6 +27,7 @@ impl Default for Retention {
         Retention {
             max_len: 2400,
             max_age: Duration::from_secs(600),
+            max_uncatalogued: 512,
         }
     }
 }

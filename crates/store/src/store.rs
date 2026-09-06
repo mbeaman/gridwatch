@@ -1,14 +1,14 @@
 //! The single-writer store (§4.2): owned by the render thread; the only
 //! mutation is `apply(&Msg)`. Deterministic iteration everywhere (BTreeMap).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 use std::time::Duration;
 
 use smallvec::SmallVec;
 
 use crate::alert::{AlertEvent, AlertLog};
-use crate::key::{Datum, Key, MetricId, RecordValue, Vec32};
+use crate::key::{Datum, Key, Label, MetricId, RecordValue, Vec32};
 use crate::msg::{ControlMsg, Msg};
 use crate::series::{Agg, Retention, Series, resample};
 use crate::source::{SourceId, SourceStatus};
@@ -20,6 +20,9 @@ struct PerSource {
     generation: u64,
     last_sample: Option<Ts>,
     status: SourceStatus,
+    /// Samples refused by `Retention::max_uncatalogued` (D61). Never reset:
+    /// the count is the evidence that a plugin was throttled.
+    capped: u64,
 }
 
 /// A read-only row for the `sources` tile.
@@ -28,6 +31,9 @@ pub struct SourceOverview<'a> {
     pub status: &'a SourceStatus,
     pub generation: u64,
     pub last_sample: Option<Ts>,
+    /// Samples refused by the uncatalogued-series cap (D61); shown as a
+    /// note on the row, like `dropped`.
+    pub capped: u64,
 }
 
 static DEFAULT_STATUS: LazyLock<SourceStatus> = LazyLock::new(|| SourceStatus::starting(Ts::ZERO));
@@ -42,6 +48,11 @@ pub struct Store {
     /// would make that a coin toss.
     next_sweep: Ts,
     series: BTreeMap<MetricId, Series>,
+    /// Series held per domain of **uncatalogued** names (D61) — a plugin's
+    /// id → how many of its `(name, label)` pairs exist. Kept beside the map
+    /// rather than counted from it, because a domain's lower bound is not a
+    /// `&'static str` the map could be ranged from without a leak.
+    uncatalogued: HashMap<Box<str>, usize>,
     /// The `[[rules]]` this run watches (§9, arc 7b); empty by default, so
     /// a store with no rules pays nothing.
     rules: crate::rules::Rules,
@@ -63,6 +74,7 @@ impl Store {
             next_sweep: Ts::ZERO.plus(sweep_every(&retention)),
             retention,
             series: BTreeMap::new(),
+            uncatalogued: HashMap::new(),
             sources: BTreeMap::new(),
             alerts: AlertLog::default(),
         }
@@ -73,6 +85,7 @@ impl Store {
         self.sources.entry(id.0).or_insert_with(|| PerSource {
             id,
             generation: 0,
+            capped: 0,
             last_sample: None,
             status: SourceStatus::starting(Ts::ZERO),
         });
@@ -125,26 +138,70 @@ impl Store {
     ///
     /// Keeping one point costs 16 bytes per dead series against 38 KB, so the
     /// leak this was written for is still closed 2 400-fold, and nothing a
-    /// component can read is ever lost. Dropping the entry itself needs the
-    /// catalogue to say which keys have dynamic labels — a `KeyMeta` change,
-    /// escalated in `BACKLOG.md` rather than guessed at.
+    /// component can read is ever lost by *pruning*.
+    ///
+    /// **Removal is per label, for `Dynamic` keys only (D61).** The catalogue
+    /// says which keys have labels the kernel or the config can add and
+    /// remove (`KeyMeta.labels`; an uncatalogued name — a plugin's — counts
+    /// as `Dynamic`). For those, liveness is a property of the **label**,
+    /// never of one series: `sensor.max_c{k10temp:Tctl}` is published once
+    /// for a chip that lives forever, so the sweep takes the newest point per
+    /// `(domain, label)` across every series, and a label nothing in its
+    /// domain has published to for `max_age` is dead — every series of a
+    /// `Dynamic` key carrying it is removed, Scalar, Vector or Record alike,
+    /// unless a rule is raised for it. `Label::None` series are never
+    /// removed (one per key, bounded by the catalogue), and neither is any
+    /// series of a `Static` key.
     fn sweep(&mut self) {
         let cutoff = self.latest;
         let max_age = self.retention.max_age;
+        let dead = |t: Ts| cutoff.since(t) > max_age;
         // The rule states *are* evictable, because losing one is not losing
         // data: a label that comes back gets a fresh state, which is what it
         // would have had anyway. A **raised** state is kept, since an
         // `absent` rule must still be able to resolve.
         let mut quiet: Vec<(&'static str, String)> = Vec::new();
+        // Newest point per (domain, label), over every labelled series.
+        let mut newest: BTreeMap<(&'static str, Label), Ts> = BTreeMap::new();
         for (id, series) in self.series.iter_mut() {
+            if id.label != Label::None {
+                let at = series.last_at();
+                newest
+                    .entry((crate::key::domain(id.name), id.label.clone()))
+                    .and_modify(|t| *t = (*t).max(at))
+                    .or_insert(at);
+            }
             let Series::Scalar(ring) = series else {
                 continue;
             };
-            let newest = ring.back().map(|(t, _)| *t);
-            ring.prune_front(|(t, _)| cutoff.since(*t) > max_age && Some(*t) != newest);
-            if newest.is_some_and(|t| cutoff.since(t) > max_age) {
+            let last = ring.back().map(|(t, _)| *t);
+            ring.prune_front(|(t, _)| dead(*t) && Some(*t) != last);
+            if last.is_some_and(dead) {
                 quiet.push((id.name, crate::rules::label_text(&id.label)));
             }
+        }
+        let evict: Vec<MetricId> = self
+            .series
+            .keys()
+            .filter(|id| id.label != Label::None)
+            .filter(|id| dead(newest[&(crate::key::domain(id.name), id.label.clone())]))
+            .filter(|id| crate::key::labels_dynamic(id.name))
+            .filter(|id| {
+                !self
+                    .rules
+                    .raised_for(id.name, &crate::rules::label_text(&id.label))
+            })
+            .cloned()
+            .collect();
+        for id in evict {
+            self.series.remove(&id);
+            if crate::key::lookup(id.name).is_none()
+                && let Some(n) = self.uncatalogued.get_mut(crate::key::domain(id.name))
+            {
+                *n = n.saturating_sub(1);
+            }
+            self.rules
+                .forget(id.name, &crate::rules::label_text(&id.label));
         }
         for (name, label) in quiet {
             if !self.rules.raised_for(name, &label) {
@@ -195,19 +252,40 @@ impl Store {
                     self.next_sweep = self.latest.plus(sweep_every(&self.retention));
                     self.sweep();
                 }
+                let mut capped = 0u64;
                 for s in &b.samples {
-                    let series = self
-                        .series
-                        .entry(s.id.clone())
-                        .or_insert_with(|| Series::for_datum(&s.datum, &self.retention));
+                    use std::collections::btree_map::Entry;
+                    let series = match self.series.entry(s.id.clone()) {
+                        Entry::Occupied(e) => e.into_mut(),
+                        Entry::Vacant(v) => {
+                            // A series is *created* here, and only here — so
+                            // this is the one place the cap (D61) looks, and
+                            // a catalogued key pays one `lookup` on its first
+                            // appearance and nothing after.
+                            if crate::key::lookup(v.key().name).is_none() {
+                                let n = self
+                                    .uncatalogued
+                                    .entry(Box::from(crate::key::domain(v.key().name)))
+                                    .or_insert(0);
+                                if *n >= self.retention.max_uncatalogued {
+                                    capped += 1;
+                                    continue;
+                                }
+                                *n += 1;
+                            }
+                            v.insert(Series::for_datum(&s.datum, &self.retention))
+                        }
+                    };
                     series.push(b.at, s.datum.clone(), &self.retention);
                 }
                 let per = self.sources.entry(b.source.0).or_insert_with(|| PerSource {
                     id: b.source,
                     generation: 0,
+                    capped: 0,
                     last_sample: None,
                     status: SourceStatus::starting(b.at),
                 });
+                per.capped += capped;
                 per.generation += 1;
                 per.last_sample = Some(b.at);
                 per.status.last_sample = Some(b.at);
@@ -246,6 +324,7 @@ impl Store {
                 let per = self.sources.entry(id.0).or_insert_with(|| PerSource {
                     id: *id,
                     generation: 0,
+                    capped: 0,
                     last_sample: None,
                     status: st.clone(),
                 });
@@ -341,6 +420,11 @@ impl Store {
             .unwrap_or(&DEFAULT_STATUS)
     }
 
+    /// Samples a source had refused by `Retention::max_uncatalogued` (D61).
+    pub fn capped(&self, id: SourceId) -> u64 {
+        self.sources.get(id.0).map(|p| p.capped).unwrap_or(0)
+    }
+
     pub fn generation(&self, id: SourceId) -> u64 {
         self.sources.get(id.0).map(|p| p.generation).unwrap_or(0)
     }
@@ -355,6 +439,7 @@ impl Store {
             status: &p.status,
             generation: p.generation,
             last_sample: p.last_sample,
+            capped: p.capped,
         })
     }
 

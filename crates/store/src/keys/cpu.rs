@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::journal::JournalError;
-use crate::key::{DatumKind, Key, KeyMeta, RecordValue, Unit};
+use crate::key::{DatumKind, Key, KeyMeta, LabelSet, RecordValue, Unit};
 use crate::source::SourceId;
 
 pub const SOURCE: SourceId = SourceId("cpu");
@@ -171,6 +171,7 @@ macro_rules! scalar {
             source: SOURCE,
             doc: $doc,
             decode: None,
+            labels: LabelSet::Static,
         }
     };
 }
@@ -194,6 +195,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "class shares: nice/user/kernel/virt/iowait; {core} per core, unlabelled = the aggregate line",
         decode: Some(decode_breakdown),
+        labels: LabelSet::Static,
     },
     scalar!("mem.total_b", Bytes, "MemTotal"),
     scalar!(
@@ -230,6 +232,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "die/core map: die_of, core_of, per-die temp label; latest-only",
         decode: Some(decode_topology),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "proc.table",
@@ -238,5 +241,6 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "pid-level process scan (arc 2); latest-only",
         decode: Some(decode_proc_table),
+        labels: LabelSet::Static,
     },
 ];

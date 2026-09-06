@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::journal::JournalError;
-use crate::key::{DatumKind, Key, KeyMeta, RecordValue, Unit};
+use crate::key::{DatumKind, Key, KeyMeta, LabelSet, RecordValue, Unit};
 use crate::source::SourceId;
 
 pub const SOURCE: SourceId = SourceId("net");
@@ -221,6 +221,9 @@ fn decode_probes(v: serde_json::Value) -> Result<Arc<dyn RecordValue>, JournalEr
 
 macro_rules! scalar {
     ($name:expr, $unit:ident, $doc:expr) => {
+        scalar!($name, $unit, $doc, Dynamic)
+    };
+    ($name:expr, $unit:ident, $doc:expr, $labels:ident) => {
         KeyMeta {
             name: $name,
             unit: Unit::$unit,
@@ -228,6 +231,7 @@ macro_rules! scalar {
             source: SOURCE,
             doc: $doc,
             decode: None,
+            labels: LabelSet::$labels,
         }
     };
 }
@@ -279,7 +283,8 @@ pub static METAS: &[KeyMeta] = &[
     scalar!(
         "net.scan_ms",
         Milliseconds,
-        "wall ms of the last /proc/*/fd socket scan (the sources tile's note)"
+        "wall ms of the last /proc/*/fd socket scan (the sources tile's note)",
+        Static
     ),
     KeyMeta {
         name: "net.link",
@@ -288,6 +293,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "link state per {iface}: up/carrier/operstate, mtu, mac, kind, speed, carrier flaps, addresses and the Wi-Fi details when it is a radio",
         decode: Some(decode_link),
+        labels: LabelSet::Dynamic,
     },
     KeyMeta {
         name: "net.route",
@@ -296,6 +302,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "the default route (interface, gateway, source address), the DNS servers, and the public IP when the user opted in",
         decode: Some(decode_route),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "net.conns",
@@ -304,6 +311,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "the connection table at Detail::Table: protocol, endpoints, state, and the owning process where /proc/<pid>/fd was readable (the uid otherwise)",
         decode: Some(decode_conns),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "net.probe",
@@ -312,6 +320,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "latency statistics per target over a 60-sample ring: min/avg/max/mdev, RFC 3550 jitter and loss",
         decode: Some(decode_probes),
+        labels: LabelSet::Static,
     },
 ];
 

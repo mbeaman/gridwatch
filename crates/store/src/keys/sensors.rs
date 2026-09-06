@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::journal::JournalError;
-use crate::key::{DatumKind, Key, KeyMeta, RecordValue, Unit};
+use crate::key::{DatumKind, Key, KeyMeta, LabelSet, RecordValue, Unit};
 use crate::source::SourceId;
 
 pub const SOURCE: SourceId = SourceId("sensors");
@@ -73,6 +73,9 @@ fn decode_info(v: serde_json::Value) -> Result<Arc<dyn RecordValue>, JournalErro
 
 macro_rules! meta {
     ($name:expr, $unit:ident, $doc:expr) => {
+        meta!($name, $unit, $doc, Dynamic)
+    };
+    ($name:expr, $unit:ident, $doc:expr, $labels:ident) => {
         KeyMeta {
             name: $name,
             unit: Unit::$unit,
@@ -80,6 +83,7 @@ macro_rules! meta {
             source: SOURCE,
             doc: $doc,
             decode: None,
+            labels: LabelSet::$labels,
         }
     };
 }
@@ -114,7 +118,8 @@ pub static METAS: &[KeyMeta] = &[
     meta!(
         "sensor.walk_ms",
         Milliseconds,
-        "wall ms of the last hwmon walk (the sources tile's cost line)"
+        "wall ms of the last hwmon walk (the sources tile's cost line)",
+        Static
     ),
     KeyMeta {
         name: "sensor.info",
@@ -123,5 +128,6 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "the chip inventory (name, path, kinds) and the RAPL state (ok | root_only | absent), once per generation",
         decode: Some(decode_info),
+        labels: LabelSet::Static,
     },
 ];

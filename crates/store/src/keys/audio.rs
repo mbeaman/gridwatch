@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::journal::JournalError;
-use crate::key::{DatumKind, Key, KeyMeta, RecordValue, Unit, Vec32};
+use crate::key::{DatumKind, Key, KeyMeta, LabelSet, RecordValue, Unit, Vec32};
 use crate::source::SourceId;
 use crate::ts::Ts;
 
@@ -107,6 +107,7 @@ macro_rules! meta {
             source: SOURCE,
             doc: $doc,
             decode: None,
+            labels: LabelSet::Static,
         }
     };
 }
@@ -161,6 +162,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "the captured sink: node.name, description, object.serial, state, default flag, rate, channels; once per generation and on change",
         decode: Some(decode_sink),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "audio.sinks",
@@ -169,6 +171,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "every Audio/Sink pw-dump lists, while the picker enumerates",
         decode: Some(decode_sinks),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "audio.level",
@@ -177,5 +180,6 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "the silence rule's state (silent, since); the DSP publishes at 2 Hz while silent",
         decode: Some(decode_level),
+        labels: LabelSet::Static,
     },
 ];

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::journal::JournalError;
-use crate::key::{DatumKind, Key, KeyMeta, RecordValue, Unit};
+use crate::key::{DatumKind, Key, KeyMeta, LabelSet, RecordValue, Unit};
 use crate::source::SourceId;
 use crate::ts::Ts;
 
@@ -129,6 +129,7 @@ macro_rules! scalar {
             source: SOURCE,
             doc: $doc,
             decode: None,
+            labels: LabelSet::Static,
         }
     };
 }
@@ -159,6 +160,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "mode (i2c/exporter), bus, pci, model, access path, interval and the astral-watch thresholds/policy in force; once per generation and on change",
         decode: Some(decode_info),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "pins.state",
@@ -167,5 +169,6 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "telemetry health, miss count, the lifecycle's active conditions and the exporter's own flags; every sample",
         decode: Some(decode_state),
+        labels: LabelSet::Static,
     },
 ];

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::journal::JournalError;
-use crate::key::{DatumKind, Key, KeyMeta, RecordValue, Unit, Vec32};
+use crate::key::{DatumKind, Key, KeyMeta, LabelSet, RecordValue, Unit, Vec32};
 use crate::source::SourceId;
 
 pub const SOURCE: SourceId = SourceId("gpu");
@@ -213,6 +213,7 @@ macro_rules! scalar {
             source: SOURCE,
             doc: $doc,
             decode: None,
+            labels: LabelSet::Static,
         }
     };
 }
@@ -247,6 +248,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "20 ms board-power samples {dev}, oldest first, one vector per slow tick; only while a gpu tile is visible",
         decode: None,
+        labels: LabelSet::Static,
     },
     scalar!("gpu.temp_c", Celsius, "GPU temperature {dev}"),
     scalar!("gpu.temp_slowdown_c", Celsius, "slowdown threshold {dev}"),
@@ -290,6 +292,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "current clock-throttle reasons {dev} as NVML's bitmask; latest-only",
         decode: Some(decode_throttle),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "gpu.info",
@@ -298,6 +301,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "static probe {dev}: name, driver, cuda, arch, uuid, pci id, bus id, vbios, cores, bus width, spec row; once per generation",
         decode: Some(decode_info),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "gpu.procs",
@@ -306,6 +310,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "GPU process rows {dev} (v3 lists merged by PID, utilisation overlaid); only at Detail::Table; latest-only",
         decode: Some(decode_procs),
+        labels: LabelSet::Static,
     },
     scalar!(
         "gpu.nvml_ms",

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::journal::JournalError;
-use crate::key::{DatumKind, Key, KeyMeta, RecordValue, Unit};
+use crate::key::{DatumKind, Key, KeyMeta, LabelSet, RecordValue, Unit};
 use crate::source::SourceId;
 use crate::ts::Ts;
 
@@ -236,6 +236,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "the current player's track: title/artist/album/url, status, position (pos_us as read at read_at), length (absent = a stream), rate, volume, capabilities and the track hash",
         decode: Some(decode_now),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "media.players",
@@ -244,6 +245,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "every MPRIS player on the session bus with its status, and which one the tile is showing",
         decode: Some(decode_players),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "media.art",
@@ -252,6 +254,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "the current track's cover decoded to RGB8, at most 256 px on the long side; absent when the track has none",
         decode: Some(decode_art),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "media.history",
@@ -260,6 +263,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "the last distinct tracks seen, newest last (the playlist pane)",
         decode: Some(decode_history),
+        labels: LabelSet::Static,
     },
     KeyMeta {
         name: "media.pos_pct",
@@ -268,6 +272,7 @@ pub static METAS: &[KeyMeta] = &[
         source: SOURCE,
         doc: "position as a percentage of the track's length; absent in stream mode",
         decode: None,
+        labels: LabelSet::Static,
     },
 ];
 

@@ -1,6 +1,6 @@
 //! System-wide keys produced by the cpu source (§8).
 
-use crate::key::{DatumKind, Key, KeyMeta, Unit};
+use crate::key::{DatumKind, Key, KeyMeta, LabelSet, Unit};
 use crate::source::SourceId;
 
 pub const SOURCE: SourceId = SourceId("cpu");
@@ -27,6 +27,7 @@ macro_rules! meta {
             source: SOURCE,
             doc: $doc,
             decode: None,
+            labels: LabelSet::Static,
         }
     };
 }

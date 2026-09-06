@@ -50,6 +50,7 @@ fn retention_caps_length_and_age() {
     let mut store = Store::new(Retention {
         max_len: 4,
         max_age: Duration::from_secs(5),
+        max_uncatalogued: 512,
     });
     for i in 0..10u64 {
         store.apply(&batch(i * 1000, vec![scalar(&cpu::TOTAL_PCT, i as f64)]));
@@ -631,6 +632,7 @@ fn retention_shrinks_a_label_that_stopped_arriving_without_losing_its_value() {
     let mut store = Store::new(Retention {
         max_len: 2400,
         max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
     });
     let bps = |iface: &str, t: u64, v: f64| {
         Msg::Batch(Batch {
@@ -665,31 +667,188 @@ fn retention_shrinks_a_label_that_stopped_arriving_without_losing_its_value() {
         "a merely quiet series is still on the chart and must keep its points"
     );
 
-    // Far past `max_age` the ring collapses to its newest point — 16 bytes
-    // instead of up to 2 400 — and the value is still readable.
+    // Far past `max_age` the label is dead — nothing in the `net` domain has
+    // published to `veth9a1` for longer than retention — and `net.*` keys
+    // are `Dynamic` (D61), so the series is removed outright rather than
+    // shrunk: the interface is gone, and a tile listing labels must not
+    // show it. (Arc 10b shrank it to one point; D61 lets the catalogue say
+    // which labels can die.)
     for t in 90..300 {
         store.apply(&bps("eno1", t, 1000.0));
     }
-    assert_eq!(
-        stored(&store),
-        1,
-        "shrunk to the one point that must survive"
-    );
-    assert_eq!(
-        store.last(&veth).map(|(_, v)| v),
-        Some(20.0),
-        "the last reading a tile could show is never thrown away"
-    );
-    // And a chart still sees nothing from it, because its point is outside
-    // every window — which is why keeping it costs nothing.
-    assert_eq!(store.window(&veth, Duration::from_secs(60)).count(), 0);
+    assert_eq!(stored(&store), 0, "a dead dynamic label holds no series");
+    assert!(store.last(&veth).is_none());
     assert!(
-        store
+        !store
             .labels("net.rx_bps")
             .map(gridwatch_store::rules::label_text)
             .any(|l| l == "veth9a1"),
-        "the series itself stays: telling a dead label from a static one needs \
-         the catalogue to say which keys have dynamic labels (BACKLOG)"
+        "the label is gone from `labels()`, which is what the net tile lists"
+    );
+    // The permanent interface is untouched.
+    let eno1 = gridwatch_store::keys::net::RX_BPS.named(&Arc::from("eno1"));
+    assert_eq!(store.last(&eno1).map(|(_, v)| v), Some(1000.0));
+}
+
+/// D61's rule is per **label**, never per series — the trap R6 fell into.
+/// `net.speed_mbps{eno1}` and `net.link{eno1}` are published once for an
+/// interface that lives forever; they survive because `rx_bps{eno1}` keeps
+/// arriving. The veth's copies of the same keys go with its label.
+#[test]
+fn a_dead_dynamic_label_is_removed_whole_and_a_live_one_keeps_its_once_published_series() {
+    use gridwatch_store::keys::net::{self, Link};
+    let mut store = Store::new(Retention {
+        max_len: 2400,
+        max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
+    });
+    let at = |t: u64| Ts(t * 1_000_000_000);
+    let net_batch = |t: u64, samples: Vec<Sample>| {
+        Msg::Batch(Batch {
+            source: net::SOURCE,
+            at: at(t),
+            samples,
+        })
+    };
+    let once = |iface: &str| {
+        vec![
+            scalar(&net::SPEED_MBPS.named(&Arc::from(iface)), 2500.0),
+            Sample {
+                id: net::LINK.named(&Arc::from(iface)).id,
+                datum: Datum::Record(Arc::new(Link::default())),
+            },
+        ]
+    };
+    store.apply(&net_batch(0, once("eno1")));
+    store.apply(&net_batch(0, once("veth9a1")));
+    for t in 0..40 {
+        store.apply(&net_batch(
+            t,
+            vec![
+                scalar(&net::RX_BPS.named(&Arc::from("eno1")), 1000.0),
+                scalar(&net::RX_BPS.named(&Arc::from("veth9a1")), 20.0),
+            ],
+        ));
+    }
+    for t in 40..300 {
+        store.apply(&net_batch(
+            t,
+            vec![scalar(&net::RX_BPS.named(&Arc::from("eno1")), 1000.0)],
+        ));
+    }
+    let eno1 = Arc::from("eno1");
+    let veth = Arc::from("veth9a1");
+    assert_eq!(
+        store.last(&net::SPEED_MBPS.named(&eno1)).map(|(_, v)| v),
+        Some(2500.0),
+        "published once, 300 s ago, for a label that is alive: kept"
+    );
+    assert!(store.record(&net::LINK.named(&eno1)).is_some());
+    assert!(store.last(&net::SPEED_MBPS.named(&veth)).is_none());
+    assert!(store.last(&net::RX_BPS.named(&veth)).is_none());
+    assert!(
+        store.record(&net::LINK.named(&veth)).is_none(),
+        "a Record goes with its dead label — the kind does not matter"
+    );
+    assert!(
+        !store
+            .labels("net.link")
+            .map(gridwatch_store::rules::label_text)
+            .any(|l| l == "veth9a1")
+    );
+}
+
+/// A `Static` key's labels are cores, devices, pins and channels: a quiet
+/// one is a core that reported nothing, not a core that left, and its
+/// series is never removed.
+#[test]
+fn a_static_key_never_loses_a_quiet_label() {
+    let mut store = Store::new(Retention {
+        max_len: 2400,
+        max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
+    });
+    for t in 0..10u64 {
+        store.apply(&batch(
+            t * 1000,
+            vec![
+                scalar(&cpu::CORE_PCT.idx(0), 10.0),
+                scalar(&cpu::CORE_PCT.idx(7), 90.0),
+            ],
+        ));
+    }
+    for t in 10..300u64 {
+        store.apply(&batch(t * 1000, vec![scalar(&cpu::CORE_PCT.idx(0), 10.0)]));
+    }
+    assert_eq!(
+        store.last(&cpu::CORE_PCT.idx(7)).map(|(_, v)| v),
+        Some(90.0),
+        "quiet for 290 s, shrunk to one point, still there"
+    );
+    assert!(store.labels("cpu.core_pct").any(|l| *l == Label::Index(7)));
+}
+
+/// An uncatalogued name is a plugin's: its labels are `Dynamic`, so they are
+/// evicted like `net`'s, and `Retention::max_uncatalogued` refuses a sample
+/// that would create one series more than the domain may hold — until the
+/// sweep gives the room back. `capped` counts what was refused and is never
+/// reset. A `Label::None` series is bounded by the name cap and is kept.
+#[test]
+fn an_uncatalogued_domain_is_capped_and_eviction_frees_the_room() {
+    let mut store = Store::new(Retention {
+        max_len: 64,
+        max_age: Duration::from_secs(60),
+        max_uncatalogued: 3,
+    });
+    let weather = SourceId("weather");
+    let city = |c: &str, t: u64| {
+        Msg::Batch(Batch {
+            source: weather,
+            at: Ts(t * 1_000_000_000),
+            samples: vec![Sample {
+                id: MetricId {
+                    name: "weather.temp",
+                    label: Label::Name(Arc::from(c)),
+                },
+                datum: Datum::Scalar(20.0),
+            }],
+        })
+    };
+    let sun: Key<f64> = Key::new("weather.sun");
+    store.apply(&Msg::Batch(Batch {
+        source: weather,
+        at: Ts(0),
+        samples: vec![scalar(&sun, 1.0)],
+    }));
+    for c in ["c1", "c2", "c3", "c4"] {
+        store.apply(&city(c, 0));
+    }
+    // The cap is on *series* of the domain, and `weather.sun` is one of
+    // them: two cities fit beside it, the third and fourth are refused.
+    assert_eq!(
+        store.labels("weather.temp").count(),
+        2,
+        "the third is refused"
+    );
+    assert_eq!(store.capped(weather), 2);
+    assert_eq!(store.capped(cpu::SOURCE), 0);
+    // Nothing more from the plugin; the cpu source drives the clock past
+    // retention, and the sweep evicts the dead plugin labels.
+    for t in 1..300u64 {
+        store.apply(&batch(t * 1000, vec![scalar(&cpu::TOTAL_PCT, 5.0)]));
+    }
+    assert_eq!(store.labels("weather.temp").count(), 0);
+    assert_eq!(
+        store.last(&sun).map(|(_, v)| v),
+        Some(1.0),
+        "an unlabelled series is one per name and is never removed"
+    );
+    store.apply(&city("c5", 300));
+    assert_eq!(store.labels("weather.temp").count(), 1, "room was freed");
+    assert_eq!(
+        store.capped(weather),
+        2,
+        "never reset — the count is the evidence"
     );
 }
 
@@ -730,13 +889,17 @@ fn the_sweep_is_driven_by_store_time_not_the_wall_clock() {
     let retention = Retention {
         max_len: 2400,
         max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
     };
     let mut a = Store::new(retention);
     let mut b = Store::new(retention);
     let first = feed(&mut a);
-    assert_eq!(first[0], 1, "the veth shrank to its last point");
+    assert_eq!(
+        first[0], 0,
+        "the veth's label died and its series went (D61)"
+    );
     std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(first, feed(&mut b), "two runs must shrink identically");
+    assert_eq!(first, feed(&mut b), "two runs must evict identically");
 }
 
 /// A `Record` is never touched, and neither is a scalar's newest point. Six
@@ -748,6 +911,7 @@ fn a_value_published_once_survives_any_amount_of_silence() {
     let mut store = Store::new(Retention {
         max_len: 2400,
         max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
     });
     store.apply(&Msg::Batch(Batch {
         source: SourceId("cpu"),
@@ -777,6 +941,7 @@ fn the_retention_sweep_stays_inside_the_batch_budget() {
     let retention = Retention {
         max_len: 2400,
         max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
     };
     let mut store = Store::new(retention);
     // 400 labelled series — torch runs about 150 with every source live.
@@ -807,6 +972,7 @@ fn the_retention_sweep_stays_inside_the_batch_budget() {
     let mut control = Store::new(Retention {
         max_len: 2400,
         max_age: Duration::from_secs(100_000),
+        max_uncatalogued: 512,
     });
     let without = time(&mut control);
     let with = time(&mut store);
@@ -903,6 +1069,7 @@ fn a_quiet_label_loses_its_rule_state_but_never_a_raised_one() {
     let retention = Retention {
         max_len: 2400,
         max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
     };
 
     // A threshold rule over every interface: three veths appear, publish and
