@@ -149,6 +149,42 @@ per series and act on the flag. The cost is one catalogue lookup per series per
 sweep (sweeps run every `max_age / 10`, floored at 10 s), against the 2.3 µs a
 batch the sweep costs today.
 
+## When to hand back to Opus
+
+Matt asked (2026-09-05) to be told, *inside the Fable session*, when to switch
+back. `MODELS.md`'s protocol is `Fable: spec + brief → Opus: implement`, and
+`CLAUDE.md`'s escalation list puts "a seam needs changing" and "anything
+touches … the store's apply path" on Fable — which is why the two contract
+edits themselves stay here rather than going with the breadth.
+
+**Fable's half — the switch-back gate. Say "switch to Opus now" once all five
+are true:**
+
+1. **D61 is written**, answering the seven questions below. It is the artifact
+   that makes the rest mechanical.
+2. **The spec is updated before the code** (D33): `ARCHITECTURE.md` §4.1 for
+   `KeyMeta`, §4.3 for `SourceInfo`/`SourceDef` (the signature lines at
+   `:101`/`:115`), and §9 if the check changes what a config file means.
+3. **A brief exists** in `docs/briefs/` — arc-numbered, since `BACKLOG.md`'s
+   header makes pulling these in a DECISIONS entry either way.
+4. **Both contract edits compile**: the field on `SourceInfo`/`SourceDef`, the
+   flag on `KeyMeta`, and `Store::sweep` reading it. The sweep is the store's
+   apply path, so its shape is a Fable call even though it is three lines.
+5. **`ROADMAP.md` has the arc's acceptance criteria and gates**, written first
+   as D33 requires.
+
+**Opus's half — everything after that is breadth, and is what the switch-back
+is for:** the seven source registrations; the loader check and its
+warning-vs-error plumbing; `config_check`'s output and exit code (it already
+builds every component and exits non-zero since arc 10a, so there is a hook);
+generalising `source_and_component_option_names_are_disjoint` from its one
+hard-coded pair; tests; regenerating `KEYS.md`/`COMPONENTS.md`; the CHANGELOG
+entry; and the arc-end review workflow and gates.
+
+The rule of thumb, if the list above stops matching reality: **hand back when
+the remaining work is "do this seven times" rather than "decide what this
+should be".**
+
 ## What the Fable session still has to decide
 
 1. **Where the option names live** so `store` does not depend on `sources`:
