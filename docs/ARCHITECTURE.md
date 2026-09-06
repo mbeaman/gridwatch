@@ -52,14 +52,16 @@ pub type Vec32 = Arc<[f32]>;
 pub trait RecordValue: Any + Send + Sync + Debug { fn as_any(&self) -> &dyn Any; fn to_json(&self) -> serde_json::Value; }
 pub enum Datum { Scalar(f64), Vector(Vec32), Record(Arc<dyn RecordValue>) }
 
+pub enum LabelSet { Static, Dynamic }                    // D61: can the kernel or the config add and remove this key's labels while gridwatch runs?
 pub struct KeyMeta { pub name: &'static str, pub unit: Unit, pub kind: DatumKind, pub source: SourceId, pub doc: &'static str,
-                     pub decode: Option<fn(serde_json::Value) -> Result<Arc<dyn RecordValue>, JournalError>> }
+                     pub decode: Option<fn(serde_json::Value) -> Result<Arc<dyn RecordValue>, JournalError>>, pub labels: LabelSet }
 pub static CATALOGUE: &[&[KeyMeta]];                       // one slice per keys/<domain>.rs
 pub fn lookup(name: &str) -> Option<&'static KeyMeta>;     // interns journal names onto the static catalogue
+pub fn labels_dynamic(name: &str) -> bool;                 // the row's `labels == Dynamic`; **true for an uncatalogued (plugin) name** (D61)
 pub struct SourceId(pub &'static str);                     // constants live next to their keys: keys::cpu::SOURCE, keys::gpu::SOURCE …
 ```
 
-`f64` keys keep bounded history; `Vec32` keys keep latest plus a short ring (audio bands, NVML 20 ms power trace); `Record` keys keep latest only (process table, GPU static info, now-playing). Every Record type is `Serialize + Deserialize` and registers its `decode` in the catalogue, so the journal can round-trip it and `&'static str` names are never leaked: an unknown name in a journal is skipped with one warning. GPU keys carry a device label from day one (`gpu.util_pct{0}`) so multi-GPU never needs a breaking catalogue change. `gridwatch keys` prints the catalogue; CI regenerates `docs/KEYS.md`.
+`f64` keys keep bounded history; `Vec32` keys keep latest plus a short ring (audio bands, NVML 20 ms power trace); `Record` keys keep latest only (process table, GPU static info, now-playing). Every Record type is `Serialize + Deserialize` and registers its `decode` in the catalogue, so the journal can round-trip it and `&'static str` names are never leaked: an unknown name in a journal is skipped with one warning. GPU keys carry a device label from day one (`gpu.util_pct{0}`) so multi-GPU never needs a breaking catalogue change. `labels` (D61) is `Dynamic` for every labelled `net.*` and `sensor.*` key — interfaces, probe targets and hwmon chips come and go — and `Static` for cores, devices, pins and channels; retention removes the series of a `Dynamic` key whose label has been quiet for `max_age` (§4.2) and never touches a `Static` one. `gridwatch keys` prints the catalogue; CI regenerates `docs/KEYS.md`.
 
 ### 4.2 Store, messages, channels
 
@@ -89,7 +91,7 @@ impl Store {
 }
 ```
 
-The frame loop drains the three receivers in a fixed order — `input` (all), `control` (all), `data` (at most 3 ms) — building a `Msg` for each and teeing it to the recorder. `resample` writes into a caller-owned buffer and is the single history API. Timestamps are 8 bytes, so a scalar sample is 16 bytes: 200 series × 2400 points ≈ 8 MB, hard-capped at 32 MB by retention.
+The frame loop drains the three receivers in a fixed order — `input` (all), `control` (all), `data` (at most 3 ms) — building a `Msg` for each and teeing it to the recorder. `resample` writes into a caller-owned buffer and is the single history API. Timestamps are 8 bytes, so a scalar sample is 16 bytes: 200 series × 2400 points ≈ 8 MB, hard-capped at 32 MB by retention. **Retention's sweep (arc 10b, D60; D61)** runs every `max_age / 10` (≥ 10 s) of *store* time inside `apply`: a scalar ring is pruned to `max_age` but keeps its newest point; then, per `(domain, label)` — the domain is the key name's prefix before its first `.` — a label nothing has published to for `max_age` is **dead**, and every series (Scalar, Vector or Record) of a `Dynamic` key with a dead label is removed along with its rule states, unless a rule is currently raised for it. `Label::None` series and `Static` keys are never removed. An uncatalogued name (a plugin's) is `Dynamic`, and `Retention.max_uncatalogued` (512) caps the series such a domain may hold: a sample that would create one more is refused and counted in `Store::capped(source)`.
 
 ### 4.3 Sources and demand
 
@@ -112,7 +114,8 @@ impl SourceCtx {
 pub enum Control { Stop, SetOption(String, toml::Value), Restart, Domain(Box<dyn Any + Send>) }
 pub trait Source: Send + 'static { fn info(&self) -> SourceInfo; fn run(self: Box<Self>, cx: SourceCtx); }
 pub trait AsyncSource: Send + 'static { fn info(&self) -> SourceInfo; fn run(self: Box<Self>, cx: SourceCtx) -> BoxFuture<'static, ()>; }
-pub struct SourceDef { pub info: SourceInfo, pub start: fn(&toml::Table) -> Box<dyn Source>, pub demo: fn(u64) -> Box<dyn Source> }
+pub struct SourceDef { pub info: SourceInfo, pub start: fn(&toml::Table) -> Box<dyn Source>, pub demo: fn(u64) -> Box<dyn Source>,
+                       pub options: &'static [&'static str] }   // D61: the keys `[sources.<id>]` accepts — each source's hand-written `OPTION_NAMES`, registered beside the `start` that reads them
 pub trait Sampler: Send + 'static { fn sample(&mut self, now: Ts, detail: u8) -> Result<Vec<Sample>, SourceError>; }   // poll helper: cadence, backoff 250 ms→30 s
 ```
 
@@ -374,7 +377,7 @@ Free extras: `clock` (the 60-line template, tui-big-text, Chrome::Borderless —
 
 ## 9. Configuration
 
-Two files plus a themes directory: `~/.config/gridwatch/config.toml` (behaviour, singleton sources, component instances, rules) and `layout.toml` (grid + pages + placements — the only file edit mode ever writes). Sources are configured **only** under `[sources.<id>]`; instance `options` are view-only (filters, presets, sort) and validated by each component's `Options` type; a test asserts that no option name appears both in a source's option struct and in the same domain's component `Options`. All via `toml 1.1` + serde with `deny_unknown_fields`, layered defaults ← file ← `GRIDWATCH_*` env ← CLI by hand; validation reports `file:line:col` via `toml::de::Error::span()`; overlaps name both ids; unsupported footprints warn only.
+Two files plus a themes directory: `~/.config/gridwatch/config.toml` (behaviour, singleton sources, component instances, rules) and `layout.toml` (grid + pages + placements — the only file edit mode ever writes). Sources are configured **only** under `[sources.<id>]`; instance `options` are view-only (filters, presets, sort) and validated by each component's `Options` type; a test asserts that no option name appears both in a source's `OPTION_NAMES` and in the `OPTION_NAMES` of any component whose manifest lists that source (D61: every pair, from the registry). **`[sources.<id>]` is checked against `SourceDef.options` in `app` (D61):** an unknown key under a known source, or an `<id>` that is neither a registered source nor a plugin, fails `gridwatch config check` (non-zero, naming the source, the key and the accepted set) and is toasted once at `run` — the source still starts and ignores the key; `[sources.<plugin id>]` is a warning, since contract 1 delivers no options to a plugin. All via `toml 1.1` + serde with `deny_unknown_fields`, layered defaults ← file ← `GRIDWATCH_*` env ← CLI by hand; validation reports `file:line:col` via `toml::de::Error::span()`; overlaps name both ids; unsupported footprints warn only.
 
 ```toml
 # config.toml
