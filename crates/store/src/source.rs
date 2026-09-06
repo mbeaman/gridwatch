@@ -389,6 +389,11 @@ pub struct SourceDef {
     pub info: SourceInfo,
     pub start: fn(&toml::Table) -> Box<dyn Source>,
     pub demo: fn(u64) -> Box<dyn Source>,
+    /// The keys `[sources.<id>]` accepts (D61): the source's hand-written
+    /// `OPTION_NAMES`, registered beside the `start` that reads them. Here
+    /// and not on `SourceInfo`, which `store::demo` constructs and which a
+    /// demo or journal source returns too — none of them read a table.
+    pub options: &'static [&'static str],
 }
 
 impl std::fmt::Debug for SourceDef {
