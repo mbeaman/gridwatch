@@ -360,17 +360,11 @@ fn history_span(p: &Pins, cx: &RenderCx<'_>) -> Duration {
 fn watts_spark(p: &Pins, cx: &RenderCx<'_>, width: u16) -> View {
     let mut out = Vec::new();
     let span = history_span(p, cx);
-    // No more buckets than samples: a young run draws a short continuous
-    // line at the right rather than a comb of blanks (review).
-    let interval_ms = p
-        .model()
-        .info
-        .as_ref()
-        .map(|i| u64::from(i.interval_ms))
-        .unwrap_or(500)
-        .max(1);
-    let samples = (span.as_millis() as u64 / interval_ms).max(1);
-    let buckets = (u64::from(width.max(1))).min(samples) as usize;
+    // One bucket per column (D62 §4): the renderer holds a sample across an
+    // empty column, so a young run draws a continuous line across the whole
+    // rect — the old cap at the sample count left the left of a wide tile
+    // blank (arc 12 review).
+    let buckets = usize::from(width.max(1));
     cx.store
         .resample(&pins::TOTAL_W, span, buckets, Agg::Avg, &mut out);
     View::Sparkline {
@@ -459,19 +453,30 @@ fn trend(p: &Pins, cx: &RenderCx<'_>) -> View {
     let h = cx.inner.height;
     let alarm = alarm_row(cx);
     let status = source_status(cx);
-    // bars 6 + values + balance + totals + sparkline 3 + alarm/status rows + log ≥ 3.
+    // bars ≥ 6 + values + balance + totals + sparkline ≥ 3 + alarm/status rows
+    // + log ≥ 3 — the floors. Rows above them are shared out (D62 §4: a
+    // constant is a floor, never a cap): two fifths each to the bars and the
+    // sparkline, whose height is their resolution, and a fifth to the log.
     let fixed = 6 + 3 + 3 + u16::from(alarm.is_some()) + u16::from(status.is_some());
-    let log_rows = h.saturating_sub(fixed).max(3);
+    let extra = h.saturating_sub(fixed + 3);
+    let bar_rows = 6 + extra * 2 / 5;
+    let spark_rows = 3 + extra * 2 / 5;
+    let log_rows = h
+        .saturating_sub(fixed - 6 - 3 + bar_rows + spark_rows)
+        .max(3);
     let mut children = Vec::new();
     if let Some(s) = status {
         children.push((Constraint::Len(1), s));
     }
     children.extend([
-        (Constraint::Len(6), overlaid_bars(p, cx, true)),
+        (Constraint::Len(bar_rows), overlaid_bars(p, cx, true)),
         (Constraint::Len(1), pin_values_line(m, st, cx.inner.width)),
         (Constraint::Len(1), balance_gauge(m)),
         (Constraint::Len(1), totals_line(m, st, p.frozen())),
-        (Constraint::Len(3), watts_spark(p, cx, cx.inner.width)),
+        (
+            Constraint::Len(spark_rows),
+            watts_spark(p, cx, cx.inner.width),
+        ),
     ]);
     if let Some(row) = alarm {
         children.push((Constraint::Len(1), row));

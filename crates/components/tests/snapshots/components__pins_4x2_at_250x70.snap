@@ -7,7 +7,7 @@ tier: trend
 view:
   stack:
     children:
-      - - Len(6)
+      - - Len(8)
         - custom: six pin bars over 10 A with the limit line at 9.2 A
       - - Len(1)
         - text:
@@ -91,7 +91,7 @@ view:
               - bold: false
                 role: TextMuted
                 s: pins 12.04–12.07 V
-      - - Len(3)
+      - - Len(5)
         - sparkline:
             gradient: Power
             max: ~
