@@ -111,3 +111,170 @@ fn dense_hides_tab_bar() {
         "tab bar visible in dense mode"
     );
 }
+
+// ---------------------------------------------------------------- D62: wide
+
+/// Matt's Ptyxis size, once `MACHINE.md` records it: the same assertion runs
+/// at it. `None` until then — nobody has measured the real terminal, and a
+/// guessed size would pin nothing (D62 §4).
+const MATT_TERMINAL: Option<(u16, u16)> = None;
+
+/// The rows a tile's frame encloses, found by walking its border from the
+/// title. The shell draws a titled box per placement; the focused tile's is
+/// heavy (`┏ ┓ ┗ ┃`), the others' double (`╔ ╗ ╚ ║`).
+fn tile_inner<'a>(rows: &'a [Vec<char>], title: &str) -> Vec<&'a [char]> {
+    let needle: Vec<char> = title.chars().collect();
+    let (top, tx) = rows
+        .iter()
+        .enumerate()
+        .find_map(|(y, r)| {
+            r.windows(needle.len())
+                .position(|w| w == needle.as_slice())
+                .map(|x| (y, x))
+        })
+        .unwrap_or_else(|| panic!("no tile titled {title:?} in the frame"));
+    let left = rows[top][..tx]
+        .iter()
+        .rposition(|c| *c == '┏' || *c == '╔')
+        .unwrap_or_else(|| panic!("tile {title:?} has no top-left corner"));
+    let right = left
+        + 1
+        + rows[top][left + 1..]
+            .iter()
+            .position(|c| *c == '┓' || *c == '╗')
+            .unwrap_or_else(|| panic!("tile {title:?} has no top-right corner"));
+    let bottom = top
+        + 1
+        + rows[top + 1..]
+            .iter()
+            .position(|r| matches!(r.get(left), Some('┗' | '╚')))
+            .unwrap_or_else(|| panic!("tile {title:?} has no bottom-left corner"));
+    rows[top + 1..bottom]
+        .iter()
+        .map(|r| &r[left + 1..right.min(r.len())])
+        .collect()
+}
+
+/// Three numbers about a tile's inner rect: the fraction of cells that are
+/// non-blank, the fraction of rows that carry anything, and the fraction of
+/// columns that do. The cell fraction is D62's own measure; the row and column
+/// coverage say whether a drawing reached the far side of the rect, which is
+/// what the wide-terminal bug got wrong.
+fn coverage(rows: &[Vec<char>], title: &str) -> (f64, f64, f64) {
+    let inner = tile_inner(rows, title);
+    let w = inner.iter().map(|r| r.len()).max().unwrap_or(0);
+    let total: usize = inner.iter().map(|r| r.len()).sum();
+    assert!(total > 0 && w > 0, "tile {title:?} has an empty inner rect");
+    let filled: usize = inner
+        .iter()
+        .map(|r| r.iter().filter(|c| !c.is_whitespace()).count())
+        .sum();
+    let live_rows = inner
+        .iter()
+        .filter(|r| r.iter().any(|c| !c.is_whitespace()))
+        .count();
+    let live_cols = (0..w)
+        .filter(|x| {
+            inner
+                .iter()
+                .any(|r| r.get(*x).is_some_and(|c| !c.is_whitespace()))
+        })
+        .count();
+    (
+        filled as f64 / total as f64,
+        live_rows as f64 / inner.len() as f64,
+        live_cols as f64 / w as f64,
+    )
+}
+
+fn frame_rows(w: u16, h: u16) -> Vec<Vec<char>> {
+    let frame = gridwatch_app::shot(registry(), 1, w, h, "retrowave", 1, "ansi", None).unwrap();
+    // `ansi` writes SGR sequences between cells; the cells themselves are the
+    // characters left once those are dropped.
+    let mut out = Vec::new();
+    for line in frame.lines() {
+        let mut row = Vec::new();
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for c in chars.by_ref() {
+                    if c.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+                continue;
+            }
+            row.push(c);
+        }
+        out.push(row);
+    }
+    out
+}
+
+/// D62's own report, as a test: at 480x135 the CPU and GPU tiles must fill
+/// their rects, not draw a corner of them. Measured on this tree 2026-09-06,
+/// with the frame before the arc-12 fixes beside it:
+///
+/// | 480x135 | cells | rows lit | cols lit |
+/// |---------|-------|----------|----------|
+/// | CPU before | 0.230 | 0.908 | 0.866 |
+/// | CPU after  | 0.318 | 0.892 | 0.962 |
+/// | GPU before | 0.100 | 0.323 | 1.000 |
+/// | GPU after  | 0.107 | 0.554 | 1.000 |
+///
+/// The cell floors are 0.6x the measured value, as D62 asks; they are collapse
+/// guards, not a re-proof of the fix. The **row** coverage is the number that
+/// tells the two frames apart — the gpu chart band was clamped to eight rows
+/// and left two thirds of the tile untouched — so its floor is 0.8x, which the
+/// pre-fix frame's 0.323 fails. The gpu tile's cell fraction stays low on
+/// purpose: its band is a braille line chart, and a taller band buys
+/// y-resolution rather than ink (see `drawings_grow_with_the_rect`).
+#[test]
+fn a_wide_terminal_fills_its_tiles() {
+    // (title, cell floor, lit-row floor, lit-column floor)
+    let floors = [("CPU", 0.19, 0.71, 0.77), ("GPU", 0.06, 0.44, 0.80)];
+    let mut sizes = vec![(480u16, 135u16)];
+    sizes.extend(MATT_TERMINAL);
+    for (w, h) in sizes {
+        let rows = frame_rows(w, h);
+        for (title, cells, r_floor, c_floor) in floors {
+            let (c, lr, lc) = coverage(&rows, title);
+            assert!(
+                c >= cells && lr >= r_floor && lc >= c_floor,
+                "the {title} tile at {w}x{h} covers {c:.3} of its cells, {lr:.3} of its rows and \
+                 {lc:.3} of its columns (floors {cells}/{r_floor}/{c_floor}) — a drawing stopped \
+                 scaling with its rect (D62, ARCHITECTURE §4.6)"
+            );
+        }
+    }
+}
+
+/// The same tiles at the reference size, so the floors are not a wide-only
+/// accident. Measured 2026-09-06: CPU 0.347/0.939/0.984, GPU 0.291/0.818/1.000
+/// (before the fixes: CPU 0.337/0.939/0.984, GPU 0.271/0.636/1.000).
+#[test]
+fn the_reference_size_fills_its_tiles_too() {
+    let rows = frame_rows(250, 70);
+    for (title, cells, r_floor, c_floor) in [("CPU", 0.20, 0.75, 0.78), ("GPU", 0.17, 0.50, 0.80)] {
+        let (c, lr, lc) = coverage(&rows, title);
+        assert!(
+            c >= cells && lr >= r_floor && lc >= c_floor,
+            "the {title} tile at 250x70 covers {c:.3}/{lr:.3}/{lc:.3}, floors \
+             {cells}/{r_floor}/{c_floor}"
+        );
+    }
+}
+
+/// The numbers the comments above record.
+/// `cargo test -p gridwatch --test smoke -- --ignored measure_coverage`
+#[test]
+#[ignore = "diagnostic; prints the tile coverage the floors are set from"]
+fn measure_coverage() {
+    for (w, h) in [(480u16, 135u16), (250, 70)] {
+        let rows = frame_rows(w, h);
+        for title in ["CPU", "GPU"] {
+            let (c, lr, lc) = coverage(&rows, title);
+            println!("{w}x{h} {title}: cells {c:.3} rows {lr:.3} cols {lc:.3}");
+        }
+    }
+}
