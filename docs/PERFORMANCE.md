@@ -158,9 +158,18 @@ $ cargo bench -p gridwatch-app
 | `store/resample/60` · `/120` · `/240` | a ten-minute window into a chart's buckets | **0.93 µs** · 0.69 · 0.61 |
 | `render/frame/250x70 configured` | the **whole** Overview solved, ticked, viewed, rendered and diffed with nothing cached | **513 µs** |
 | `render/frame/120x40 dense` | the same page in dense mode | **267 µs** |
+| `render/frame/480x135 wide` | the same page on the wide terminal D62 was reported from — 3.7x the cells of 250x70 | **1.02 ms** (2026-09-06, after arc 12; 250x70 re-read 527 µs in the same run) |
 | `theme/load retrowave` | parse + build a theme, WCAG gate included — what every `t` press pays | **26.5 µs** |
 
 What they say about the ceilings above: P19 allows **8 ms p95** for a frame, and a *completely uncached* Overview costs 0.51 ms — which is why the render cache buys what it does, and why the live p50 is 0.04 ms (arc 8a's row: most frames are a blit). `Store::apply` at 2.5 µs means the data path is not the cost of anything; at the Overview's ~40 batches a second it is 0.1 ms of CPU per second. And `resample` costing *less* at more buckets is not a mistake in the table — the work is per point, and the per-bucket aggregation gets cheaper as the buckets get smaller.
+
+**Arc 12 (2026-09-06).** The wide row is not a gate; it is so the next person
+knows what a frame that really fills 480x135 costs. Uncached it is **1.02 ms**
+against P19's 8 ms p95, or 2.0x the 250x70 frame for 3.7x the cells — sublinear
+because the chrome, the layout solve and the fixed-height header blocks do not
+grow with the rect. The 250x70 bench read **527 µs** in the same run against
+the 513 µs recorded on 2026-09-02, which is run-to-run noise plus the arc-12
+drawings now filling columns they used to leave blank.
 
 Re-take them on a machine change and put the new column here rather than overwriting: the point is the comparison.
 

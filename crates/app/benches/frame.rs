@@ -96,8 +96,9 @@ fn resample(c: &mut Criterion) {
     group.finish();
 }
 
-/// One whole frame of the Overview, solved and drawn, at the two sizes the
-/// layout thresholds actually separate.
+/// One whole frame of the Overview, solved and drawn, at the three sizes the
+/// layout thresholds actually separate — including the wide terminal of D62,
+/// so the cost of a frame that really fills 480x135 is on the record.
 ///
 /// This is `shot_frame` — the same path `gridwatch shot` and the determinism
 /// test use — so it includes the layout solve, every visible tile's `tick`,
@@ -110,6 +111,7 @@ fn frame(c: &mut Criterion) {
     for (w, h, what) in [
         (250u16, 70u16, "250x70 configured"),
         (120, 40, "120x40 dense"),
+        (480, 135, "480x135 wide"),
     ] {
         group.bench_function(format!("frame/{what}"), |b| {
             // A fresh shell per iteration would measure `Shell::new`; one
