@@ -165,6 +165,33 @@ fn swap_meter(cx: &RenderCx<'_>) -> View {
     }
 }
 
+/// Memory in use as a fraction of total, over the CPU sparkline's window.
+fn mem_spark(cx: &RenderCx<'_>, buckets: u16) -> View {
+    let mut used = Vec::new();
+    let mut total = Vec::new();
+    let span = Duration::from_nanos(cx.now.0)
+        .min(SPARK_SPAN)
+        .max(Duration::from_secs(1));
+    let n = buckets.max(1) as usize;
+    cx.store
+        .resample(&cpu::MEM_USED_B, span, n, Agg::Avg, &mut used);
+    cx.store
+        .resample(&cpu::MEM_TOTAL_B, span, n, Agg::Last, &mut total);
+    let series = used
+        .iter()
+        .zip(&total)
+        .map(|(u, t)| match (u, t) {
+            (Some(u), Some(t)) if *t > 0.0 => Some((u / t) as f32),
+            _ => None,
+        })
+        .collect();
+    View::Sparkline {
+        series,
+        gradient: GradientId::Load,
+        max: Some(1.0),
+    }
+}
+
 fn spark(cx: &RenderCx<'_>, buckets: u16) -> View {
     let mut out = Vec::new();
     // `cx.now` is time since the run's epoch (§4.1), so this is the run's age.
@@ -513,7 +540,10 @@ fn two_column_panel(cx: &RenderCx<'_>, width: u16, rows: u16) -> (View, Panel) {
     if psi_inside {
         right.push((Constraint::Len(1), psi_line(cx)));
     }
-    right.push((Constraint::Fill(1), View::Empty));
+    // The rows a tall header leaves under the text: a MEM sparkline over the
+    // same window as the CPU one, so the right column scales with the rect
+    // too (D62 §4, arc 12 review — it was `View::Empty`).
+    right.push((Constraint::Fill(1), mem_spark(cx, half)));
     let block = View::Stack {
         dir: Dir::H,
         children: vec![
