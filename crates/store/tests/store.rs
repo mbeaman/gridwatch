@@ -855,9 +855,45 @@ fn an_uncatalogued_domain_is_capped_and_eviction_frees_the_room() {
 /// The sweep runs on **store time**, so a replay shrinks at exactly the same
 /// message the live run did — arc 2a's determinism test compares frame hashes
 /// across two replays, and a wall-clock sweep would make that a coin toss.
+///
+/// The oracle is the **whole surviving inventory**, not two counts: every
+/// label of every key the run touched with the number of points it kept, so
+/// a sweep that evicted a different label — or the same label at a different
+/// message — is a difference rather than a coincidence. This is the arc-11
+/// replay-determinism case (ROADMAP arc 11): the run crosses six sweep
+/// boundaries and the last of them evicts.
 #[test]
 fn the_sweep_is_driven_by_store_time_not_the_wall_clock() {
+    // Two interfaces and a threshold published once for each, so a
+    // per-series rule and a per-label rule would disagree — and so would two
+    // runs, if either depended on the wall clock.
+    let inventory = |store: &Store| -> Vec<(String, usize)> {
+        let all = Duration::from_secs(u32::MAX as u64);
+        let mut out = Vec::new();
+        for name in ["net.rx_bps", "net.speed_mbps"] {
+            for label in store.labels(name).cloned().collect::<Vec<_>>() {
+                let base: Key<f64> = Key::new(name);
+                let key = match &label {
+                    Label::Name(s) => base.named(s),
+                    Label::Index(i) => base.idx(*i),
+                    Label::None => base,
+                };
+                out.push((key.id.to_string(), store.window(&key, all).count()));
+            }
+        }
+        out
+    };
     let feed = |store: &mut Store| {
+        for iface in ["veth9a1", "eno1"] {
+            store.apply(&Msg::Batch(Batch {
+                source: SourceId("net"),
+                at: Ts(0),
+                samples: vec![scalar(
+                    &gridwatch_store::keys::net::SPEED_MBPS.named(&Arc::from(iface)),
+                    2500.0,
+                )],
+            }));
+        }
         for t in 0..300u64 {
             store.apply(&Msg::Batch(Batch {
                 source: SourceId("net"),
@@ -870,21 +906,7 @@ fn the_sweep_is_driven_by_store_time_not_the_wall_clock() {
                 }],
             }));
         }
-        let all = Duration::from_secs(u32::MAX as u64);
-        [
-            store
-                .window(
-                    &gridwatch_store::keys::net::RX_BPS.named(&Arc::from("veth9a1")),
-                    all,
-                )
-                .count(),
-            store
-                .window(
-                    &gridwatch_store::keys::net::RX_BPS.named(&Arc::from("eno1")),
-                    all,
-                )
-                .count(),
-        ]
+        inventory(store)
     };
     let retention = Retention {
         max_len: 2400,
@@ -894,9 +916,14 @@ fn the_sweep_is_driven_by_store_time_not_the_wall_clock() {
     let mut a = Store::new(retention);
     let mut b = Store::new(retention);
     let first = feed(&mut a);
-    assert_eq!(
-        first[0], 0,
-        "the veth's label died and its series went (D61)"
+    assert!(
+        !first.iter().any(|(id, _)| id.contains("veth9a1")),
+        "the veth's label died and every series of it went, the threshold \
+         published once included (D61): {first:?}"
+    );
+    assert!(
+        first.contains(&("net.speed_mbps{eno1}".to_string(), 1)),
+        "the live label keeps its once-published scalar: {first:?}"
     );
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(first, feed(&mut b), "two runs must evict identically");
@@ -1038,6 +1065,162 @@ fn a_scalar_published_once_survives_the_sweep() {
     assert_eq!(store.last(&max).map(|(_, v)| v), Some(100.0));
 }
 
+// ----------------------------------------------------------------- arc 11
+
+/// D61 from the other end: a chip's **thresholds** are published once per
+/// generation and its readings arrive every second, so per-series liveness
+/// would delete the thresholds while the chip is plugged in, and per-label
+/// liveness must delete them when it is unplugged. Both halves, on the same
+/// store.
+///
+/// The k10temp half is why the domain is the key name's prefix and not
+/// `KeyMeta.source` (D61 trap 3): `sensor.temp_c`'s catalogue row says
+/// `sensors`, but when the sensors feature is off the **cpu** source
+/// publishes it (§16) — same name, same `chip:label` vocabulary. A rule that
+/// asked which source a *batch* came from would let an nvme's label be kept
+/// alive by the cpu's, or the reverse.
+#[test]
+fn a_chips_thresholds_live_and_die_with_its_readings() {
+    use gridwatch_store::keys::sensors;
+    let mut store = Store::new(Retention {
+        max_len: 2400,
+        max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
+    });
+    let at = |t: u64| Ts(t * 1_000_000_000);
+    let send = |store: &mut Store, source: SourceId, t: u64, samples: Vec<Sample>| {
+        store.apply(&Msg::Batch(Batch {
+            source,
+            at: at(t),
+            samples,
+        }));
+    };
+    let nvme = Arc::from("nvme:Composite");
+    let tctl = Arc::from("k10temp:Tctl");
+
+    // Once per generation, at t = 0: the nvme's limits from the sensors
+    // source, the k10temp's from the **cpu** source's handover.
+    send(
+        &mut store,
+        sensors::SOURCE,
+        0,
+        vec![
+            scalar(&sensors::MAX_C.named(&nvme), 84.0),
+            scalar(&sensors::CRIT_C.named(&nvme), 88.0),
+        ],
+    );
+    send(
+        &mut store,
+        cpu::SOURCE,
+        0,
+        vec![scalar(&sensors::MAX_C.named(&tctl), 95.0)],
+    );
+    // Both chips report for 200 s — three sweeps past `max_age`.
+    for t in 0..200u64 {
+        send(
+            &mut store,
+            sensors::SOURCE,
+            t,
+            vec![scalar(&sensors::TEMP_C.named(&nvme), 41.0)],
+        );
+        send(
+            &mut store,
+            cpu::SOURCE,
+            t,
+            vec![scalar(&sensors::TEMP_C.named(&tctl), 55.0)],
+        );
+    }
+    assert_eq!(
+        store.last(&sensors::MAX_C.named(&nvme)).map(|(_, v)| v),
+        Some(84.0),
+        "published once 200 s ago, for a chip that is still reporting: kept"
+    );
+    assert_eq!(
+        store.last(&sensors::CRIT_C.named(&nvme)).map(|(_, v)| v),
+        Some(88.0)
+    );
+
+    // The drive is pulled. The k10temp keeps reporting — under the *cpu*
+    // source, which is the point.
+    for t in 200..500u64 {
+        send(
+            &mut store,
+            cpu::SOURCE,
+            t,
+            vec![scalar(&sensors::TEMP_C.named(&tctl), 55.0)],
+        );
+    }
+    assert!(
+        store.last(&sensors::TEMP_C.named(&nvme)).is_none(),
+        "the chip stopped: its readings go"
+    );
+    assert!(
+        store.last(&sensors::MAX_C.named(&nvme)).is_none(),
+        "and so do its thresholds — the label is dead, not the series"
+    );
+    assert!(store.last(&sensors::CRIT_C.named(&nvme)).is_none());
+    assert!(
+        !store
+            .labels("sensor.temp_c")
+            .map(gridwatch_store::rules::label_text)
+            .any(|l| l == "nvme:Composite"),
+        "the sensors tile lists labels, and must not list a drive that is gone"
+    );
+    assert_eq!(
+        store.last(&sensors::MAX_C.named(&tctl)).map(|(_, v)| v),
+        Some(95.0),
+        "a threshold published once at t=0 under `cpu`, kept alive 500 s by \
+         readings of the same *name prefix* — the domain is `sensor`, not the \
+         batch's source and not `KeyMeta.source`'s `sensors`"
+    );
+}
+
+/// The shipped number, not a test-sized one: `Retention::max_uncatalogued` is
+/// **512** series per domain of uncatalogued names, so a plugin publishing a
+/// fresh label per message cannot take 11 GB in the ten minutes before a
+/// sweep (D61). The 513th is refused and counted; nothing is queued.
+///
+/// This allocates 512 rings of `max_len` slots on purpose — ≈ 19 MB, which is
+/// the worst case the default is chosen for.
+#[test]
+fn the_shipped_cap_is_512_series_of_one_uncatalogued_domain() {
+    let retention = Retention::default();
+    assert_eq!(retention.max_uncatalogued, 512, "the shipped default");
+    let mut store = Store::new(retention);
+    let weather = SourceId("weather");
+    let samples: Vec<Sample> = (0..513)
+        .map(|i| Sample {
+            id: MetricId {
+                name: "weather.temp",
+                label: Label::Name(Arc::from(format!("city{i}").as_str())),
+            },
+            datum: Datum::Scalar(20.0),
+        })
+        .collect();
+    store.apply(&Msg::Batch(Batch {
+        source: weather,
+        at: Ts(0),
+        samples,
+    }));
+    assert_eq!(store.labels("weather.temp").count(), 512);
+    assert_eq!(store.capped(weather), 1, "the 513th was refused");
+    // Refused, never queued: sending it again refuses it again rather than
+    // finding room that was silently held for it.
+    store.apply(&Msg::Batch(Batch {
+        source: weather,
+        at: Ts(1_000_000_000),
+        samples: vec![Sample {
+            id: MetricId {
+                name: "weather.temp",
+                label: Label::Name(Arc::from("city512")),
+            },
+            datum: Datum::Scalar(21.0),
+        }],
+    }));
+    assert_eq!(store.labels("weather.temp").count(), 512);
+    assert_eq!(store.capped(weather), 2);
+}
+
 /// The `Rules::states` half of the same leak (arc 7b review): a `*`-labelled
 /// rule accrued one state per label ever seen. States are evictable where
 /// values are not — losing one is not losing data, because a label that comes
@@ -1123,6 +1306,16 @@ for_s = 5"#));
         store.alerts().active().count(),
         1,
         "a raised alert keeps its state through every sweep"
+    );
+    // And the **series** is pinned too, not only the state (D61 trap 4): the
+    // sweep skips a label a rule is raised for, because an `absent` rule
+    // steps from `Series::last_at()` and an evicted series would freeze the
+    // alert at raised for the rest of the run.
+    assert!(
+        store
+            .last(&gridwatch_store::keys::net::RX_BPS.named(&Arc::from("veth1")))
+            .is_some(),
+        "the raised label's series was evicted; the alert can never resolve"
     );
     // And it resolves when the interface comes back — the assertion that
     // fails if `raised_for` is not asked before `forget`.
