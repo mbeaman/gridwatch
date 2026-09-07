@@ -154,3 +154,19 @@ Each arc: implement → adversarial review → fix → report → user approves 
 **Acceptance:** `gridwatch config check` with `[sources.cpu] refres_ms = 1000` exits non-zero and prints the accepted set; with `[sources.weather]` for a configured plugin it exits 0 with a warning; `gridwatch --demo` with the same typo starts and toasts once. A store fed a `net` label that stops arriving holds no series for it after `max_age + sweep_every`, and holds every series for a label that keeps arriving, including its once-published scalars. `gridwatch keys` prints a `labels` column and `docs/KEYS.md` matches. The disjointness test names every component/source pair it checked.
 **Performance gate:** P18's sweep number re-taken and still microseconds per batch on the boundary; no per-`apply` cost for catalogued keys (the cap looks up nothing unless a series is *created* for an uncatalogued name).
 **Risks:** a `Dynamic` key whose label is legitimately quiet for ten minutes and then returns (a Wi-Fi interface that reconnects) is re-created from scratch — its chart starts empty, which is correct and should be said in the CHANGELOG; the plugin cap refusing samples a plugin author expected to land — the toast and the tile note are the whole mitigation.
+
+## Arc 12 — v0.12.0 "the wide terminal"
+*D62, 2026-09-06. Matt's bug report: tiles are mostly empty on a wide or tall terminal. Not the layout engine — three drawing rules inside components derive a size from the rect the wrong way, and a fourth is only a matter of time without a rule. Pulled ahead of arc 11's breadth at Matt's request. Built by an Opus session against `docs/briefs/arc-12.md`; no seam changes.*
+**Goal:** a tile at 480×135 is as full as one at 250×70, and §4.6 says why it must be.
+**Deliverables**
+- [ ] **The sparkline renderer holds.** `ui::renderer::sparkline`: a column with no sample draws the newest sample before it; columns before the first sample stay empty. Every sparkline (htop, gpu, pins, net) is continuous at any width; the span rule is unchanged.
+- [ ] **The core bars fit the block.** `htop::view::geom` takes the largest bar width that fits (no cap of 4) and centres the block, labels included.
+- [ ] **Bands come from the rect.** `Gpu::band_rows`: the remainder above `table_rows` on the grid (floor 4, no ceiling), a third of the height when zoomed; htop's `cores` header quarter loses its ceiling of 8. §8.1 already says so.
+- [ ] **`assert_grows_with_area` in the testkit**, run over every built-in component's listed tiers in `crates/components/tests/components.rs`; anything it catches beyond the three above is fixed the same way or escalated by name.
+- [ ] **The headless case.** A cli test renders `shot --size 480x135` and asserts the non-blank fraction inside the CPU and GPU tiles; a named slot for Matt's real terminal size (`MACHINE.md`, still unknown).
+- [ ] **Snapshots regenerated and read**, not just accepted: the 250×70 CPU tile's sparkline is continuous, the core bars unchanged where they already fit.
+- [ ] **`PERFORMANCE.md`**: the uncached frame at 480×135 measured with the criterion bench beside P19's 513 µs at 250×70 — a number, not a new gate.
+- [ ] **CHANGELOG** entry, `PLAN.md` status, the arc-end adversarial review (`docs/REVIEW.md`), confirmed findings fixed.
+**Acceptance:** `gridwatch shot --size 480x135` shows a CPU tile whose sparkline has no interior gaps, whose core bars span each CCD half, and a GPU tile whose chart band is taller than 8 rows; the growth sweep passes for every listed tier; the 250×70 snapshots differ only where a gap closed.
+**Performance gate:** P19 unchanged at 250×70; the 480×135 frame number recorded.
+**Risks:** a held sparkline hides a *stale* source's flat tail — the `STALE` badge (arc 3b) is the signal for that and stays; a centred core block moves the id labels, which the PARITY row for htop's per-core layout must still accept.
