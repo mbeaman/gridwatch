@@ -111,13 +111,25 @@ fn rates(n: &Net, cx: &RenderCx<'_>) -> View {
     }
 }
 
-/// A sparkline of one key over the last minutes.
+/// The window a rate sparkline covers, at most.
+const SPARK_SPAN: Duration = Duration::from_secs(120);
+
+/// A sparkline of one key over the last minutes. The window is the run's age
+/// capped at `SPARK_SPAN`, the way htop's, gpu's and pins' sparklines already
+/// take it (D62 §1 — "the run's age capped at the component's span"): with a
+/// fixed span, a run younger than two minutes has no samples for the buckets
+/// it has not lived through, and since the renderer now holds a sample across
+/// an empty column those buckets would draw a plateau of a rate nobody
+/// measured.
 fn spark(cx: &RenderCx<'_>, key: &gridwatch_store::Key<f64>, iface: &str) -> View {
     let mut buf = Vec::new();
     let buckets = usize::from(cx.inner.width).max(2);
+    let span = Duration::from_nanos(cx.now.0)
+        .min(SPARK_SPAN)
+        .max(Duration::from_secs(1));
     cx.store.resample(
         &key.named(&std::sync::Arc::from(iface)),
-        Duration::from_secs(120),
+        span,
         buckets,
         Agg::Max,
         &mut buf,
