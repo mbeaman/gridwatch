@@ -655,6 +655,8 @@ fn a_mistyped_source_option_is_named_with_the_set_it_should_have_been_in() {
 /// A feature compiled out and a typo look the same from here, so the message
 /// says what this build has (D61).
 #[test]
+// The shipped `[sources.cpu]` must resolve, or it is a second failure.
+#[cfg(feature = "cpu")]
 fn an_unknown_source_id_lists_what_this_build_registered() {
     let sh = shell_with_config(&format!("{}\n[sources.cpus]\n", config::DEFAULT_CONFIG));
     let w = sh.source_warnings();
@@ -674,6 +676,8 @@ fn an_unknown_source_id_lists_what_this_build_registered() {
 /// `attach_plugins`, so both states are pinned: without the re-check there,
 /// a configured plugin's table would read as "no such source in this build".
 #[test]
+// As above: the count is exact, so the default config must check clean.
+#[cfg(feature = "cpu")]
 fn a_plugin_source_table_warns_and_never_fails() {
     let mut sh = shell_with_config(&format!(
         "{}\n[sources.weather]\nunits = \"c\"\n",
