@@ -793,6 +793,52 @@ fn a_static_key_never_loses_a_quiet_label() {
 /// that would create one series more than the domain may hold — until the
 /// sweep gives the room back. `capped` counts what was refused and is never
 /// reset. A `Label::None` series is bounded by the name cap and is kept.
+/// Trap 3 (D61): liveness is per `(domain, label)`, and the domain is the
+/// name's prefix before the first `.` — not the batch's source and not
+/// `KeyMeta.source`. Every catalogued pair agrees on all three, so only an
+/// uncatalogued name can tell them apart: a plugin's `weather.temp{eno1}`
+/// goes quiet while `net.rx_bps{eno1}` keeps arriving under the *same label
+/// text*. A rule keyed on the label alone would keep the plugin's series
+/// alive off the back of the interface's traffic (arc 11 review).
+#[test]
+fn a_label_that_is_alive_in_one_domain_does_not_keep_another_alive() {
+    let mut store = Store::new(Retention {
+        max_len: 64,
+        max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
+    });
+    let iface: Arc<str> = Arc::from("eno1");
+    let weather: Key<f64> = Key::new("weather.temp");
+    // Both domains carry the label at t = 0.
+    store.apply(&Msg::Batch(Batch {
+        source: SourceId("weather"),
+        at: Ts(0),
+        samples: vec![scalar(&weather.named(&iface), 21.0)],
+    }));
+    // Only `net` keeps publishing it, for well past `max_age`.
+    for t in 0..200u64 {
+        store.apply(&Msg::Batch(Batch {
+            source: SourceId("net"),
+            at: Ts(t * 1_000_000_000),
+            samples: vec![scalar(
+                &gridwatch_store::keys::net::RX_BPS.named(&iface),
+                1000.0,
+            )],
+        }));
+    }
+    assert!(
+        store
+            .last(&gridwatch_store::keys::net::RX_BPS.named(&iface))
+            .is_some(),
+        "the live interface must survive its own traffic"
+    );
+    assert!(
+        store.last(&weather.named(&iface)).is_none(),
+        "`weather.temp{{eno1}}` went quiet at t=0 and must be evicted — it is only \
+         still here if liveness is keyed on the label without its domain"
+    );
+}
+
 #[test]
 fn an_uncatalogued_domain_is_capped_and_eviction_frees_the_room() {
     let mut store = Store::new(Retention {
@@ -1024,6 +1070,7 @@ fn the_retention_sweep_stays_inside_the_batch_budget() {
 /// 38 KB allocation dwarf everything the cap does, and the question is what
 /// the cap costs, not what the allocator does.
 #[test]
+#[ignore = "diagnostic; the PERFORMANCE row is taken with --release"]
 fn the_cap_costs_a_catalogue_miss_on_a_new_series_and_nothing_after() {
     let retention = Retention {
         max_len: 16,

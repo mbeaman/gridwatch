@@ -771,7 +771,7 @@ fn config_check_builds_every_component() {
     assert!(text.contains("cpu — refresh_ms = 1500"), "{text}");
 }
 
-/// C.32 (arc 11, D61) — `config check` validates `[sources.<id>]` against
+/// C.33 (arc 11, D61) — `config check` validates `[sources.<id>]` against
 /// `SourceDef.options`. A mistyped key there was read by nobody and reported
 /// by nobody: `refres_ms = 1000` left the cpu source on its default cadence
 /// and said nothing. Three cases end to end, because the check has to be
