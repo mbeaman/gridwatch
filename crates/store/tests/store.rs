@@ -1015,6 +1015,87 @@ fn the_retention_sweep_stays_inside_the_batch_budget() {
     assert_eq!(store.labels("sensor.temp_c").count(), 400);
 }
 
+/// D61's cap is the only thing `Store::apply` gained, and it lives in the
+/// `Entry::Vacant` arm — so it is paid when a series is **created** and never
+/// on a push to one that exists. This measures all three paths so nobody has
+/// to wonder (ROADMAP arc 11's performance gate).
+///
+/// `max_len` is 16 here on purpose: the shipped 2 400 makes `Ring::new`'s
+/// 38 KB allocation dwarf everything the cap does, and the question is what
+/// the cap costs, not what the allocator does.
+#[test]
+fn the_cap_costs_a_catalogue_miss_on_a_new_series_and_nothing_after() {
+    let retention = Retention {
+        max_len: 16,
+        max_age: Duration::from_secs(600),
+        max_uncatalogued: 100_000,
+    };
+    let n = 2_000usize;
+    let plugin: Vec<Sample> = (0..n)
+        .map(|i| Sample {
+            id: MetricId {
+                name: "weather.temp",
+                label: Label::Name(Arc::from(format!("city{i}").as_str())),
+            },
+            datum: Datum::Scalar(20.0),
+        })
+        .collect();
+    let catalogued: Vec<Sample> = (0..n)
+        .map(|i| {
+            scalar(
+                &gridwatch_store::keys::sensors::TEMP_C
+                    .named(&Arc::from(format!("chip{i}:Sensor").as_str())),
+                60.0,
+            )
+        })
+        .collect();
+    let feed = |store: &mut Store, samples: &[Sample], at: u64| {
+        let t0 = std::time::Instant::now();
+        store.apply(&Msg::Batch(Batch {
+            source: SourceId("weather"),
+            at: Ts(at),
+            samples: samples.to_vec(),
+        }));
+        t0.elapsed() / n as u32
+    };
+    let mut a = Store::new(retention);
+    let create_uncatalogued = feed(&mut a, &plugin, 0);
+    // The same samples again: every series exists, so the `Vacant` arm — and
+    // with it the whole cap — is never reached.
+    let push_existing = feed(&mut a, &plugin, 1_000_000_000);
+    let mut b = Store::new(retention);
+    let create_catalogued = feed(&mut b, &catalogued, 0);
+
+    // The miss on its own: `key::lookup` walks the catalogue and an
+    // uncatalogued name never short-circuits, which is the cap's real cost —
+    // not the `HashMap` increment the design note guessed at.
+    let t0 = std::time::Instant::now();
+    let mut hits = 0usize;
+    for _ in 0..n {
+        if gridwatch_store::key::lookup("weather.temp").is_some() {
+            hits += 1;
+        }
+    }
+    let miss = t0.elapsed() / n as u32;
+    assert_eq!(hits, 0);
+
+    println!(
+        "cap: new uncatalogued series {create_uncatalogued:?} each, new catalogued series \
+         {create_catalogued:?}, push to an existing series {push_existing:?}; the catalogue \
+         miss alone is {miss:?}"
+    );
+    assert!(
+        push_existing < create_uncatalogued,
+        "the cap must cost nothing once the series exists: {push_existing:?} against \
+         {create_uncatalogued:?}"
+    );
+    assert!(
+        create_uncatalogued.saturating_sub(create_catalogued) < Duration::from_micros(5),
+        "the uncatalogued path costs {:?} more than the catalogued one",
+        create_uncatalogued.saturating_sub(create_catalogued)
+    );
+}
+
 /// Arc 10 review — the sweep must not delete a value that is only ever
 /// published once. D60 amendment 7 spared `Record` series because
 /// `sensor.info` is published once, and then swept scalars — two of which
