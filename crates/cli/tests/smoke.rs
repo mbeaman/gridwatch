@@ -139,18 +139,26 @@ fn tile_inner<'a>(rows: &'a [Vec<char>], title: &str) -> Vec<&'a [char]> {
                 .map(|x| (y, x - 1))
         })
         .unwrap_or_else(|| panic!("no tile titled {title:?} in the frame"));
+    // In dense mode neighbouring tiles share border cells, so this tile's
+    // top-right corner may have been overdrawn by the next tile's top-left
+    // and its bottom-left by the tile below's top-left: the right edge is the
+    // first corner or junction glyph after the title, and the bottom edge is
+    // the first row where the left border stops being a vertical bar (arc 12
+    // review — a 120×40 frame panicked or measured six tiles as one).
+    let is_corner = |c: char| "┓╗┏╔┳╦┬╤┼╬┤╡┫╣".contains(c);
+    let is_vertical = |c: char| matches!(c, '┃' | '║' | '│');
     let right = left
         + 1
         + rows[top][left + 1..]
             .iter()
-            .position(|c| *c == '┓' || *c == '╗')
+            .position(|c| is_corner(*c))
             .unwrap_or_else(|| panic!("tile {title:?} has no top-right corner"));
     let bottom = top
         + 1
         + rows[top + 1..]
             .iter()
-            .position(|r| matches!(r.get(left), Some('┗' | '╚')))
-            .unwrap_or_else(|| panic!("tile {title:?} has no bottom-left corner"));
+            .position(|r| !r.get(left).is_some_and(|c| is_vertical(*c)))
+            .unwrap_or_else(|| panic!("tile {title:?} has no bottom edge"));
     rows[top + 1..bottom]
         .iter()
         .map(|r| &r[left + 1..right.min(r.len())])
@@ -248,6 +256,25 @@ fn a_wide_terminal_fills_its_tiles() {
                  scaling with its rect (D62, ARCHITECTURE §4.6)"
             );
         }
+    }
+}
+
+/// Dense mode shares border cells between neighbours, so the finder must not
+/// need a tile's own four corners (arc 12 review: it panicked on the GPU tile
+/// at 120×40 and measured six tiles as one for the CPU tile). At 120×40 the
+/// 6x3 inner rect is 59×18 (§8.1), 59×19 on the grid's top row, and one cell
+/// narrower where the shared border is the neighbour's.
+#[test]
+fn the_tile_finder_survives_shared_borders() {
+    let rows = frame_rows(120, 40);
+    for title in ["CPU", "GPU"] {
+        let inner = tile_inner(&rows, title);
+        let w = inner.iter().map(|r| r.len()).max().unwrap_or(0);
+        assert!(
+            (18..=19).contains(&inner.len()) && (58..=59).contains(&w),
+            "the {title} tile at 120x40 measures {w}x{} inner, expected 58–59 × 18–19",
+            inner.len()
+        );
     }
 }
 

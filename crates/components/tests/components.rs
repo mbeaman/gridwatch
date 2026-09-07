@@ -145,21 +145,28 @@ fn view_snapshots_at_real_grid_sizes() {
 /// bug needed: `assert_renders_everywhere` sweeps only to `max(tier min) + 4`
 /// and never reaches 480x135.
 ///
-/// Measured on `demo_store(42, 40)` at the reference theme, 2026-09-06. The
+/// Measured on `demo_store(42, 40)` at the reference theme, 2026-09-06, and
+/// re-measured after the arc's review (the htop header's MEM sparkline, the
+/// stretched power trace and the pins rows that grow moved four numbers). The
 /// axes listed below are asserted; the axes measured and *not* asserted are
 /// recorded here with their numbers, because in each case the drawing does
 /// take its size from the rect and the cell count is the wrong oracle for it:
 ///
-/// - `gpu` `charts` height 436 -> 495 (1.14x). The band grows 4 -> 16 rows,
+/// - `gpu` `charts` height 448 -> 507 (1.13x). The band grows 4 -> 16 rows,
 ///   but a braille *line* mark lights about one cell per column per series
 ///   however tall the band is: a taller band buys y-resolution, not cells.
+///   The zoom-only `full` tier has the same shape for the same reason
+///   (1259 -> 1410 at 100x24 -> 100x48: five demo processes fill five rows of
+///   a 35-row table); its zoomed band rule is pinned by the row-budget test
+///   in `gpu.rs` instead.
 /// - `audio` `spectrum` width 96 -> 132 (1.38x). The bar count does come from
 ///   the rect (13 groups at 40 cells, 27 at 80), but the demo's quiet bands
 ///   contribute only their one-row `▔` peak cap each.
-/// - `sensors` `chart` width 378 -> 562 (1.49x). The chart's cells do double;
+/// - `sensors` `chart` width 378 -> 561 (1.48x). The chart's cells do double;
 ///   the tier's other half at its 60x14 minimum is a fixed-width text table.
-/// - `pins` `trend` height 407 -> 441 (1.08x) and `winamp` `main+art` height
-///   338 -> 394 (1.17x): both tiers are `Len`-constrained rows, not bands.
+/// - `winamp` `main+art` height 338 -> 394 (1.17x): a skin of `Len` rows.
+///   (`pins` `trend` height was 1.08x for the same reason until the review
+///   made its bar band and sparkline grow; it is 1.53x and asserted now.)
 /// - `net` `table` 108 -> 119 (1.10x) wide, 108 -> 108 tall: the tier holds a
 ///   text table and a footer, no `Fill` drawing at all.
 #[test]
@@ -185,7 +192,7 @@ fn drawings_grow_with_the_rect() {
         &|| pins(),
         &store,
         &th,
-        &[Growth::new(pins_trend, true, false)],
+        &[Growth::new(pins_trend, true, true)],
     );
     assert_grows_with_area(
         &|| net(),
