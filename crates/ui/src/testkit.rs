@@ -75,13 +75,28 @@ pub fn render_component(
     size: Size,
     zoomed: bool,
 ) -> (usize, Buffer) {
+    render_component_view(c, store, th, size, zoomed, None)
+}
+
+/// `render_component` with the shell's `view = "<tier>"` preference (§4.6), so
+/// a test can pin the tier a rect lands on instead of taking the richest that
+/// fits. `pick_tier` ignores the preference when `zoomed`, so a caller that
+/// depends on the tier must check the index it gets back.
+pub fn render_component_view(
+    c: &mut dyn Component,
+    store: &Store,
+    th: &Theme,
+    size: Size,
+    zoomed: bool,
+    view: Option<&str>,
+) -> (usize, Buffer) {
     let inner = Rect {
         x: 0,
         y: 0,
         width: size.w,
         height: size.h,
     };
-    let (tier, fallback) = pick_tier(c.tiers(), size, zoomed, None);
+    let (tier, fallback) = pick_tier(c.tiers(), size, zoomed, view);
     tick(c, store, tier);
     let cx = crate::component::RenderCx {
         inner,
@@ -282,6 +297,103 @@ pub fn assert_renders_everywhere(
                     size.h
                 );
             }
+        }
+    }
+}
+
+/// One tier's entry in the growth sweep (D62 §4).
+#[derive(Clone, Copy, Debug)]
+pub struct Growth {
+    /// Index into the component's `tiers()`.
+    pub tier: usize,
+    /// Doubling the width must draw at least 1.5× the cells.
+    pub width: bool,
+    /// Doubling the height must too.
+    pub height: bool,
+}
+
+impl Growth {
+    pub const fn new(tier: usize, width: bool, height: bool) -> Self {
+        Self {
+            tier,
+            width,
+            height,
+        }
+    }
+}
+
+/// The ratio a doubled axis must reach. A ratio rather than a factor of two
+/// because the gaps between bars, a legend row and a header line are
+/// legitimately constant (D62 §4).
+const GROWTH_RATIO: f64 = 1.5;
+
+fn non_blank(buf: &Buffer) -> usize {
+    let area = *buf.area();
+    (0..area.width)
+        .flat_map(|x| (0..area.height).map(move |y| (x, y)))
+        .filter(|(x, y)| {
+            buf.cell((area.x + *x, area.y + *y))
+                .is_some_and(|c| !c.symbol().trim().is_empty())
+        })
+        .count()
+}
+
+/// D62 §4: a drawing inside a `Fill` band scales with its rect. For each
+/// listed tier, render at the tier's `min`, then at double the width (and, if
+/// listed, double the height) and assert the buffer carries at least
+/// `GROWTH_RATIO` × the non-blank cells. The doubled rect is rendered with the
+/// tier pinned as a `view` preference so a bigger rect cannot silently step up
+/// a tier and measure something else; the tier index is asserted, because
+/// `pick_tier` ignores the preference when zoomed.
+pub fn assert_grows_with_area(
+    mk: &dyn Fn() -> Box<dyn Component>,
+    data: &Store,
+    th: &Theme,
+    growth: &[Growth],
+) {
+    let probe = mk();
+    let tiers: Vec<(String, Size, bool)> = probe
+        .tiers()
+        .iter()
+        .map(|t| (t.name.to_string(), t.min, t.zoom_only))
+        .collect();
+    drop(probe);
+    for g in growth {
+        let (name, min, zoom_only) = &tiers[g.tier];
+        let zoomed = *zoom_only;
+        let render = |size: Size, what: &str| -> usize {
+            let mut c = mk();
+            let (tier, buf) =
+                render_component_view(c.as_mut(), data, th, size, zoomed, Some(name.as_str()));
+            assert_eq!(
+                tier, g.tier,
+                "the {what} rect {}x{} landed on tier `{}`, not `{name}` — the growth sweep would \
+                 measure the wrong tier",
+                size.w, size.h, tiers[tier].0
+            );
+            non_blank(&buf)
+        };
+        let base = render(*min, "base");
+        assert!(base > 0, "tier `{name}` draws nothing at its own minimum");
+        for (axis, doubled) in [
+            (g.width, Size::new(min.w * 2, min.h)),
+            (g.height, Size::new(min.w, min.h * 2)),
+        ]
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, (on, s))| on.then_some((if i == 0 { "width" } else { "height" }, s)))
+        {
+            let grown = render(doubled, axis);
+            assert!(
+                grown as f64 >= base as f64 * GROWTH_RATIO,
+                "tier `{name}` does not fill a bigger rect: {base} cells at {}x{}, {grown} at \
+                 {}x{} — double the {axis} must draw at least {GROWTH_RATIO}x (D62 §4, \
+                 ARCHITECTURE §4.6)",
+                min.w,
+                min.h,
+                doubled.w,
+                doubled.h
+            );
         }
     }
 }

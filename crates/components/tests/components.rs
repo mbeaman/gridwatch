@@ -3,8 +3,9 @@
 use gridwatch_components::htop::{Htop, OPTION_NAMES, Options};
 use gridwatch_ui::component::{Component, Size, pick_tier};
 use gridwatch_ui::testkit::{
-    assert_min_tier_fits, assert_renders_everywhere, assert_tiers_well_formed, demo_store,
-    real_grid_sizes, render_component, theme, view_of, view_snapshot,
+    Growth, assert_grows_with_area, assert_min_tier_fits, assert_renders_everywhere,
+    assert_tiers_well_formed, demo_store, real_grid_sizes, render_component, theme, view_of,
+    view_snapshot,
 };
 
 fn clock() -> Box<dyn Component> {
@@ -133,6 +134,124 @@ fn view_snapshots_at_real_grid_sizes() {
         insta::assert_yaml_snapshot!(
             format!("winamp_{name}"),
             view_snapshot(wa.as_mut(), &history, &th, size)
+        );
+    }
+}
+
+/// D62 §4 (ARCHITECTURE §4.6): a drawing inside a `Fill` band scales with its
+/// rect. Doubling an axis must draw at least 1.5x the non-blank cells — a
+/// ratio and not a factor of two, because a tier's header lines, legend and
+/// gaps are legitimately constant. This is the instrument the wide-terminal
+/// bug needed: `assert_renders_everywhere` sweeps only to `max(tier min) + 4`
+/// and never reaches 480x135.
+///
+/// Measured on `demo_store(42, 40)` at the reference theme, 2026-09-06. The
+/// axes listed below are asserted; the axes measured and *not* asserted are
+/// recorded here with their numbers, because in each case the drawing does
+/// take its size from the rect and the cell count is the wrong oracle for it:
+///
+/// - `gpu` `charts` height 436 -> 495 (1.14x). The band grows 4 -> 16 rows,
+///   but a braille *line* mark lights about one cell per column per series
+///   however tall the band is: a taller band buys y-resolution, not cells.
+/// - `audio` `spectrum` width 96 -> 132 (1.38x). The bar count does come from
+///   the rect (13 groups at 40 cells, 27 at 80), but the demo's quiet bands
+///   contribute only their one-row `▔` peak cap each.
+/// - `sensors` `chart` width 378 -> 562 (1.49x). The chart's cells do double;
+///   the tier's other half at its 60x14 minimum is a fixed-width text table.
+/// - `pins` `trend` height 407 -> 441 (1.08x) and `winamp` `main+art` height
+///   338 -> 394 (1.17x): both tiers are `Len`-constrained rows, not bands.
+/// - `net` `table` 108 -> 119 (1.10x) wide, 108 -> 108 tall: the tier holds a
+///   text table and a footer, no `Fill` drawing at all.
+#[test]
+fn drawings_grow_with_the_rect() {
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    // Tier indices, poorest first, from each component's `TIERS`.
+    let (htop_cores, gpu_charts, pins_trend) = (3usize, 3usize, 3usize);
+    let (net_sparks, audio_spectrum, sensors_chart) = (1usize, 3usize, 3usize);
+    assert_grows_with_area(
+        &|| htop(),
+        &store,
+        &th,
+        &[Growth::new(htop_cores, true, true)],
+    );
+    assert_grows_with_area(
+        &|| gpu(),
+        &store,
+        &th,
+        &[Growth::new(gpu_charts, true, false)],
+    );
+    assert_grows_with_area(
+        &|| pins(),
+        &store,
+        &th,
+        &[Growth::new(pins_trend, true, false)],
+    );
+    assert_grows_with_area(
+        &|| net(),
+        &store,
+        &th,
+        &[Growth::new(net_sparks, true, true)],
+    );
+    assert_grows_with_area(
+        &|| audio(),
+        &store,
+        &th,
+        &[Growth::new(audio_spectrum, false, true)],
+    );
+    assert_grows_with_area(
+        &|| sensors(),
+        &store,
+        &th,
+        &[Growth::new(sensors_chart, false, true)],
+    );
+}
+
+/// The numbers the comment on `drawings_grow_with_the_rect` records, printed
+/// for whoever adds the next tier or argues with an exclusion.
+/// `cargo test -p gridwatch-components --test components -- --ignored growth_ratios`
+#[test]
+#[ignore = "diagnostic; prints the growth ratios the sweep is calibrated against"]
+fn growth_ratios() {
+    use gridwatch_ui::testkit::render_component_view;
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    let nb = |buf: &ratatui_core::buffer::Buffer| -> usize {
+        buf.content()
+            .iter()
+            .filter(|c| !c.symbol().trim().is_empty())
+            .count()
+    };
+    type Mk = fn() -> Box<dyn Component>;
+    let cands: [(&str, Mk, usize); 8] = [
+        ("htop", htop, 3),
+        ("gpu", gpu, 3),
+        ("pins", pins, 3),
+        ("net", net, 1),
+        ("net", net, 2),
+        ("audio", audio, 3),
+        ("sensors", sensors, 3),
+        ("winamp", winamp, 3),
+    ];
+    for (name, mk, ti) in cands {
+        let t = mk().tiers()[ti];
+        let (min, z) = (t.min, t.zoom_only);
+        let one = |sz: Size| {
+            let (_, buf) = render_component_view(mk().as_mut(), &store, &th, sz, z, Some(t.name));
+            nb(&buf)
+        };
+        let base = one(min);
+        let (w, h) = (
+            one(Size::new(min.w * 2, min.h)),
+            one(Size::new(min.w, min.h * 2)),
+        );
+        println!(
+            "{name}/{} min {}x{}: base {base} · width {w} ({:.2}x) · height {h} ({:.2}x)",
+            t.name,
+            min.w,
+            min.h,
+            w as f64 / base as f64,
+            h as f64 / base as f64
         );
     }
 }
