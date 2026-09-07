@@ -1,6 +1,5 @@
 ---
 source: crates/components/tests/components.rs
-assertion_line: 117
 expression: "view_snapshot(se.as_mut(), &history, &th, size)"
 ---
 size: 248x66
@@ -98,7 +97,7 @@ view:
         - text:
             - - bold: false
                 role: TextMuted
-                s: "chart · 5 min · "
+                s: "chart · 1 min · "
               - bold: false
                 role: Text
                 s: "spd5118:temp1"

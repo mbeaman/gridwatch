@@ -291,17 +291,35 @@ fn table_tier(s: &Sensors, cx: &RenderCx<'_>, footer: Option<Line>) -> View {
 
 /// The four hottest readings over ten minutes (five when the run is
 /// younger), as a braille chart.
+/// The chart's window: the run's age, capped at five minutes (ten once the run
+/// has passed ten). The cap alone is not enough — with a fixed five minutes a
+/// one-minute-old run has no samples for four fifths of its buckets, and the
+/// chart stops a fifth of the way across its rect. D62 §1's span rule is "the
+/// run's age capped at the component's span", which is what htop, gpu and pins
+/// already ask for.
+fn chart_span(cx: &RenderCx<'_>) -> std::time::Duration {
+    let cap = if cx.now.as_secs_f64() < 600.0 {
+        300
+    } else {
+        600
+    };
+    std::time::Duration::from_nanos(cx.now.0)
+        .min(std::time::Duration::from_secs(cap))
+        .max(std::time::Duration::from_secs(1))
+}
+
+/// The window in whole minutes, for the legend — never zero, so a young run
+/// reads `1 min` rather than claiming five.
+fn chart_span_min(cx: &RenderCx<'_>) -> u64 {
+    (chart_span(cx).as_secs() / 60).max(1)
+}
+
 fn chart_view(s: &Sensors, cx: &RenderCx<'_>) -> View {
     let m = s.model();
     let mut picks: Vec<&Reading> = m.temps.iter().collect();
     picks.sort_by(|a, b| super::hottest_first(a, b));
     picks.truncate(4);
-    let age = cx.now.as_secs_f64();
-    let span = if age < 600.0 {
-        std::time::Duration::from_secs(300)
-    } else {
-        std::time::Duration::from_secs(600)
-    };
+    let span = chart_span(cx);
     let buckets = usize::from(cx.inner.width).max(2) * 2;
     let mut series = Vec::with_capacity(picks.len());
     let mut lo = f64::MAX;
@@ -365,7 +383,7 @@ fn chart_tier(s: &Sensors, cx: &RenderCx<'_>) -> View {
     if s.model().temps.is_empty() {
         return empty(cx);
     }
-    let span_min = if cx.now.as_secs_f64() < 600.0 { 5 } else { 10 };
+    let span_min = chart_span_min(cx);
     View::Stack {
         dir: Dir::V,
         children: vec![
