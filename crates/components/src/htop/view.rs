@@ -665,9 +665,10 @@ fn cores(cx: &RenderCx<'_>) -> View {
     let w = cx.inner.width;
     let h = cx.inner.height;
     // The header takes a quarter of a tall tile (its sparkline grows with it);
-    // everything else is the bar chart, whose height is its resolution.
+    // everything else is the bar chart, whose height is its resolution. The
+    // quarter has a floor and no ceiling (D62 §3).
     let (panel, p) = if w >= TWO_COLUMN_W {
-        two_column_panel(cx, w, (h / 4).clamp(2, 8))
+        two_column_panel(cx, w, (h / 4).max(2))
     } else {
         one_column_panel(cx)
     };

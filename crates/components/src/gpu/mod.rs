@@ -139,9 +139,10 @@ pub const TIER_FULL: usize = 5;
 
 /// Rows nvtop's header occupies inside the richer tiers (§8.1 `rows_above`).
 pub const HEADER_ROWS: u16 = 8;
-/// The chart band's bounds (§8.1): `clamp(inner.height − 8 − 1 − table_rows, 4, 8)`.
+/// The chart band's floor (§8.1, D62): the band takes every row the header and
+/// the table leave, and never fewer than this. There is no ceiling — a
+/// constant may floor a drawing, never cap it (§4.6).
 pub const BAND_MIN: u16 = 4;
-pub const BAND_MAX: u16 = 8;
 /// nvtop's `encode_decode_hiding_timer`: 30 s.
 pub const ENCDEC_HIDE_AFTER: Duration = Duration::from_secs(30);
 /// nvtop's ring buffer: ten minutes.
@@ -352,23 +353,27 @@ impl Gpu {
         }
     }
 
-    /// The chart band's height for an inner height (§8.1) — the table tiers
-    /// take what remains above `table_rows`, between 4 and 8 rows.
-    pub fn band_rows(&self, tier: usize, inner_height: u16) -> u16 {
+    /// The chart band's height for an inner height (§8.1, D62): below the
+    /// table tiers everything the header leaves; at a table tier on the grid
+    /// what remains above `table_rows`; zoomed — where the table is the point
+    /// — a third of the body, the table taking the rest. `BAND_MIN` floors
+    /// all three and nothing caps them, so the band grows with the terminal.
+    pub fn band_rows(&self, tier: usize, inner_height: u16, zoomed: bool) -> u16 {
         if tier < TIER_PROCS {
-            return inner_height
-                .saturating_sub(HEADER_ROWS)
-                .clamp(BAND_MIN, BAND_MAX);
+            return inner_height.saturating_sub(HEADER_ROWS).max(BAND_MIN);
+        }
+        if zoomed {
+            return (inner_height / 3).max(BAND_MIN);
         }
         inner_height
             .saturating_sub(HEADER_ROWS + 1 + self.options.table_rows)
-            .clamp(BAND_MIN, BAND_MAX)
+            .max(BAND_MIN)
     }
 
     /// Body rows the table shows (§8.1 row budget): `min(table_rows,
     /// available)` on the grid, everything when zoomed.
     pub fn body_rows(&self, tier: usize, inner_height: u16, zoomed: bool) -> usize {
-        let band = self.band_rows(tier, inner_height);
+        let band = self.band_rows(tier, inner_height, zoomed);
         let available = usize::from(inner_height.saturating_sub(HEADER_ROWS + band + 1));
         if zoomed {
             // The zoom-only `full` tier keeps one row for the Power sub-panel.

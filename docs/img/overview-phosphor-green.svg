@@ -20,19 +20,7 @@
 <rect x="0" y="240" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="256" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="272" width="2000" height="16" fill="#0a0f0a"/>
-<rect x="0" y="288" width="1016" height="16" fill="#0a0f0a"/>
-<rect x="1016" y="288" width="56" height="16" fill="#b6ffc9"/>
-<rect x="1072" y="288" width="8" height="16" fill="#0a0f0a"/>
-<rect x="1080" y="288" width="64" height="16" fill="#b6ffc9"/>
-<rect x="1144" y="288" width="8" height="16" fill="#0a0f0a"/>
-<rect x="1152" y="288" width="32" height="16" fill="#b6ffc9"/>
-<rect x="1184" y="288" width="8" height="16" fill="#0a0f0a"/>
-<rect x="1192" y="288" width="168" height="16" fill="#b6ffc9"/>
-<rect x="1360" y="288" width="8" height="16" fill="#0a0f0a"/>
-<rect x="1368" y="288" width="72" height="16" fill="#b6ffc9"/>
-<rect x="1440" y="288" width="8" height="16" fill="#0a0f0a"/>
-<rect x="1448" y="288" width="544" height="16" fill="#b6ffc9"/>
-<rect x="1992" y="288" width="8" height="16" fill="#0a0f0a"/>
+<rect x="0" y="288" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="304" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="320" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="336" width="2000" height="16" fill="#0a0f0a"/>
@@ -52,7 +40,19 @@
 <rect x="280" y="384" width="64" height="16" fill="#b6ffc9"/>
 <rect x="344" y="384" width="8" height="16" fill="#0a0f0a"/>
 <rect x="352" y="384" width="640" height="16" fill="#b6ffc9"/>
-<rect x="992" y="384" width="1008" height="16" fill="#0a0f0a"/>
+<rect x="992" y="384" width="24" height="16" fill="#0a0f0a"/>
+<rect x="1016" y="384" width="56" height="16" fill="#b6ffc9"/>
+<rect x="1072" y="384" width="8" height="16" fill="#0a0f0a"/>
+<rect x="1080" y="384" width="64" height="16" fill="#b6ffc9"/>
+<rect x="1144" y="384" width="8" height="16" fill="#0a0f0a"/>
+<rect x="1152" y="384" width="32" height="16" fill="#b6ffc9"/>
+<rect x="1184" y="384" width="8" height="16" fill="#0a0f0a"/>
+<rect x="1192" y="384" width="168" height="16" fill="#b6ffc9"/>
+<rect x="1360" y="384" width="8" height="16" fill="#0a0f0a"/>
+<rect x="1368" y="384" width="72" height="16" fill="#b6ffc9"/>
+<rect x="1440" y="384" width="8" height="16" fill="#0a0f0a"/>
+<rect x="1448" y="384" width="544" height="16" fill="#b6ffc9"/>
+<rect x="1992" y="384" width="8" height="16" fill="#0a0f0a"/>
 <rect x="0" y="400" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="416" width="2000" height="16" fill="#0a0f0a"/>
 <rect x="0" y="432" width="2000" height="16" fill="#0a0f0a"/>
@@ -398,14 +398,6 @@
 <text x="448" y="220" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="992" y="220" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="220" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1032" y="220" fill="#00fc40" textLength="96" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠒⠒⠒⠒⠒⠤⠤⠔⠒⠒⠤</text>
-<text x="1128" y="220" fill="#00f93f" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠤⠤⠤⠤</text>
-<text x="1168" y="220" fill="#00fc40" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠒⠒⠒⠒⠒⠤⠤⠤⠤</text>
-<text x="1248" y="220" fill="#00f93f" textLength="152" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤</text>
-<text x="1400" y="220" fill="#00f73e" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⢄⣀⣀⠤⠤⢄</text>
-<text x="1456" y="220" fill="#00f43e" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⠤</text>
-<text x="1480" y="220" fill="#00f73e" textLength="176" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤</text>
-<text x="1656" y="220" fill="#00f93f" textLength="120" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤</text>
 <text x="1800" y="220" fill="#2e8b3a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">TMU/ROP</text>
 <text x="1896" y="220" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">680/176</text>
 <text x="1992" y="220" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -428,8 +420,6 @@
 <text x="448" y="236" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="992" y="236" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="236" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1032" y="236" fill="#2b8838" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀⣀⡀</text>
-<text x="1160" y="236" fill="#2b8838" textLength="88" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡀</text>
 <text x="1800" y="236" fill="#2e8b3a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">RT/tensor</text>
 <text x="1896" y="236" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">170/680</text>
 <text x="1992" y="236" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -452,8 +442,17 @@
 <text x="448" y="252" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="992" y="252" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="252" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1088" y="252" fill="#2b8838" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈⠉⠉⠉⠉⠉⠉⠉⠉⠁</text>
-<text x="1240" y="252" fill="#2b8838" textLength="536" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉</text>
+<text x="1032" y="252" fill="#00fc40" textLength="96" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠤⠤⠤⠤⠤⠤⠤⠔⠒⠒⠤</text>
+<text x="1128" y="252" fill="#00f93f" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⣀⣀⡠⠤</text>
+<text x="1168" y="252" fill="#00fc40" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠒⠒⠢⠤⠤⠤⠤⠤⠤</text>
+<text x="1248" y="252" fill="#00f93f" textLength="152" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀</text>
+<text x="1400" y="252" fill="#00f73e" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⡀</text>
+<text x="1432" y="252" fill="#00f73e" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⡀</text>
+<text x="1472" y="252" fill="#00f43e" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
+<text x="1480" y="252" fill="#00f73e" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀⡀</text>
+<text x="1544" y="252" fill="#00f73e" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⢀⣀⣀⣀⣀⡀</text>
+<text x="1608" y="252" fill="#00f73e" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀</text>
+<text x="1656" y="252" fill="#00f93f" textLength="120" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⡠⠤⢄⣀⣀⠤⠤⠤⠤⠤⣀⣀⡠⠤</text>
 <text x="1800" y="252" fill="#2e8b3a" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">L2</text>
 <text x="1896" y="252" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">96 MB</text>
 <text x="1992" y="252" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -476,16 +475,11 @@
 <text x="448" y="268" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="992" y="268" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="268" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1032" y="268" fill="#278336" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀⣀</text>
-<text x="1088" y="268" fill="#288437" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀</text>
-<text x="1128" y="268" fill="#278336" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀</text>
-<text x="1168" y="268" fill="#288437" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀</text>
-<text x="1208" y="268" fill="#278336" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀⣀</text>
-<text x="1264" y="268" fill="#268236" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀</text>
-<text x="1280" y="268" fill="#278336" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀</text>
-<text x="1304" y="268" fill="#268236" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀</text>
-<text x="1664" y="268" fill="#268236" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⢀⣀⣀⣀⣀⣀</text>
-<text x="1712" y="268" fill="#278336" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀⣀⣀</text>
+<text x="1408" y="268" fill="#00f73e" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈⠉⠉</text>
+<text x="1448" y="268" fill="#00f73e" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈</text>
+<text x="1456" y="268" fill="#00f43e" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉</text>
+<text x="1528" y="268" fill="#00f73e" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈⠉⠁</text>
+<text x="1584" y="268" fill="#00f73e" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈⠉⠉</text>
 <text x="1800" y="268" fill="#2e8b3a" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">base/boost</text>
 <text x="1896" y="268" fill="#b6ffc9" textLength="96" lengthAdjust="spacingAndGlyphs" xml:space="preserve">2017/2407MHz</text>
 <text x="1992" y="268" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -508,13 +502,6 @@
 <text x="448" y="284" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="992" y="284" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="284" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1352" y="284" fill="#268236" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉⠉⠉⠉⠉⠉</text>
-<text x="1416" y="284" fill="#258136" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉</text>
-<text x="1496" y="284" fill="#268236" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉⠉⠉</text>
-<text x="1536" y="284" fill="#258136" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉⠉⠉</text>
-<text x="1576" y="284" fill="#268236" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉</text>
-<text x="1592" y="284" fill="#258136" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉</text>
-<text x="1616" y="284" fill="#268236" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉⠉⠉⠉⠁</text>
 <text x="1800" y="284" fill="#2e8b3a" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">memory</text>
 <text x="1896" y="284" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">28 Gbps</text>
 <text x="1992" y="284" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -539,12 +526,9 @@
 <text x="824" y="300" fill="#2d8f39" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▁▁</text>
 <text x="992" y="300" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="300" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1016" y="300" fill="#0a0f0a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    PID</text>
-<text x="1080" y="300" fill="#0a0f0a" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">TYPE    </text>
-<text x="1152" y="300" fill="#0a0f0a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> GPU</text>
-<text x="1192" y="300" fill="#0a0f0a" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">       GPU MEM▽   CPU</text>
-<text x="1368" y="300" fill="#0a0f0a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> HOST MEM</text>
-<text x="1448" y="300" fill="#0a0f0a" textLength="544" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Command                                                             </text>
+<text x="1032" y="300" fill="#2b8838" textLength="744" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒</text>
+<text x="1800" y="300" fill="#2e8b3a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">bandwidth</text>
+<text x="1896" y="300" fill="#b6ffc9" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">1792 GB/s</text>
 <text x="1992" y="300" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="316" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="32" y="316" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -570,16 +554,8 @@
 <text x="824" y="316" fill="#2d8f39" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="992" y="316" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="316" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1016" y="316" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 412345</text>
-<text x="1080" y="316" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Both </text>
-<text x="1120" y="316" fill="#e0c341" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">G</text>
-<text x="1128" y="316" fill="#b6ffc9" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">+</text>
-<text x="1136" y="316" fill="#00c933" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">C</text>
-<text x="1152" y="316" fill="#b6ffc9" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 17%</text>
-<text x="1192" y="316" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 12879MiB  39%</text>
-<text x="1312" y="316" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">424.2%</text>
-<text x="1384" y="316" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">12.5GiB</text>
-<text x="1448" y="316" fill="#b6ffc9" textLength="320" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/opt/game/bin/game --fullscreen --vulkan</text>
+<text x="1800" y="316" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">TDP</text>
+<text x="1896" y="316" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">575 W</text>
 <text x="1992" y="316" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="332" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="32" y="332" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -609,13 +585,8 @@
 <text x="936" y="332" fill="#298537" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▅▅</text>
 <text x="992" y="332" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="332" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1016" y="332" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1701</text>
-<text x="1080" y="332" fill="#e0c341" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Graphic</text>
-<text x="1152" y="332" fill="#b6ffc9" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  2%</text>
-<text x="1192" y="332" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   464MiB   1%</text>
-<text x="1312" y="332" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  2.4%</text>
-<text x="1392" y="332" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">393MiB</text>
-<text x="1448" y="332" fill="#b6ffc9" textLength="160" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/bin/gnome-shell</text>
+<text x="1800" y="332" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">die</text>
+<text x="1896" y="332" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">750 mm²</text>
 <text x="1992" y="332" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="348" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="32" y="348" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -649,13 +620,15 @@
 <text x="936" y="348" fill="#298537" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="992" y="348" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="348" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1016" y="348" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   6120</text>
-<text x="1080" y="348" fill="#e0c341" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Graphic</text>
-<text x="1152" y="348" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  0%</text>
-<text x="1192" y="348" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   318MiB   1%</text>
-<text x="1312" y="348" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 18.6%</text>
-<text x="1392" y="348" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">961MiB</text>
-<text x="1448" y="348" fill="#b6ffc9" textLength="192" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/lib/firefox/firefox</text>
+<text x="1040" y="348" fill="#278336" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⡀</text>
+<text x="1080" y="348" fill="#278336" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
+<text x="1088" y="348" fill="#288437" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀</text>
+<text x="1128" y="348" fill="#278336" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
+<text x="1176" y="348" fill="#288437" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀</text>
+<text x="1208" y="348" fill="#278336" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
+<text x="1232" y="348" fill="#278336" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⢀⣀⣀</text>
+<text x="1800" y="348" fill="#2e8b3a" textLength="88" lengthAdjust="spacingAndGlyphs" xml:space="preserve">transistors</text>
+<text x="1896" y="348" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">92.2 B</text>
 <text x="1992" y="348" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="364" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="32" y="364" fill="#00ec3c" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -692,26 +665,32 @@
 <text x="936" y="364" fill="#298537" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="992" y="364" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="364" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1016" y="364" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  11805</text>
-<text x="1080" y="364" fill="#00c933" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Compute</text>
-<text x="1152" y="364" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  0%</text>
-<text x="1192" y="364" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    44MiB   0%</text>
-<text x="1312" y="364" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3.0%</text>
-<text x="1384" y="364" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">97.6MiB</text>
-<text x="1448" y="364" fill="#b6ffc9" textLength="304" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/bin/ptyxis --gapplication-service</text>
+<text x="1032" y="364" fill="#278336" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉</text>
+<text x="1056" y="364" fill="#278336" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈⠉⠉</text>
+<text x="1136" y="364" fill="#278336" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉⠉</text>
+<text x="1168" y="364" fill="#288437" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉</text>
+<text x="1216" y="364" fill="#278336" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠁</text>
+<text x="1256" y="364" fill="#278336" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉</text>
+<text x="1264" y="364" fill="#268236" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉</text>
+<text x="1280" y="364" fill="#278336" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉</text>
+<text x="1304" y="364" fill="#268236" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉⠉⠉⠉⠉⠉⠑⠒⠒⠒⠒⠒</text>
+<text x="1416" y="364" fill="#258136" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒</text>
+<text x="1496" y="364" fill="#268236" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠒⠒⠒⠒⠒</text>
+<text x="1536" y="364" fill="#258136" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠒⠒⠒⠒⠒</text>
+<text x="1576" y="364" fill="#268236" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠒⠒</text>
+<text x="1592" y="364" fill="#258136" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠒⠒⠒</text>
+<text x="1616" y="364" fill="#268236" textLength="96" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠒⠊⠉⠉⠒⠒⠊⠉⠉⠉⠉⠉</text>
+<text x="1712" y="364" fill="#278336" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉⠉⠉⠉⠉⠉⠉⠉</text>
+<text x="1800" y="364" fill="#2e8b3a" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">launch</text>
+<text x="1896" y="364" fill="#b6ffc9" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">2025-01-30</text>
 <text x="1992" y="364" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="380" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="380" fill="#2e8b3a" textLength="456" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     0      1      2      3      4      5      6      7  </text>
 <text x="496" y="380" fill="#2e8b3a" textLength="456" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     8      9     10     11     12     13     14     15  </text>
 <text x="992" y="380" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="380" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="1016" y="380" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1842</text>
-<text x="1080" y="380" fill="#e0c341" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Graphic</text>
-<text x="1152" y="380" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  0%</text>
-<text x="1192" y="380" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    12MiB   0%</text>
-<text x="1312" y="380" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  1.2%</text>
-<text x="1392" y="380" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">118MiB</text>
-<text x="1448" y="380" fill="#b6ffc9" textLength="136" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/bin/pipewire</text>
+<text x="1800" y="380" fill="#2e8b3a" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">bus</text>
+<text x="1896" y="380" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">512-bit</text>
 <text x="1992" y="380" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="396" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="396" fill="#0a0f0a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    PID</text>
@@ -723,6 +702,12 @@
 <text x="352" y="396" fill="#0a0f0a" textLength="640" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Command                                                                         </text>
 <text x="992" y="396" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="396" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="1016" y="396" fill="#0a0f0a" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    PID</text>
+<text x="1080" y="396" fill="#0a0f0a" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">TYPE    </text>
+<text x="1152" y="396" fill="#0a0f0a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> GPU</text>
+<text x="1192" y="396" fill="#0a0f0a" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">       GPU MEM▽   CPU</text>
+<text x="1368" y="396" fill="#0a0f0a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> HOST MEM</text>
+<text x="1448" y="396" fill="#0a0f0a" textLength="544" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Command                                                             </text>
 <text x="1992" y="396" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="412" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="412" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 555555</text>
@@ -737,6 +722,16 @@
 <text x="352" y="412" fill="#b6ffc9" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">cargo build --release</text>
 <text x="992" y="412" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="412" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="1016" y="412" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 412345</text>
+<text x="1080" y="412" fill="#b6ffc9" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Both </text>
+<text x="1120" y="412" fill="#e0c341" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">G</text>
+<text x="1128" y="412" fill="#b6ffc9" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">+</text>
+<text x="1136" y="412" fill="#00c933" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">C</text>
+<text x="1152" y="412" fill="#b6ffc9" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 17%</text>
+<text x="1192" y="412" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 12879MiB  39%</text>
+<text x="1312" y="412" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">424.2%</text>
+<text x="1384" y="412" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">12.5GiB</text>
+<text x="1448" y="412" fill="#b6ffc9" textLength="320" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/opt/game/bin/game --fullscreen --vulkan</text>
 <text x="1992" y="412" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="428" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="428" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 555601</text>
@@ -750,6 +745,13 @@
 <text x="352" y="428" fill="#b6ffc9" textLength="376" lengthAdjust="spacingAndGlyphs" xml:space="preserve">rustc --crate-name gridwatch_app --edition=2024</text>
 <text x="992" y="428" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="428" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="1016" y="428" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1701</text>
+<text x="1080" y="428" fill="#e0c341" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Graphic</text>
+<text x="1152" y="428" fill="#b6ffc9" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  2%</text>
+<text x="1192" y="428" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   464MiB   1%</text>
+<text x="1312" y="428" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  2.4%</text>
+<text x="1392" y="428" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">393MiB</text>
+<text x="1448" y="428" fill="#b6ffc9" textLength="160" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/bin/gnome-shell</text>
 <text x="1992" y="428" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="444" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="444" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 412345</text>
@@ -766,6 +768,13 @@
 <text x="352" y="444" fill="#b6ffc9" textLength="320" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/opt/game/bin/game --fullscreen --vulkan</text>
 <text x="992" y="444" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="444" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="1016" y="444" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   6120</text>
+<text x="1080" y="444" fill="#e0c341" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Graphic</text>
+<text x="1152" y="444" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  0%</text>
+<text x="1192" y="444" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   318MiB   1%</text>
+<text x="1312" y="444" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 18.6%</text>
+<text x="1392" y="444" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">961MiB</text>
+<text x="1448" y="444" fill="#b6ffc9" textLength="192" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/lib/firefox/firefox</text>
 <text x="1992" y="444" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="460" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="460" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   6120</text>
@@ -779,6 +788,13 @@
 <text x="352" y="460" fill="#b6ffc9" textLength="192" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/lib/firefox/firefox</text>
 <text x="992" y="460" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="460" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="1016" y="460" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  11805</text>
+<text x="1080" y="460" fill="#00c933" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Compute</text>
+<text x="1152" y="460" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  0%</text>
+<text x="1192" y="460" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    44MiB   0%</text>
+<text x="1312" y="460" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3.0%</text>
+<text x="1384" y="460" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">97.6MiB</text>
+<text x="1448" y="460" fill="#b6ffc9" textLength="304" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/bin/ptyxis --gapplication-service</text>
 <text x="1992" y="460" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="476" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="476" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   2990</text>
@@ -793,6 +809,13 @@
 <text x="352" y="476" fill="#b6ffc9" textLength="296" lengthAdjust="spacingAndGlyphs" xml:space="preserve">rsync -a /home/mattbeam/ /mnt/backup/</text>
 <text x="992" y="476" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="1008" y="476" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="1016" y="476" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1842</text>
+<text x="1080" y="476" fill="#e0c341" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Graphic</text>
+<text x="1152" y="476" fill="#2e8b3a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  0%</text>
+<text x="1192" y="476" fill="#b6ffc9" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    12MiB   0%</text>
+<text x="1312" y="476" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  1.2%</text>
+<text x="1392" y="476" fill="#b6ffc9" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">118MiB</text>
+<text x="1448" y="476" fill="#b6ffc9" textLength="136" lengthAdjust="spacingAndGlyphs" xml:space="preserve">/usr/bin/pipewire</text>
 <text x="1992" y="476" fill="#1f7a33" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0" y="492" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="8" y="492" fill="#b6ffc9" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   6350</text>

@@ -7,7 +7,7 @@ tier: procs
 view:
   stack:
     children:
-      - - Len(16)
+      - - Len(55)
         - stack:
             children:
               - - Len(1)

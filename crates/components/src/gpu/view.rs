@@ -668,7 +668,7 @@ fn spec_column(cx: &RenderCx<'_>) -> View {
 }
 
 fn charts(g: &Gpu, cx: &RenderCx<'_>) -> View {
-    let band = g.band_rows(TIER_CHARTS, cx.inner.height);
+    let band = g.band_rows(TIER_CHARTS, cx.inner.height, cx.zoomed);
     let width = cx.inner.width;
     let with_spec = g.options().spec_column && width >= SPEC_COLUMN_AT;
     let chart_w = if with_spec {
@@ -700,7 +700,7 @@ fn charts(g: &Gpu, cx: &RenderCx<'_>) -> View {
 
 fn table(g: &Gpu, cx: &RenderCx<'_>) -> View {
     let height = cx.inner.height;
-    let band = g.band_rows(cx.tier, height);
+    let band = g.band_rows(cx.tier, height, cx.zoomed);
     let body_rows = g.body_rows(cx.tier, height, cx.zoomed);
     let table_h = (body_rows + 1) as u16;
     let (sort, desc) = g.sort();

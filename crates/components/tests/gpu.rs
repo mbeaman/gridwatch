@@ -37,21 +37,30 @@ fn gpu_tiers_match_the_real_grid_sizes() {
     assert_eq!(tier(248, 66, false), ("procs", false), "full is zoom-only");
 }
 
-/// §8.1 row budget: 10 at 250×70 (14 available under an 8-row band), 7 in a
-/// 4x2 (4-row band), 5 at the dense floor and 6 one row taller; zoom fills.
+/// §8.1 row budget (D62): 12 at 250×70 (the band takes the 12 rows the header
+/// and a 10-row table leave), 7 in a 4x2 (a 4-row band at the floor), 5 at the
+/// dense floor and 6 one row taller; zoomed, the band is a third and the table
+/// takes the rest.
 #[test]
 fn row_budget_at_the_real_grid_sizes() {
     let g = gpu();
-    assert_eq!(g.band_rows(TIER_PROCS, 31), 8);
+    assert_eq!(g.band_rows(TIER_PROCS, 31, false), 31 - 8 - 1 - 10);
     assert_eq!(g.body_rows(TIER_PROCS, 31, false), 10);
-    assert_eq!(g.band_rows(TIER_PROCS, 20), 4);
+    assert_eq!(g.band_rows(TIER_PROCS, 20, false), 4);
     assert_eq!(g.body_rows(TIER_PROCS, 20, false), 7);
     assert_eq!(g.body_rows(TIER_PROCS, 18, false), 5);
     assert_eq!(g.body_rows(TIER_PROCS, 19, false), 6);
-    assert_eq!(g.body_rows(TIER_PROCS, 66, true), 66 - 8 - 8 - 1);
-    // The charts tier's band grows with height up to eight rows.
-    assert_eq!(g.band_rows(TIER_CHARTS, 12), 4);
-    assert_eq!(g.band_rows(TIER_CHARTS, 17), 8);
+    // Zoomed: a third of the body is chart, the table has the rest.
+    assert_eq!(g.band_rows(TIER_PROCS, 66, true), 22);
+    assert_eq!(g.body_rows(TIER_PROCS, 66, true), 66 - 8 - 22 - 1);
+    // A wide terminal's 6x3 (480×135, inner 65) keeps its 10-row table and
+    // gives every remaining row to the chart — D62's report.
+    assert_eq!(g.band_rows(TIER_PROCS, 65, false), 65 - 8 - 1 - 10);
+    assert_eq!(g.body_rows(TIER_PROCS, 65, false), 10);
+    // The charts tier's band is every row the header leaves, floored at four.
+    assert_eq!(g.band_rows(TIER_CHARTS, 12, false), 4);
+    assert_eq!(g.band_rows(TIER_CHARTS, 17, false), 9);
+    assert_eq!(g.band_rows(TIER_CHARTS, 65, false), 57);
 }
 
 /// Gridwatch's drop order (§8.1): ENC, DEC, HOST MEM, TYPE, USER, CPU; PID,
