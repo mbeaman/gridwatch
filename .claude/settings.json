@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/journal-check.sh",
+            "timeout": 15,
+            "statusMessage": "Checking the session journal"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -11,7 +11,12 @@ Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ra
 ## Start of every session
 
 1. Read `docs/PLAN.md`, then the current arc in `docs/ROADMAP.md` **and its brief in `docs/briefs/` if one exists**, then the tail of `docs/DECISIONS.md` and `git log --oneline -20`. Deferred work lives only in `docs/BACKLOG.md` — pulling an item into an arc is a DECISIONS entry.
-2. Give a short state read and offer arc options with a recommended next step. Wait for Matt to pick.
+2. Read the newest entry in `docs/JOURNAL.md` — it is the only file that says what the *last session* was like, including what it got wrong.
+3. Give a short state read and offer arc options with a recommended next step. Wait for Matt to pick.
+
+## End of every session
+
+**Write a `docs/JOURNAL.md` entry before the session ends** (newest first) and commit it with the session's last commit — while the work is still in context, never reconstructed later. It is the only place that records what a session was *like*: what the reviews caught, what turned out to be wrong, the near misses, and what is owed to Matt. `DECISIONS.md` says why, `CHANGELOG.md` says what shipped, `PLAN.md` says where things stand — the journal says what happened and why it mattered. **Lead with what changed for Matt and why it matters, not an inventory of edits** (his feedback, 2026-09-07: a faithful list of fixes is unreadable after a long session). A session that only read code and changed nothing still gets an entry if it learned something worth keeping.
 
 ## How work happens
 
@@ -50,4 +55,4 @@ Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ra
 
 ## Where things live
 
-`docs/PLAN.md` (entry point) · `ARCHITECTURE.md` · `WORKSPACE.md` · `ROADMAP.md` · `DECISIONS.md` · `TESTING.md` · `MACHINE.md` · `research/` (verified digests) · `design-review/` (why this design won).
+`docs/PLAN.md` (entry point) · `JOURNAL.md` (what each session was like) · `ARCHITECTURE.md` · `WORKSPACE.md` · `ROADMAP.md` · `DECISIONS.md` · `TESTING.md` · `MACHINE.md` · `research/` (verified digests) · `design-review/` (why this design won).
