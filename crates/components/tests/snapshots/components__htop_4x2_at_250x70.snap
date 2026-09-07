@@ -1,6 +1,5 @@
 ---
 source: crates/components/tests/components.rs
-assertion_line: 88
 expression: "view_snapshot(h.as_mut(), &history, &th, size)"
 ---
 size: 80x20
@@ -157,9 +156,10 @@ view:
                                 - bars:
                                     gradient: Load
                                     labels: ~
-                                    n: 38
+                                    n: 39
                                     peaks: false
                                     values:
+                                      - 0
                                       - 0.6299288868904114
                                       - 0
                                       - 0.6532060503959656
@@ -202,7 +202,7 @@ view:
                                 - text:
                                     - - bold: false
                                         role: TextMuted
-                                        s: " 0    1    2    3    4    5    6    7 "
+                                        s: "  0    1    2    3    4    5    6    7 "
                             dir: V
                       - - Fill(1)
                         - stack:
@@ -228,9 +228,10 @@ view:
                                 - bars:
                                     gradient: Load
                                     labels: ~
-                                    n: 38
+                                    n: 39
                                     peaks: false
                                     values:
+                                      - 0
                                       - 0.11105494946241379
                                       - 0
                                       - 0.20074042677879333
@@ -273,7 +274,7 @@ view:
                                 - text:
                                     - - bold: false
                                         role: TextMuted
-                                        s: " 8    9   10   11   12   13   14   15 "
+                                        s: "  8    9   10   11   12   13   14   15 "
                             dir: V
                     dir: H
               - - Len(1)

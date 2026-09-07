@@ -281,8 +281,9 @@ fn psi_line(cx: &RenderCx<'_>) -> View {
 
 /// Bar geometry for one CCD block. A physical core is two SMT bars `tw` cells
 /// wide with `inner` between them; `outer` separates cores, so a pair reads as
-/// a pair. The widest geometry that fits wins; the floor is htop's own three
-/// cells per core, which is what makes the 56-wide tier minimum work
+/// a pair. The bar width is the largest that fits the block (D62: a constant
+/// may floor a drawing, never cap it); the floor is htop's own three cells per
+/// core, which is what makes the 56-wide tier minimum work
 /// (8 cores × 3 cells × 2 blocks + labels).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Geom {
@@ -301,26 +302,31 @@ impl Geom {
     }
 }
 
+const FLOOR: Geom = Geom {
+    tw: 1,
+    inner: 0,
+    outer: 1,
+};
+
 fn geom(block_w: u16, cores: u16) -> Geom {
-    const FLOOR: Geom = Geom {
-        tw: 1,
-        inner: 0,
-        outer: 1,
-    };
     if cores == 0 {
         return FLOOR;
     }
-    for tw in (1..=4u16).rev() {
-        let g = Geom {
-            tw,
-            inner: 1,
-            outer: 2,
-        };
-        if g.width(cores) <= block_w {
-            return g;
-        }
+    // The largest `tw` the block holds, closed form (D62 §2): the block is
+    // `cores·(2·tw + inner) + (cores−1)·outer`, so
+    // `tw = (block_w − cores·inner − (cores−1)·outer) / (2·cores)`. There is
+    // no ceiling — a wide tile draws wide bars — and below one cell per
+    // thread the FLOOR geometry (htop's three cells per core) takes over.
+    let spacing = cores.saturating_add(cores.saturating_sub(1) * 2);
+    let tw = block_w.saturating_sub(spacing) / (2 * cores);
+    if tw == 0 {
+        return FLOOR;
     }
-    FLOOR
+    Geom {
+        tw,
+        inner: 1,
+        outer: 2,
+    }
 }
 
 /// One CCD block: header (id · mean MHz · Tccd), the paired SMT bars, and a
@@ -341,8 +347,14 @@ fn ccd_block(
         .flatten()
         .any(|c| store.last(&cpu::CORE_PCT.idx(*c)).is_some());
 
+    // The block is centred in whatever width it was given (D62 §2): the bars
+    // and the id labels share the geometry, so both are shifted by the same
+    // amount and every id stays under its pair.
+    let pad = usize::from(width.saturating_sub(g.width(cores.len() as u16)) / 2);
+
     // Bars: two per physical core (a zero-height column is the gap).
-    let mut values: Vec<f32> = Vec::with_capacity(g.width(cores.len() as u16) as usize);
+    let mut values: Vec<f32> = Vec::with_capacity(usize::from(width));
+    values.extend(std::iter::repeat_n(0.0, pad));
     for (i, pair) in cores.iter().enumerate() {
         if i > 0 {
             values.extend(std::iter::repeat_n(0.0, g.outer as usize));
@@ -392,7 +404,7 @@ fn ccd_block(
     }
 
     // Labels: the physical core id, centred under its SMT pair.
-    let mut labels = String::new();
+    let mut labels = " ".repeat(pad);
     for (i, pair) in cores.iter().enumerate() {
         if i > 0 {
             labels.push_str(&" ".repeat(g.outer as usize));
