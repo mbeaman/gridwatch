@@ -143,6 +143,8 @@ Everything below runs unprivileged on torch (`perf_event_paranoid = 4`, `ptrace_
 | 2026-09-02 | 8b | quiet | the same Overview with `plugins/examples/weather.py` in that slot, rendering at 1 Hz (**P22**) | no | **0.95%** (gw-pins 0.78 · render 0.15 · **gw-plugins 0.00 · gw-plugin-weather 0.00**; the python3 child 0.00) | 36 | 0.6 KB/s | 2.3 | — | — | n/a | n/a | 0.65 / 1.51 ms | 44168 kB |
 | 2026-09-02 | 8b | quiet | a plugin writing samples in a loop, **before** the read-rate budget existed (**P22, failing**) | no | **62.05%** (gw-plugin-flood 55.53 · gw-plugins 5.22 · gw-pins 0.83 · render 0.45; the python3 child **99.95%**) | **578457** | 0.7 KB/s | 4.2 | — | — | n/a | n/a | 0.49 / 0.98 ms | 56716 kB |
 | 2026-09-02 | 8b | quiet | the same flooding plugin **after** the budget (**P22** ✓) | no | **0.97%** (gw-pins 0.85 · render 0.07 · **gw-plugins 0.00 · gw-plugin-flood 0.00**; the python3 child **0.10%**) | 35 | 0.6 KB/s | 1.4 | — | — | n/a | n/a | 0.69 / 1.51 ms | 43764 kB |
+| 2026-09-07 | 11b | — | **P18** the retention sweep with D61's **per-label** pass, 400 labelled series, against a control that never sweeps (`the_retention_sweep_stays_inside_the_batch_budget`, `cargo test -p gridwatch-store --release --test store the_retention_sweep -- --nocapture`) | no | — | — | — | — | — | — | — | — | **7.0 µs** amortised per batch (release, 6.2–10.2 µs over eight runs) ≈ **70 µs per sweep**, one sweep per ten batches in the fixture; 35 µs amortised debug on a 124 µs control | — |
+| 2026-09-07 | 11b | — | **P18** D61's uncatalogued cap, on the only path it touches — a **new series** (`the_cap_costs_a_catalogue_miss_on_a_new_series_and_nothing_after`, same command) | no | — | — | — | — | — | — | — | — | new uncatalogued series **447 ns**, new catalogued series **351 ns**, push to an existing series **110 ns**; the catalogue miss alone **120 ns** (release, 2 000 series, `max_len = 16`) | — |
 
 ## Benches (arc 9a, D59 seam 3) — the layer under the ceilings
 
@@ -274,23 +276,53 @@ stats log's own growth**; frames, frame times and both P18 timestamps from
   and a game-shaped process were running), so these are not idle-torch absolute
   rows; the *difference* is what they are for, and the identical frame counts
   are why it holds.
-- **The retention sweep** (arc 10b, D60) runs on a **retention boundary in
-  store time** — `max_age / 10`, floored at 10 s — not per `apply`, because
-  the sweep walks every series. Measured against a control that never sweeps,
-  on a store of **400 labelled series** (torch runs about 150 with every
-  source live): **2.3 µs** a batch, on top of the store's own 127 µs for the
-  same 400 samples in a debug build. Store time rather than the wall clock is
-  what keeps arc 2a's determinism test meaningful: a replay shrinks at exactly
-  the message the live run did.
-  It **shrinks, and never deletes**: a scalar ring is pruned to its newest
-  point and no series is removed. The first version emptied the ring and
-  dropped the entry, on the reasoning that a chart's window is `max_age` so an
-  empty ring holds nothing renderable — true of charts, false of `Store::last`,
+- **The retention sweep** (arc 10b, D60; per-label since arc 11, D61) runs on
+  a **retention boundary in store time** — `max_age / 10`, floored at 10 s —
+  not per `apply`, because the sweep walks every series. Measured against a
+  control that never sweeps, on a store of **400 labelled series** (torch runs
+  about 150 with every source live): arc 10b's prune-only sweep cost **2.3 µs**
+  a batch on top of the store's own 127 µs for the same 400 samples in a debug
+  build. Arc 11's per-label sweep costs **7.0 µs** a batch amortised in
+  release (6.2–10.2 µs over eight runs) and **35 µs** debug on a 124 µs
+  control — about fifteen times arc 10b's, because before it can evict
+  anything it builds the newest `Ts` per `(domain, label)` over every labelled
+  series, cloning a `Label` per entry. Amortised is the misleading half: the
+  fixture sweeps once per ten batches, so **one sweep of 400 series costs
+  ≈ 70 µs**, and the shipped cadence is one sweep per 40 cpu batches (60 s of
+  store time at a 1.5 s cadence) over ~150 series. Still microseconds a batch
+  against the suite's 500 µs ceiling, and P18 is untouched by it. Store time
+  rather than the wall clock is what keeps arc 2a's determinism test
+  meaningful: a replay evicts at exactly the message the live run did.
+  It **prunes without deleting, and deletes only a dead label**. Pruning keeps
+  a scalar ring's newest point: the first version emptied the ring and dropped
+  the entry, on the reasoning that a chart's window is `max_age` so an empty
+  ring holds nothing renderable — true of charts, false of `Store::last`,
   which is how every tile reads a current value. Six catalogued scalars are
   published **once** (`sensor.max_c`, `sensor.crit_c`, `net.speed_mbps` and
   the three static gpu clocks), so they vanished eleven minutes into any
   default run. Keeping one point is 16 bytes per dead series against 38 KB, so
-  the leak is still closed 2 400-fold.
+  that leak is closed 2 400-fold. Removal arrived with D61 and is **per
+  `(domain, label)`, never per series**, and only for a key the catalogue
+  marks `Dynamic` (`docs/KEYS.md`'s `labels` column): the same six
+  publish-once scalars survive beside a sibling that keeps arriving, and go
+  only when nothing in their domain has published to their label for
+  `max_age`.
+- **D61's uncatalogued cap** touches exactly one path: the `Entry::Vacant` arm
+  of `Store::apply`, where a series is *created*. A push to a series that
+  already exists pays **110 ns** and none of the cap; creating a catalogued
+  labelled series costs **351 ns**, and creating an uncatalogued (plugin) one
+  **447 ns** — the ≈ 96 ns difference is the catalogue miss that cannot
+  short-circuit (**120 ns** measured alone, over ~100 rows) minus the
+  catalogued lookup that can, plus the `Box<str>` domain key and the `HashMap`
+  entry. Release, 2 000 series, `max_len = 16` so `Ring::new`'s 38 KB
+  allocation does not swamp what is being measured. The design note guessed
+  "tens of nanoseconds, a `HashMap` increment"; the increment is the cheap
+  half and the catalogue walk is the rest. Note for the record that the cap
+  calls `key::lookup` on **every** series creation, catalogued or not — the
+  roadmap's "the cap looks up nothing unless a series is created for an
+  uncatalogued name" is true of the `HashMap`, not of the lookup; the
+  steady-state claim it stands for holds, because no series creation happens
+  in a steady state.
 - **Scan cost:** a full meters pass (`/proc/stat` + `meminfo` + `loadavg` +
   `uptime` + 3 PSI files + one `/proc` readdir + 32 `scaling_cur_freq` + 3
   k10temp inputs) is **0.29 ms mean, 0.35 ms worst** over 20 runs — 0.06 % of a
