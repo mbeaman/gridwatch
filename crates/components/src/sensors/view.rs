@@ -289,8 +289,6 @@ fn table_tier(s: &Sensors, cx: &RenderCx<'_>, footer: Option<Line>) -> View {
     }
 }
 
-/// The four hottest readings over ten minutes (five when the run is
-/// younger), as a braille chart.
 /// The chart's window: the run's age, capped at five minutes (ten once the run
 /// has passed ten). The cap alone is not enough — with a fixed five minutes a
 /// one-minute-old run has no samples for four fifths of its buckets, and the
@@ -308,12 +306,18 @@ fn chart_span(cx: &RenderCx<'_>) -> std::time::Duration {
         .max(std::time::Duration::from_secs(1))
 }
 
-/// The window in whole minutes, for the legend — never zero, so a young run
-/// reads `1 min` rather than claiming five.
-fn chart_span_min(cx: &RenderCx<'_>) -> u64 {
-    (chart_span(cx).as_secs() / 60).max(1)
+/// The window for the legend: seconds under a minute and a half, rounded
+/// minutes after — a 40 s run says `40 s`, not `1 min` (arc 12 review).
+fn chart_span_text(cx: &RenderCx<'_>) -> String {
+    let s = chart_span(cx).as_secs();
+    if s < 90 {
+        format!("{s} s")
+    } else {
+        format!("{} min", (s + 30) / 60)
+    }
 }
 
+/// The four hottest readings over the chart's window, as a braille chart.
 fn chart_view(s: &Sensors, cx: &RenderCx<'_>) -> View {
     let m = s.model();
     let mut picks: Vec<&Reading> = m.temps.iter().collect();
@@ -361,14 +365,11 @@ fn chart_view(s: &Sensors, cx: &RenderCx<'_>) -> View {
     }
 }
 
-fn chart_legend(s: &Sensors, span_min: u64) -> Line {
+fn chart_legend(s: &Sensors, span: &str) -> Line {
     let m = s.model();
     let mut picks: Vec<&Reading> = m.temps.iter().collect();
     picks.sort_by(|a, b| super::hottest_first(a, b));
-    let mut line: Line = vec![Span::new(
-        Role::TextMuted,
-        format!("chart · {span_min} min · "),
-    )];
+    let mut line: Line = vec![Span::new(Role::TextMuted, format!("chart · {span} · "))];
     for (i, r) in picks.iter().take(4).enumerate() {
         if i > 0 {
             line.push(Span::new(Role::TextMuted, " · "));
@@ -383,15 +384,12 @@ fn chart_tier(s: &Sensors, cx: &RenderCx<'_>) -> View {
     if s.model().temps.is_empty() {
         return empty(cx);
     }
-    let span_min = chart_span_min(cx);
+    let span = chart_span_text(cx);
     View::Stack {
         dir: Dir::V,
         children: vec![
             (Constraint::Fill(3), table_tier(s, cx, None)),
-            (
-                Constraint::Len(1),
-                View::Text(vec![chart_legend(s, span_min)]),
-            ),
+            (Constraint::Len(1), View::Text(vec![chart_legend(s, &span)])),
             (Constraint::Fill(2), chart_view(s, cx)),
         ],
     }

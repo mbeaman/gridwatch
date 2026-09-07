@@ -117,10 +117,9 @@ const SPARK_SPAN: Duration = Duration::from_secs(120);
 /// A sparkline of one key over the last minutes. The window is the run's age
 /// capped at `SPARK_SPAN`, the way htop's, gpu's and pins' sparklines already
 /// take it (D62 §1 — "the run's age capped at the component's span"): with a
-/// fixed span, a run younger than two minutes has no samples for the buckets
-/// it has not lived through, and since the renderer now holds a sample across
-/// an empty column those buckets would draw a plateau of a rate nobody
-/// measured.
+/// fixed span, a run younger than two minutes has no samples for the oldest
+/// buckets, so the line starts part-way across the rect and the left of the
+/// tile is blank (the renderer holds nothing before the first sample).
 fn spark(cx: &RenderCx<'_>, key: &gridwatch_store::Key<f64>, iface: &str) -> View {
     let mut buf = Vec::new();
     let buckets = usize::from(cx.inner.width).max(2);

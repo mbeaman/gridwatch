@@ -97,7 +97,7 @@ view:
         - text:
             - - bold: false
                 role: TextMuted
-                s: "chart · 1 min · "
+                s: "chart · 60 s · "
               - bold: false
                 role: Text
                 s: "spd5118:temp1"
