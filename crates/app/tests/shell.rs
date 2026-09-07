@@ -499,13 +499,229 @@ fn the_live_cpu_source_reaches_the_htop_tile() {
 /// mean two things. The app crate is the lowest place that can see both lists —
 /// `gridwatch-components` must not depend on `gridwatch-sources`, even in dev.
 #[test]
+#[allow(clippy::vec_init_then_push)] // the pushes are `#[cfg]`-gated; see below
 fn source_and_component_option_names_are_disjoint() {
-    for name in gridwatch_components::htop::OPTION_NAMES {
+    // §9's rule, for **every** pair the registry can make (D61): a component's
+    // `OPTION_NAMES` against `SourceDef.options` for every source its manifest
+    // lists, own and optional. Before arc 11 this was the htop/cpu pair alone,
+    // which is the one pair that was never going to collide.
+    //
+    // The table is test code on purpose: `Manifest` does not grow a field for
+    // it (D61), because nothing but this test wants it.
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    gridwatch_sources::builtin_sources(&mut reg);
+    // `vec![]` cannot carry the `#[cfg]`s: an attribute on an expression is
+    // not stable, and a component whose feature is off has no `OPTION_NAMES`.
+    let mut table: Vec<(&str, &[&str])> = Vec::new();
+    #[cfg(feature = "cpu")]
+    table.push(("htop", gridwatch_components::htop::OPTION_NAMES));
+    #[cfg(feature = "gpu")]
+    table.push(("gpu", gridwatch_components::gpu::OPTION_NAMES));
+    #[cfg(feature = "pins")]
+    table.push(("pins", gridwatch_components::pins::OPTION_NAMES));
+    #[cfg(feature = "audio")]
+    table.push(("audio", gridwatch_components::audio::OPTION_NAMES));
+    #[cfg(feature = "sensors")]
+    table.push(("sensors", gridwatch_components::sensors::OPTION_NAMES));
+    #[cfg(feature = "mpris")]
+    table.push(("winamp", gridwatch_components::winamp::OPTION_NAMES));
+    #[cfg(feature = "net")]
+    table.push(("net", gridwatch_components::net::OPTION_NAMES));
+
+    // The four pairs that already violated §9 when the test was generalised
+    // (arc 11; the brief assumed the walk would pass). Each is a real
+    // ambiguity — `[sources.audio] fps` is the capture rate and the audio
+    // tile's `fps` is its animation rate; the sensors source's `chips`
+    // chooses what to *sample* and the tile's chooses what to *show*; the
+    // media source's `art` fetches cover art and winamp's draws the pane —
+    // and `check_sources` cannot catch a name that is valid on both sides,
+    // which is exactly why §9 forbids it. Renaming a documented config key is
+    // a spec change (§9's example block) and so a DECISIONS entry, not this
+    // session's call: escalated in the arc-11 report.
+    const KNOWN: &[(&str, &str, &str)] = &[
+        ("audio", "audio", "fps"),
+        ("sensors", "sensors", "chips"),
+        ("winamp", "mpris", "art"),
+        ("winamp", "audio", "fps"),
+    ];
+
+    let mut checked: Vec<String> = Vec::new();
+    let mut found: Vec<(&str, &str, &str)> = Vec::new();
+    for (kind, options) in &table {
+        let m = reg
+            .component(kind)
+            .unwrap_or_else(|| panic!("`{kind}` is in the table but not in the registry"))
+            .manifest;
+        for id in m.sources.iter().chain(m.optional_sources) {
+            // A source whose feature is compiled out is not a pair to check.
+            let Some(def) = reg.source(id.0) else {
+                continue;
+            };
+            checked.push(format!("{kind}×{}", id.0));
+            for name in *options {
+                if def.options.contains(name) {
+                    found.push((kind, id.0, name));
+                }
+            }
+        }
+    }
+    println!("pairs checked: {}", checked.join(", "));
+    assert!(
+        checked.len() >= table.len(),
+        "every component in the table must have contributed at least one pair: {checked:?}"
+    );
+    for (kind, source, name) in &found {
         assert!(
-            !gridwatch_sources::cpu::OPTION_NAMES.contains(name),
-            "`{name}` is both an htop view option and a [sources.cpu] option"
+            KNOWN.contains(&(kind, source, name)),
+            "`{name}` is both a `{kind}` view option and a [sources.{source}] option — §9 \
+             forbids it, because a person who writes it in the wrong file gets a *valid* \
+             option doing something else, and no check can tell"
         );
     }
+    // And the list is exact: a pair that has been fixed must be deleted from
+    // it, or the exemption outlives the collision it was written for.
+    for row in KNOWN {
+        let (kind, source, _) = row;
+        if !table.iter().any(|(k, _)| k == kind) || reg.source(source).is_none() {
+            continue; // that half of the pair is compiled out
+        }
+        assert!(
+            found.contains(row),
+            "{row:?} is no longer a collision — delete it from KNOWN"
+        );
+    }
+}
+
+// ─────────────────────── arc 11: `[sources.<id>]` (D61) ───────────────────────
+
+/// A shell over a `config.toml` text, with the sources registered — what
+/// `check_sources` needs and `shell()` does not have.
+fn shell_with_config(config_text: &str) -> Shell {
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    gridwatch_sources::builtin_sources(&mut reg);
+    let loaded = config::load_texts(config_text, config::DEFAULT_LAYOUT).unwrap();
+    let theme = load_builtin("mono", ColorMode::Mono).unwrap();
+    Shell::new(
+        reg,
+        &loaded,
+        theme,
+        probe::probe(),
+        0,
+        Clock::new_virtual(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        false,
+    )
+}
+
+/// D61: a mistyped key under a known source is read by nobody, and until arc
+/// 11 was reported by nobody — `refres_ms = 1000` left the cpu source on its
+/// default cadence and said nothing. It is a failure in `config check` and a
+/// toast at `run`; the source still starts, because one typo must not cost
+/// the dashboard.
+#[test]
+#[cfg(feature = "cpu")]
+fn a_mistyped_source_option_is_named_with_the_set_it_should_have_been_in() {
+    let sh = shell_with_config(
+        &config::DEFAULT_CONFIG.replace("[sources.cpu]", "[sources.cpu]\nrefres_ms = 1000"),
+    );
+    let w = sh.source_warnings();
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(w[0].contains("sources.cpu:"), "{w:?}");
+    assert!(w[0].contains("unknown option `refres_ms`"), "{w:?}");
+    assert!(
+        w[0].contains("accepts refresh_ms, k10temp"),
+        "the accepted set is what makes the message actionable: {w:?}"
+    );
+    // The shipped config is clean, and an accepted key stays silent.
+    let sh = shell_with_config(config::DEFAULT_CONFIG);
+    assert!(
+        sh.source_warnings().is_empty(),
+        "{:?}",
+        sh.source_warnings()
+    );
+    let sh = shell_with_config(
+        &config::DEFAULT_CONFIG.replace("[sources.cpu]", "[sources.cpu]\nk10temp = false"),
+    );
+    assert!(
+        sh.source_warnings().is_empty(),
+        "{:?}",
+        sh.source_warnings()
+    );
+}
+
+/// A feature compiled out and a typo look the same from here, so the message
+/// says what this build has (D61).
+#[test]
+fn an_unknown_source_id_lists_what_this_build_registered() {
+    let sh = shell_with_config(&format!("{}\n[sources.cpus]\n", config::DEFAULT_CONFIG));
+    let w = sh.source_warnings();
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(w[0].contains("sources.cpus:"), "{w:?}");
+    assert!(
+        w[0].contains("no such source in this build (have "),
+        "{w:?}"
+    );
+    #[cfg(feature = "cpu")]
+    assert!(w[0].contains("cpu"), "{w:?}");
+}
+
+/// Contract 1 carries no options to a plugin (D58 amendment 25), so
+/// `[sources.<plugin id>]` is ignored — but a config written for a later
+/// contract must not *fail* on this one (D61). The ids are not known until
+/// `attach_plugins`, so both states are pinned: without the re-check there,
+/// a configured plugin's table would read as "no such source in this build".
+#[test]
+fn a_plugin_source_table_warns_and_never_fails() {
+    let mut sh = shell_with_config(&format!(
+        "{}\n[sources.weather]\nunits = \"c\"\n",
+        config::DEFAULT_CONFIG
+    ));
+    assert_eq!(
+        sh.source_warnings().len(),
+        1,
+        "before the ids are known it is an unknown id: {:?}",
+        sh.source_warnings()
+    );
+    sh.attach_plugins(None, ["weather".to_string()]);
+    assert!(
+        sh.source_warnings().is_empty(),
+        "a plugin id must never be a failure: {:?}",
+        sh.source_warnings()
+    );
+}
+
+/// A reload cannot apply `[sources.*]`, but the person who just saved the
+/// file is looking at the screen — so the check runs again on the new table
+/// and toasts what it found (D61), rather than carrying the typo to the
+/// restart the first toast asked for.
+#[test]
+#[cfg(feature = "gpu")]
+fn a_reload_that_changes_sources_re_runs_the_check() {
+    let mut sh = shell_with_config(config::DEFAULT_CONFIG);
+    assert!(sh.source_warnings().is_empty());
+    sh.reload_from_texts(
+        gridwatch_store::ReloadKind::Config,
+        &format!("{}\n[sources.gpu]\nrefresh = 250\n", config::DEFAULT_CONFIG),
+        config::DEFAULT_LAYOUT,
+    );
+    let w = sh.source_warnings();
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(
+        w[0].contains("sources.gpu: unknown option `refresh`"),
+        "{w:?}"
+    );
+    assert!(w[0].contains("accepts refresh_ms, device"), "{w:?}");
+    // And it reaches the screen, not only the accessor: toasts are what the
+    // person who just saved the file actually sees.
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("restart to apply"), "{text}");
+    assert!(
+        text.contains("unknown option `refresh`"),
+        "the re-check must reach the screen"
+    );
 }
 
 // ───────────────────────────── D46 layer B ──────────────────────────────

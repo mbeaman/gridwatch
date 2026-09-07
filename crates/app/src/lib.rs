@@ -293,6 +293,14 @@ pub fn run_terminal(mut registry: Registry, opts: RunOpts) -> Result<(), String>
     for w in shell.view_warnings().to_vec() {
         shell.warn_toast(w);
     }
+    // A mistyped `[sources.<id>]` key is read by nobody and, until arc 11,
+    // was reported by nobody (D61). The source still starts and ignores it —
+    // one typo must not cost the dashboard — so this is a toast, and
+    // `config check` is where it is a failure.
+    for w in shell.source_warnings().to_vec() {
+        tracing::warn!("{w}");
+        shell.warn_toast(w);
+    }
     // The theme's own warnings (the WCAG gate, ignored tables) at start (D52).
     for w in theme_warnings {
         shell.warn_toast(w);
@@ -927,6 +935,12 @@ pub fn config_check(mut registry: Registry, theme: Option<&str>) -> Result<Check
         plugin_ids.extend(loaded.config.plugins.iter().map(|p| p.id.clone()));
         alive = Some((host, inbox));
     }
+    // `[sources.<id>]` against `SourceDef.options` (D61), after the plugin
+    // pass so a `[sources.<plugin id>]` is a warning rather than an unknown
+    // id, and before the component pass so the report reads in config order.
+    let sources = app::check_sources(&registry, &loaded.config.sources, &plugin_ids);
+    lines.extend(sources.lines);
+    failures.extend(sources.failures);
     // Every configured component, actually built (D60). Held until after the
     // plugin children are stopped only in the sense that `alive` outlives it.
     let report = app::check_components(&registry, &loaded, &plugin_ids);

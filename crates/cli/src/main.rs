@@ -341,12 +341,16 @@ fn main() -> std::process::ExitCode {
                     // Print everything the check learned, then fail on it: a
                     // component whose options `run` would reject is a failed
                     // check, and a check that says "error" and exits 0 is no
-                    // check (arc 10a, D60 — the same rule the theme row follows).
+                    // check (arc 10a, D60 — the same rule the theme row
+                    // follows). The wording is "problem" rather than
+                    // "component would not build" since arc 11 (D61): the
+                    // list now also carries `[sources.<id>]` failures, and
+                    // each entry already names which it is.
                     if report.failures.is_empty() {
                         Ok(())
                     } else {
                         Err(format!(
-                            "{} component{} would not build: {}",
+                            "{} problem{} in config.toml: {}",
                             report.failures.len(),
                             if report.failures.len() == 1 { "" } else { "s" },
                             report.failures.join("; ")

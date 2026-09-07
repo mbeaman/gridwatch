@@ -704,7 +704,7 @@ fn config_check_builds_every_component() {
         "{text}"
     );
     assert!(text.contains("gpu — gpu ok"), "{text}");
-    assert!(err.contains("1 component would not build"), "{err}");
+    assert!(err.contains("1 problem in config.toml"), "{err}");
     // An instance that fails to *build* must not also be reported as an id
     // config.toml does not define — it is right there.
     assert!(
@@ -767,6 +767,91 @@ fn config_check_builds_every_component() {
     // The anonymous placements: `kind = "sources"` and `kind = "clock"`.
     assert!(text.contains("sources — sources ok"), "{text}");
     assert!(text.contains("clock — clock ok"), "{text}");
+    // And `[sources.cpu] refresh_ms = 1500` is echoed as read (arc 11).
+    assert!(text.contains("cpu — refresh_ms = 1500"), "{text}");
+}
+
+/// C.32 (arc 11, D61) — `config check` validates `[sources.<id>]` against
+/// `SourceDef.options`. A mistyped key there was read by nobody and reported
+/// by nobody: `refres_ms = 1000` left the cpu source on its default cadence
+/// and said nothing. Three cases end to end, because the check has to be
+/// trustworthy in both directions.
+#[test]
+fn config_check_validates_source_options() {
+    let sandbox = Sandbox::new("checksources");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let check = |sandbox: &Sandbox| {
+        let mut cmd = Command::new(bin());
+        cmd.args(["config", "check"]);
+        sandbox.env(&mut cmd, "checksources");
+        cmd.output().expect("run config check")
+    };
+
+    // An unknown key under a known source: a failure, naming the accepted set.
+    std::fs::write(
+        dir.join("config.toml"),
+        gridwatch_app::config::DEFAULT_CONFIG.replace("refresh_ms = 1500", "refres_ms = 1000"),
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stdout: {text}\nstderr: {err}");
+    assert!(text.contains("sources: 1"), "{text}");
+    assert!(
+        text.contains("cpu — unknown option `refres_ms` (accepts refresh_ms, k10temp)"),
+        "{text}"
+    );
+    assert!(
+        err.contains("sources.cpu: unknown option `refres_ms`"),
+        "{err}"
+    );
+
+    // An id that is neither a registered source nor a plugin: a failure that
+    // says what this build has, because a feature compiled out and a typo
+    // look the same from here.
+    std::fs::write(
+        dir.join("config.toml"),
+        format!(
+            "{}\n[sources.cpus]\nrefresh_ms = 1000\n",
+            gridwatch_app::config::DEFAULT_CONFIG
+        ),
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stdout: {text}\nstderr: {err}");
+    assert!(
+        text.contains("cpus — no such source in this build (have "),
+        "{text}"
+    );
+    assert!(text.contains("cpu"), "{text}");
+    assert!(err.contains("sources.cpus: no such source"), "{err}");
+
+    // A plugin id: a warning line and exit 0. Contract 1 carries no options
+    // to a plugin, but a config written for a later contract must not fail on
+    // this one (D61). `true` is not a plugin and never sends a manifest —
+    // which is fine here: the id comes from `[[plugins]]`, not from the child.
+    std::fs::write(
+        dir.join("config.toml"),
+        format!(
+            "{}\n[[plugins]]\nid = \"weather\"\nargv = [\"true\"]\nhello_ms = 200\n\n[sources.weather]\nunits = \"c\"\n",
+            gridwatch_app::config::DEFAULT_CONFIG
+        ),
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout: {text}\nstderr: {err}");
+    assert!(
+        text.contains(
+            "weather — [sources.weather] is not delivered to a plugin under contract 1; ignored"
+        ),
+        "{text}"
+    );
 }
 
 /// C.15 (arc 4a) — edit mode under a pty: `e`, `L` twice on the cpu tile

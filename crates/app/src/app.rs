@@ -191,6 +191,12 @@ pub struct Shell {
     pub stats_log: Option<std::path::PathBuf>,
     pub stats_cells: bool,
     view_warnings: Vec<String>,
+    /// What `check_sources` found in `[sources.*]` (arc 11, D61): a mistyped
+    /// option, or an id that is neither a registered source nor a plugin.
+    /// Toasted once at `run` and re-computed on a reload — the source still
+    /// starts and ignores the key, because one typo must not cost the
+    /// dashboard.
+    source_warnings: Vec<String>,
     /// `--record`: the journal tee (§4.5). `r` toggles it; the HUD counts it.
     pub recorder: Option<Recorder>,
     /// The action executor (§4.6, seam 11, arc 8a). `None` in `shot` and
@@ -260,6 +266,14 @@ impl Shell {
             &std::collections::BTreeSet::new(),
         );
         let view_warnings = view_warnings(loaded, &instances);
+        // Nothing is known about plugins yet, as above; `attach_plugins`
+        // re-runs this so a `[sources.<plugin id>]` warns instead of failing.
+        let source_warnings = check_sources(
+            &registry,
+            &loaded.config.sources,
+            &std::collections::BTreeSet::new(),
+        )
+        .failures;
         let theme_ref = theme.name.clone();
         Shell {
             executor: None,
@@ -331,6 +345,7 @@ impl Shell {
             stats_log: None,
             stats_cells: false,
             view_warnings,
+            source_warnings,
             recorder: None,
             plugin_host: None,
             plugin_dirty: false,
@@ -363,6 +378,10 @@ impl Shell {
                     "check the plugin's own log lines, and `gridwatch config check`".into();
             }
         }
+        // Now that the plugin ids are known, `[sources.<plugin id>]` is a
+        // warning line rather than "no such source in this build" (D61).
+        self.source_warnings =
+            check_sources(&self.registry, &self.source_options, &self.plugin_ids).failures;
     }
 
     /// Everything the plugin host has said since the last frame: toasts and
@@ -644,6 +663,16 @@ impl Shell {
                         "[sources.*] changed — sources are configured at start; restart to apply",
                     );
                     self.source_options = loaded.config.sources.clone();
+                    // The person who just saved the file is looking at the
+                    // screen, so the check runs again on the new table (D61):
+                    // a restart that carries a typo forward is worse than a
+                    // second toast.
+                    self.source_warnings =
+                        check_sources(&self.registry, &self.source_options, &self.plugin_ids)
+                            .failures;
+                    for w in self.source_warnings.clone() {
+                        self.toast(Severity::Warn, w);
+                    }
                 }
                 let restart_only = (loaded.config.mouse, loaded.config.color.clone());
                 if restart_only != self.restart_only {
@@ -772,6 +801,11 @@ impl Shell {
     /// naming a tier the component does not have.
     pub fn view_warnings(&self) -> &[String] {
         &self.view_warnings
+    }
+
+    /// What `[sources.*]` got wrong (arc 11, D61) — toasted once at `run`.
+    pub fn source_warnings(&self) -> &[String] {
+        &self.source_warnings
     }
 
     /// Surface a config warning in the UI as well as the log — a warning the
@@ -3864,6 +3898,93 @@ pub(crate) fn check_components(
                     c.manifest().kind,
                     known.join(", ")
                 ));
+            }
+        }
+    }
+    out
+}
+
+/// What `gridwatch config check` learned about `[sources.<id>]` (arc 11,
+/// D61). Same shape as `ComponentReport`, and for the same reason: the
+/// lines are printed either way, the failures are what make the check exit
+/// non-zero.
+pub(crate) struct SourceReport {
+    pub lines: Vec<String>,
+    pub failures: Vec<String>,
+}
+
+/// `config check`'s source pass, and the same function the shell runs at
+/// start and on a reload (D61).
+///
+/// A source is configured **only** under `[sources.<id>]` (§9), and until
+/// this existed a mistyped key there was read by nobody and reported by
+/// nobody: `refres_ms = 1000` left the cpu source on its default cadence and
+/// said nothing. The accepted set is `SourceDef.options` — each source's
+/// hand-written `OPTION_NAMES`, registered beside the `start` that reads the
+/// table — so the check lives here, in `app`, where the registry is:
+/// `config::load` has none and stays that way.
+///
+/// It takes the `[sources]` table rather than a `Loaded` because the shell
+/// re-runs it after `attach_plugins` (which is when the plugin ids are
+/// known) and again on a reload, and it holds `source_options`, not the
+/// `Loaded` it came from.
+///
+/// A value's *type* is not checked: that is the source's own
+/// `Options::from_table`, which reports it with a `file:line:col` this pass
+/// could not produce.
+pub(crate) fn check_sources(
+    registry: &Registry,
+    sources: &toml::Table,
+    plugin_ids: &std::collections::BTreeSet<String>,
+) -> SourceReport {
+    let mut out = SourceReport {
+        lines: vec![format!("sources: {}", sources.len())],
+        failures: Vec::new(),
+    };
+    for (id, value) in sources {
+        match registry.source(id) {
+            Some(def) => {
+                let Some(table) = value.as_table() else {
+                    out.lines.push(format!(
+                        "  {id} — expected a table of options, found {}",
+                        value.type_str()
+                    ));
+                    out.failures.push(format!(
+                        "sources.{id}: expected a table of options, found {} — the whole table is ignored",
+                        value.type_str()
+                    ));
+                    continue;
+                };
+                for (key, v) in table {
+                    if def.options.contains(&key.as_str()) {
+                        out.lines.push(format!("  {id} — {key} = {v}"));
+                    } else {
+                        // The accepted set in declaration order: it is the
+                        // order the source's own `OPTION_NAMES` is written
+                        // in, which is the order its docs and its
+                        // `example_options` use.
+                        let msg = format!(
+                            "unknown option `{key}` (accepts {})",
+                            def.options.join(", ")
+                        );
+                        out.lines.push(format!("  {id} — {msg}"));
+                        out.failures.push(format!("sources.{id}: {msg}"));
+                    }
+                }
+            }
+            // Contract 1 carries no options to a plugin (D58 amendment 25),
+            // so the table is ignored today — but a config written for a
+            // later contract must not *fail* on this one (D61).
+            None if plugin_ids.contains(id) => out.lines.push(format!(
+                "  {id} — [sources.{id}] is not delivered to a plugin under contract 1; ignored"
+            )),
+            // A feature compiled out and a typo look the same from here, so
+            // the message says what this build has.
+            None => {
+                let have: Vec<&str> = registry.sources().map(|d| d.info.id.0).collect();
+                let msg = format!("no such source in this build (have {})", have.join(", "));
+                out.lines.push(format!("  {id} — {msg}"));
+                out.failures.push(format!("sources.{id}: {msg}"));
             }
         }
     }
