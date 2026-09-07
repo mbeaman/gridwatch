@@ -375,7 +375,7 @@ The grid default (single GPU) is 54 cells of fixed columns, so `Command` gets 26
 
 **Shared behaviour.** Arc 2 (read-only tables): `↑/↓ PgUp/PgDn Home/End` select, `</>`/`F6` sort column, `I` invert, zoom fills the body. Arc 8: `/` search (htop), `F9`/`k` signal and the other `Action`s on the executor thread, tree/filter/tags, horizontal scroll. Both tables are snapshot-tested at the real 6x3 (122×31), 4x2 (80×20), dense 6x3 (59×18) and zoomed (248×66) sizes with `demo::Synth`'s 32-process synthetic set — a game at 12.5 GiB / 17 % SM, a shell, a browser, kernel threads, one `Both G+C` process (the terminal), and VIRT/RES values chosen to hit all three `Row_printKBytes` regimes — so the column drop order, the row budget and the formatting branches are pinned.
 
-Free extras: `clock` (the 60-line template, tui-big-text, Chrome::Borderless — honoured by the shell from arc 1), `sources` (status / cadence / demand level and detail / age / dropped / restarts, plus the NVML ms/s and `/proc` scan ms the performance gates read — the debugging tile), `alerts` (scrollable log with ack).
+Free extras: `clock` (the 60-line template, tui-big-text, Chrome::Borderless — honoured by the shell from arc 1), `sources` (status / cadence / demand level and detail / age / dropped / restarts, plus `capped N` from `Store::capped` when a source's uncatalogued names hit `Retention.max_uncatalogued` (D61) — a note, not an alert — and the NVML ms/s and `/proc` scan ms the performance gates read; the debugging tile), `alerts` (scrollable log with ack).
 
 ## 9. Configuration
 
