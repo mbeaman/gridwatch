@@ -568,7 +568,9 @@ fn source_and_component_option_names_are_disjoint() {
     }
     println!("pairs checked: {}", checked.join(", "));
     assert!(
-        checked.len() >= table.len(),
+        table
+            .iter()
+            .all(|(kind, _)| checked.iter().any(|p| p.starts_with(&format!("{kind}×")))),
         "every component in the table must have contributed at least one pair: {checked:?}"
     );
     for (kind, source, name) in &found {
@@ -702,7 +704,7 @@ fn a_plugin_source_table_warns_and_never_fails() {
 /// and toasts what it found (D61), rather than carrying the typo to the
 /// restart the first toast asked for.
 #[test]
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", feature = "cpu"))]
 fn a_reload_that_changes_sources_re_runs_the_check() {
     let mut sh = shell_with_config(config::DEFAULT_CONFIG);
     assert!(sh.source_warnings().is_empty());
@@ -725,6 +727,38 @@ fn a_reload_that_changes_sources_re_runs_the_check() {
     assert!(
         text.contains("unknown option `refresh`"),
         "the re-check must reach the screen"
+    );
+}
+
+/// A save that adds a plugin *and* its `[sources.<id>]` table in one edit
+/// must warn, never fail: D61 says `[sources.<plugin id>]` is a warning, and
+/// `[[plugins]]` is restart-only, so the plugin named in this very save has
+/// not started. Reading the ids that *started* called it "no such source in
+/// this build" while `config check` on the same file called it fine (arc 11
+/// review).
+#[test]
+#[cfg(feature = "cpu")]
+fn a_reload_that_adds_a_plugin_and_its_source_table_does_not_fail_it() {
+    let mut sh = shell_with_config(config::DEFAULT_CONFIG);
+    assert!(sh.source_warnings().is_empty());
+    sh.reload_from_texts(
+        gridwatch_store::ReloadKind::Config,
+        &format!(
+            "{}\n[[plugins]]\nid = \"weather\"\nargv = [\"weather.py\"]\n\n\
+             [sources.weather]\nunits = \"c\"\n",
+            config::DEFAULT_CONFIG
+        ),
+        config::DEFAULT_LAYOUT,
+    );
+    let w = sh.source_warnings();
+    assert!(
+        w.is_empty(),
+        "a configured plugin's [sources.<id>] table is a warning, never a failure: {w:?}"
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(
+        !text.contains("no such source in this build"),
+        "the reload must not deny a plugin the same file configures: {text}"
     );
 }
 

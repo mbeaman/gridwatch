@@ -666,10 +666,17 @@ impl Shell {
                     // The person who just saved the file is looking at the
                     // screen, so the check runs again on the new table (D61):
                     // a restart that carries a typo forward is worse than a
-                    // second toast.
+                    // second toast. The ids come from the config just loaded,
+                    // never from `self.plugin_ids` — `[[plugins]]` is
+                    // restart-only, so a plugin added in this very save has
+                    // not started, and checking against what *started* called
+                    // its `[sources.<id>]` table "no such source in this
+                    // build" while `config check` on the same file called it
+                    // fine (arc 11 review).
+                    let ids: std::collections::BTreeSet<String> =
+                        loaded.config.plugins.iter().map(|p| p.id.clone()).collect();
                     self.source_warnings =
-                        check_sources(&self.registry, &self.source_options, &self.plugin_ids)
-                            .failures;
+                        check_sources(&self.registry, &self.source_options, &ids).failures;
                     for w in self.source_warnings.clone() {
                         self.toast(Severity::Warn, w);
                     }
@@ -1370,9 +1377,22 @@ impl Shell {
             let mut text = format!(" {glyph} {} ", t.text);
             let max = usize::from(body.width.saturating_sub(2));
             let n = text.chars().count();
-            if n > max && max > 4 {
-                // Keep the tail: `file:line:col` leads, the reason ends it,
-                // and the reason is what the user needs (review).
+            if n > max && max > 8 {
+                // Elide the *middle*, because the two message shapes put
+                // their meaning at opposite ends: a config error leads with
+                // `file:line:col` and ends with the reason, while an arc-11
+                // source warning leads with `sources.<id>: unknown option
+                // `k`` and ends with the accepted set. Keeping the tail alone
+                // showed neither the source nor the key at 80 columns (arc 11
+                // review), and keeping the head alone would lose every parse
+                // error's reason.
+                let budget = max - 1;
+                let head = budget / 2;
+                let tail = budget - head;
+                let a: String = text.chars().take(head).collect();
+                let b: String = text.chars().skip(n - tail).collect();
+                text = format!("{a}…{b}");
+            } else if n > max && max > 4 {
                 let keep: String = text.chars().skip(n - (max - 2)).collect();
                 text = format!(" …{keep}");
             }
@@ -3941,6 +3961,15 @@ pub(crate) fn check_sources(
         lines: vec![format!("sources: {}", sources.len())],
         failures: Vec::new(),
     };
+    // The echoed lines below say a *name* was accepted, never that a value
+    // was: types are each source's own `Options::from_table`, which today
+    // falls back to its default without saying so, and a reader who saw
+    // `refresh_ms = "fast"` echoed would otherwise take it as confirmation
+    // (arc 11 review; the typed-options fix is in BACKLOG.md).
+    if !sources.is_empty() {
+        out.lines
+            .push("  (option names are checked here; values are the source's own)".into());
+    }
     for (id, value) in sources {
         match registry.source(id) {
             Some(def) => {
