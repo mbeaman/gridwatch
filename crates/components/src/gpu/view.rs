@@ -363,11 +363,20 @@ fn bar_pair(a: View, b: View) -> View {
     }
 }
 
-fn power_trace(cx: &RenderCx<'_>) -> View {
+fn power_trace(cx: &RenderCx<'_>, width: u16) -> View {
     let store = cx.store;
-    let series: Vec<Option<f32>> = match store.vector(&gpu::POWER_TRACE.idx(DEV)) {
-        Some((_, v)) => v.iter().map(|w| Some(*w)).collect(),
+    let trace: Vec<f32> = match store.vector(&gpu::POWER_TRACE.idx(DEV)) {
+        Some((_, v)) => v.to_vec(),
         None => Vec::new(),
+    };
+    // One sample per 20 ms is ~50 columns; a wider strip stretches them the
+    // way htop's meter stretches to its column (D62 §4, arc 12 review). A
+    // narrower strip keeps the newest samples — the renderer's own rule.
+    let w = usize::from(width.max(1));
+    let series: Vec<Option<f32>> = if trace.is_empty() || w <= trace.len() {
+        trace.into_iter().map(Some).collect()
+    } else {
+        (0..w).map(|i| Some(trace[i * trace.len() / w])).collect()
     };
     let limit = scalar(store, &gpu::POWER_LIMIT_W).map(|l| l as f32);
     if series.is_empty() {
@@ -437,7 +446,7 @@ fn header_block(g: &Gpu, cx: &RenderCx<'_>, width: u16) -> Vec<(Constraint, View
             Constraint::Len(1),
             View::Text(vec![vec![muted("POW "), ghost("20 ms")]]),
         ),
-        (Constraint::Len(3), power_trace(cx)),
+        (Constraint::Len(3), power_trace(cx, width)),
     ]
 }
 
@@ -788,9 +797,7 @@ fn table(g: &Gpu, cx: &RenderCx<'_>) -> View {
             Constraint::Fill(1),
             View::Text(vec![vec![
                 muted("Power "),
-                ghost(
-                    "board power above; the six 12V-2x6 pins arrive with the pins source (arc 3)",
-                ),
+                ghost("board power above; the six 12V-2x6 pins are the pins tile's (place one beside this)"),
             ]]),
         ));
     }

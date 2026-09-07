@@ -362,12 +362,16 @@ impl Gpu {
         if tier < TIER_PROCS {
             return inner_height.saturating_sub(HEADER_ROWS).max(BAND_MIN);
         }
-        if zoomed {
-            return (inner_height / 3).max(BAND_MIN);
-        }
-        inner_height
+        let grid = inner_height
             .saturating_sub(HEADER_ROWS + 1 + self.options.table_rows)
-            .max(BAND_MIN)
+            .max(BAND_MIN);
+        if zoomed {
+            // A third of the body — but never a taller band than the grid's,
+            // so zoom never shows *fewer* table rows than the tile did
+            // (D62 amendment: below 30 rows a plain third would).
+            return (inner_height / 3).min(grid).max(BAND_MIN);
+        }
+        grid
     }
 
     /// Body rows the table shows (§8.1 row budget): `min(table_rows,

@@ -53,6 +53,13 @@ fn row_budget_at_the_real_grid_sizes() {
     // Zoomed: a third of the body is chart, the table has the rest.
     assert_eq!(g.band_rows(TIER_PROCS, 66, true), 22);
     assert_eq!(g.body_rows(TIER_PROCS, 66, true), 66 - 8 - 22 - 1);
+    // …but never a taller band than the grid's, so a zoomed tile on a short
+    // terminal shows at least the rows the grid showed (arc 12 review: a
+    // plain third gave 7 rows at 24 where the grid gave 10).
+    assert_eq!(g.band_rows(TIER_PROCS, 24, true), 24 - 8 - 1 - 10);
+    assert_eq!(g.body_rows(TIER_PROCS, 24, true), 10);
+    assert_eq!(g.band_rows(TIER_PROCS, 18, true), 4);
+    assert_eq!(g.body_rows(TIER_PROCS, 18, true), 5);
     // A wide terminal's 6x3 (480×135, inner 65) keeps its 10-row table and
     // gives every remaining row to the chart — D62's report.
     assert_eq!(g.band_rows(TIER_PROCS, 65, false), 65 - 8 - 1 - 10);
