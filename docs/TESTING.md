@@ -65,6 +65,15 @@ the ones below structurally cannot observe.
   tier is chosen with data in the store (htop: `CPU` at tier 0, `MEM`/`SWP` at
   `meters`, `CCD` at `cores`). This turns `Tier.adds` from a comment into a
   checked claim.
+- **Drawings grow with the rect** (`assert_grows_with_area`, arc 12 / D62).
+  For the tiers a component lists, doubling the width or the height of a rect
+  with data must draw at least 1.5× the non-blank cells, with the tier index
+  asserted so a doubled rect cannot step up a tier. A ratio, because gaps and
+  legends are legitimately constant; the axes where a braille line or a quiet
+  band make the cell count the wrong oracle are recorded with their numbers in
+  the sweep's own comment rather than asserted. `assert_renders_everywhere`
+  sweeps only to the richest minimum plus four, which is why the wide-terminal
+  bug never tripped it.
 - **Below the minimum, only "no panic" is required** — the shell owns the chip
   there and never asks the component for a tier it cannot fit.
 - **No fabricated data.** With an *empty* store, the buffer must not contain a
