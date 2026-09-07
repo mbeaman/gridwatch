@@ -334,9 +334,17 @@ fn sparkline(
     let w = area.width as usize;
     let take = series.len().min(w);
     let offset = series.len() - take;
+    // One sample per column, htop's and nvtop's way (D62): a column with no
+    // sample of its own draws the newest sample before it, so a tile wider
+    // than the sample count is a meter and not a picket fence. Only the
+    // columns before the first sample stay empty.
+    let mut last: Option<f32> = None;
     for (i, v) in series[offset..].iter().enumerate() {
         let x = area.x + (w - take + i) as u16;
-        let Some(v) = v else { continue };
+        if v.is_some() {
+            last = *v;
+        }
+        let Some(v) = last else { continue };
         let frac = (v / top).clamp(0.0, 1.0);
         let total8 = (frac * f32::from(area.height) * 8.0).round() as u16;
         let colour = Style::new().fg(g.sample(frac));
@@ -721,5 +729,78 @@ fn stack(dir: Dir, children: &[(Constraint, View)], area: Rect, theme: &Theme, b
         };
         DEFAULT_RENDERER.render(view, sub, theme, buf);
         offset += size;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::{ColorMode, load_builtin};
+
+    fn th() -> Theme {
+        load_builtin("modern", ColorMode::TrueColor).expect("built-in theme loads")
+    }
+
+    /// Non-blank cells per column, left to right.
+    fn columns(buf: &Buffer) -> Vec<usize> {
+        let area = *buf.area();
+        (0..area.width)
+            .map(|x| {
+                (0..area.height)
+                    .filter(|y| {
+                        buf.cell((x, *y))
+                            .is_some_and(|c| !c.symbol().trim().is_empty())
+                    })
+                    .count()
+            })
+            .collect()
+    }
+
+    fn draw(series: &[Option<f32>], w: u16, h: u16) -> Vec<usize> {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: w,
+            height: h,
+        };
+        let mut buf = Buffer::empty(area);
+        sparkline(
+            series,
+            crate::theme::GradientId::Load,
+            Some(1.0),
+            area,
+            &th(),
+            &mut buf,
+        );
+        columns(&buf)
+    }
+
+    /// D62 §1: a column with no sample of its own holds the newest sample
+    /// before it; the columns before the first sample stay empty.
+    #[test]
+    fn a_sparkline_holds_across_empty_columns() {
+        assert_eq!(
+            draw(&[Some(1.0), None, None, Some(0.5), None], 5, 4),
+            vec![4, 4, 4, 2, 2]
+        );
+    }
+
+    #[test]
+    fn a_sparkline_is_empty_before_its_first_sample() {
+        assert_eq!(draw(&[None, None, Some(1.0)], 3, 4), vec![0, 0, 4]);
+    }
+
+    /// The hold does not disturb a fully-populated series, and a series wider
+    /// than the area still shows its newest `width` samples (the `offset`).
+    #[test]
+    fn a_full_sparkline_is_unchanged_and_a_long_one_still_scrolls() {
+        assert_eq!(
+            draw(&[Some(1.0), Some(0.5), Some(1.0)], 3, 4),
+            vec![4, 2, 4]
+        );
+        assert_eq!(
+            draw(&[Some(1.0), Some(1.0), Some(0.5), Some(0.25)], 2, 4),
+            vec![2, 1]
+        );
     }
 }
