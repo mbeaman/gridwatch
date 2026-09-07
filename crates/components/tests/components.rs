@@ -478,3 +478,42 @@ fn layout_thresholds_never_panic() {
         }
     }
 }
+
+/// Arc 11 (D61): a plugin whose uncatalogued names filled
+/// `Retention::max_uncatalogued` is **visible**, not merely bounded — the
+/// `sources` tile's NOTE carries `capped N` beside the reason, in the same
+/// muted style as `dropped`. It is a note and never an alert: the run is
+/// healthy, and the count is the evidence the plugin was throttled.
+#[test]
+fn the_sources_tile_says_when_a_plugin_was_capped() {
+    use gridwatch_store::{Batch, Datum, Label, MetricId, Msg, Retention, Sample, SourceId, Ts};
+    let mut store = gridwatch_store::Store::new(Retention {
+        max_len: 64,
+        max_age: std::time::Duration::from_secs(600),
+        max_uncatalogued: 1,
+    });
+    let weather = SourceId("weather");
+    store.ensure_source(weather);
+    store.apply(&Msg::Batch(Batch {
+        source: weather,
+        at: Ts(1_000_000_000),
+        samples: ["oslo", "kyoto", "quito"]
+            .iter()
+            .map(|c| Sample {
+                id: MetricId {
+                    name: "weather.temp",
+                    label: Label::Name(std::sync::Arc::from(*c)),
+                },
+                datum: Datum::Scalar(11.0),
+            })
+            .collect(),
+    }));
+    assert_eq!(store.capped(weather), 2, "the fixture must actually cap");
+    let th = theme("mono");
+    let (tier, buf) = render_component(&mut *sources(), &store, &th, Size::new(80, 20), false);
+    assert_eq!(tier, 1, "the note lives in the table tier's NOTE column");
+    let text = gridwatch_ui::dump::cells(&buf);
+    assert!(text.contains("capped 2"), "{text}");
+    // A source that refused nothing says nothing.
+    assert_eq!(text.matches("capped").count(), 1, "{text}");
+}

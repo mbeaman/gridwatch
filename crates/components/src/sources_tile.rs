@@ -62,6 +62,18 @@ pub const DEF: fn() -> ComponentDef = || ComponentDef {
 /// performance gates read").
 fn note(cx: &RenderCx<'_>, s: &gridwatch_store::SourceOverview<'_>) -> String {
     let mut out = s.status.reason.as_deref().unwrap_or("").to_string();
+    // Samples the store refused because this source's uncatalogued names
+    // filled `Retention::max_uncatalogued` (D61) — a plugin publishing a
+    // fresh label per message. A **note**, like `dropped`, not an alert:
+    // nothing is wrong with the run, and the count is the evidence that the
+    // plugin was throttled. Bounded and silent would be worse than bounded
+    // and visible.
+    if s.capped > 0 {
+        if !out.is_empty() {
+            out.push_str(" · ");
+        }
+        out.push_str(&format!("capped {}", s.capped));
+    }
     // The last scan's cost, whichever tick it ran on: the meters publish more
     // often than the scan, so a "this tick only" guard blinked two ticks in
     // three (review finding).
