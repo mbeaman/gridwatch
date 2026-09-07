@@ -123,20 +123,22 @@ const MATT_TERMINAL: Option<(u16, u16)> = None;
 /// title. The shell draws a titled box per placement; the focused tile's is
 /// heavy (`┏ ┓ ┗ ┃`), the others' double (`╔ ╗ ╚ ║`).
 fn tile_inner<'a>(rows: &'a [Vec<char>], title: &str) -> Vec<&'a [char]> {
-    let needle: Vec<char> = title.chars().collect();
-    let (top, tx) = rows
+    // The title is drawn immediately after the corner (`┏ CPU ━━`), so the
+    // match must be anchored on one — `CPU` and `GPU` both appear in tile
+    // *bodies* (`CPU [|||`, `GPU 2769MHz`, the ` GPU MEM` column head) and a
+    // bare substring search would eventually find one of those instead.
+    let needle: Vec<char> = format!(" {title} ").chars().collect();
+    let corner = |c: char| c == '┏' || c == '╔';
+    let (top, left) = rows
         .iter()
         .enumerate()
         .find_map(|(y, r)| {
             r.windows(needle.len())
                 .position(|w| w == needle.as_slice())
-                .map(|x| (y, x))
+                .filter(|x| *x > 0 && corner(r[x - 1]))
+                .map(|x| (y, x - 1))
         })
         .unwrap_or_else(|| panic!("no tile titled {title:?} in the frame"));
-    let left = rows[top][..tx]
-        .iter()
-        .rposition(|c| *c == '┏' || *c == '╔')
-        .unwrap_or_else(|| panic!("tile {title:?} has no top-left corner"));
     let right = left
         + 1
         + rows[top][left + 1..]
