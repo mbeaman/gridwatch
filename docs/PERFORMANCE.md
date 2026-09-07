@@ -168,8 +168,9 @@ knows what a frame that really fills 480x135 costs. Uncached it is **1.02 ms**
 against P19's 8 ms p95, or 2.0x the 250x70 frame for 3.7x the cells — sublinear
 because the chrome, the layout solve and the fixed-height header blocks do not
 grow with the rect. The 250x70 bench read **527 µs** in the same run against
-the 513 µs recorded on 2026-09-02, which is run-to-run noise plus the arc-12
-drawings now filling columns they used to leave blank.
+the 513 µs recorded on 2026-09-02; the 2.7 % difference is not attributed —
+two runs four days apart on a shared machine, with the arc-12 drawings now
+filling columns they used to leave blank, and nothing here separates the two.
 
 Re-take them on a machine change and put the new column here rather than overwriting: the point is the comparison.
 
