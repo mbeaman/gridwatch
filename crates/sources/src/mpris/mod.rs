@@ -20,9 +20,12 @@ use std::time::Duration;
 
 use gridwatch_store::keys::media::{self, Caps, MediaCmd, PlayStatus};
 use gridwatch_store::{
-    Cadence, Datum, Sample, Source, SourceCtx, SourceInfo, SourceState, SourceStatus, Ts, demo,
+    Cadence, Datum, OptionIssue, Sample, Source, SourceCtx, SourceInfo, SourceState, SourceStatus,
+    Ts, demo,
 };
 use zbus::zvariant::{OwnedValue, Value};
+
+use crate::options::Reader;
 
 use meta::{MetaValue, Metadata};
 use model::{Event, Model};
@@ -66,35 +69,61 @@ impl Default for Options {
     }
 }
 
+pub const MIN_ART_PX: i64 = 16;
+pub const MAX_ART_PX: i64 = 512;
+pub const MAX_HISTORY: i64 = 500;
+
 impl Options {
-    pub fn from_table(t: &toml::Table) -> Options {
+    pub fn from_table(t: &toml::Table) -> (Options, Vec<OptionIssue>) {
+        let mut r = Reader::new("mpris", t);
+        let o = Options::read(&mut r);
+        (o, r.finish())
+    }
+
+    fn read(r: &mut Reader) -> Options {
         let mut o = Options::default();
-        if let Some(p) = t.get("player").and_then(|v| v.as_str())
+        // `player = "auto"` is the default spelled out, not a bus name.
+        if let Some(p) = r.str("player", "auto")
             && p != "auto"
         {
             o.player = full_bus(p);
         }
-        if let Some(b) = t.get("art").and_then(|v| v.as_bool()) {
+        if let Some(b) = r.bool("art", o.art) {
             o.art = b;
         }
-        if let Some(n) = t.get("art_max_px").and_then(|v| v.as_integer()) {
-            o.art_max_px = (n.max(0) as u32).clamp(16, 512);
+        if let Some(n) = r.int_in(
+            "art_max_px",
+            MIN_ART_PX..=MAX_ART_PX,
+            "pixels",
+            "",
+            i64::from(media::ART_MAX_PX),
+        ) {
+            o.art_max_px = n as u32;
         }
-        if let Some(ms) = t.get("poll_ms").and_then(|v| v.as_integer()) {
-            let want = Duration::from_millis(ms.max(0) as u64);
-            o.poll = want.clamp(MIN_POLL, MAX_POLL);
-            if o.poll != want {
-                tracing::warn!(
-                    "[sources.mpris] poll_ms = {ms} clamped to {} (250–5000)",
-                    o.poll.as_millis()
-                );
-            }
+        if let Some(ms) = r.int_ms(
+            "poll_ms",
+            MIN_POLL.as_millis() as i64..=MAX_POLL.as_millis() as i64,
+            "",
+            Options::default().poll.as_millis() as i64,
+        ) {
+            o.poll = Duration::from_millis(ms as u64);
         }
-        if let Some(n) = t.get("history").and_then(|v| v.as_integer()) {
-            o.history = (n.max(1) as usize).min(500);
+        if let Some(n) = r.int_in(
+            "history",
+            1..=MAX_HISTORY,
+            "entries",
+            "",
+            Options::default().history as i64,
+        ) {
+            o.history = n as usize;
         }
         o
     }
+}
+
+/// The reader `start` runs, without starting anything (§4.3).
+pub fn check(t: &toml::Table) -> Vec<OptionIssue> {
+    Options::from_table(t).1
 }
 
 /// `firefox` → `org.mpris.MediaPlayer2.firefox`; a full name is left alone.
@@ -245,7 +274,7 @@ pub struct MprisSource {
 impl MprisSource {
     pub fn new(options: &toml::Table) -> MprisSource {
         MprisSource {
-            options: Options::from_table(options),
+            options: Options::from_table(options).0,
         }
     }
 }
@@ -765,12 +794,14 @@ async fn sleep_or_stop(cx: &SourceCtx, d: Duration) -> bool {
 }
 
 pub fn start(options: &toml::Table) -> Box<dyn Source> {
+    crate::options::log("mpris", &check(options));
     Box::new(MprisSource::new(options))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gridwatch_store::IssueKind;
 
     #[test]
     fn options_parse_and_clamp() {
@@ -782,20 +813,78 @@ poll_ms = 10
 history = 9000"#,
         )
         .unwrap();
-        let o = Options::from_table(&t);
+        let (o, issues) = Options::from_table(&t);
         assert_eq!(o.player, "org.mpris.MediaPlayer2.firefox");
         assert!(!o.art);
         assert_eq!(o.art_max_px, 512);
         assert_eq!(o.poll, MIN_POLL);
         assert_eq!(o.history, 500);
+        let texts: Vec<&str> = issues.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "`art_max_px` = 4000 clamped to 512 (accepts 16-512)",
+                "`poll_ms` = 10 clamped to 250 (accepts 250-5000)",
+                "`history` = 9000 clamped to 500 (accepts 1-500)",
+            ]
+        );
+        assert!(issues.iter().all(|i| i.kind == IssueKind::Adjusted));
         let t: toml::Table = toml::from_str(r#"player = "auto""#).unwrap();
-        assert_eq!(Options::from_table(&t).player, "");
-        assert_eq!(Options::from_table(&toml::Table::new()), Options::default());
+        assert_eq!(Options::from_table(&t).0.player, "");
+        assert_eq!(
+            Options::from_table(&toml::Table::new()).0,
+            Options::default()
+        );
         assert_eq!(
             full_bus("org.mpris.MediaPlayer2.vlc"),
             "org.mpris.MediaPlayer2.vlc"
         );
-        assert_eq!(OPTION_NAMES.len(), 5);
+    }
+
+    /// D63 trap 3: the ask set is the accepted set, in order.
+    #[test]
+    fn the_reader_asks_for_exactly_the_accepted_set() {
+        let t = toml::Table::new();
+        let mut r = Reader::new("mpris", &t);
+        let o = Options::read(&mut r);
+        assert_eq!(r.asked(), OPTION_NAMES);
+        assert_eq!(o, Options::default());
+        assert!(r.finish().is_empty());
+    }
+
+    #[test]
+    fn a_wrong_type_keeps_the_default_and_names_it() {
+        for (text, want) in [
+            (
+                "player = 5",
+                "`player` expects a string, found an integer (5) — the default auto stands",
+            ),
+            (
+                "art = \"on\"",
+                "`art` expects a boolean, found a string (\"on\") — the default true stands",
+            ),
+            (
+                "art_max_px = \"big\"",
+                "`art_max_px` expects an integer (pixels), found a string (\"big\") — \
+                 the default 256 stands",
+            ),
+            (
+                "poll_ms = 0",
+                "`poll_ms` expects an integer > 0 (milliseconds), found 0 — \
+                 the default 1000 stands",
+            ),
+            (
+                "history = 1.5",
+                "`history` expects an integer (entries), found a float (1.5) — \
+                 the default 50 stands",
+            ),
+        ] {
+            let t: toml::Table = toml::from_str(text).unwrap();
+            let (kind, got) = crate::options::only_issue(check(&t));
+            assert_eq!(kind, IssueKind::Rejected, "{text}");
+            assert_eq!(got, want, "{text}");
+            assert_eq!(Options::from_table(&t).0, Options::default(), "{text}");
+        }
     }
 
     #[test]

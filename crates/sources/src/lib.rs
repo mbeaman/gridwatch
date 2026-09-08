@@ -13,6 +13,7 @@ pub mod gpu;
 pub mod mpris;
 #[cfg(feature = "net")]
 pub mod net;
+pub mod options;
 #[cfg(feature = "pins")]
 pub mod pins;
 pub mod registry;

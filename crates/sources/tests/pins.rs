@@ -10,6 +10,7 @@ use astral_watch::config::AlertPolicy;
 use astral_watch::decode::{Pin, Reading};
 use gridwatch_sources::pins::backend::{Described, Loss, PinsBackend};
 use gridwatch_sources::pins::{Bridge, Options, Sampler, clamp_interval};
+use gridwatch_store::IssueKind;
 use gridwatch_store::keys::pins::{PinsMode, PinsState};
 use gridwatch_store::{Datum, Sample, Transition, Ts};
 
@@ -189,12 +190,48 @@ fn options_clamp_the_interval_and_pick_the_backend() {
     assert_eq!(clamp_interval(700), Duration::from_millis(700));
     assert_eq!(clamp_interval(60_000), Duration::from_secs(5));
     let t: toml::Table = toml::from_str("source = \"exporter\"\ninterval_ms = 250").unwrap();
-    let o = Options::from_table(&t);
+    let (o, issues) = Options::from_table(&t);
     assert_eq!(o.pick, gridwatch_sources::pins::Pick::Exporter);
     assert_eq!(o.interval, Duration::from_millis(500));
     assert_eq!(o.exporter, "127.0.0.1:9942");
-    let o = Options::from_table(&toml::Table::new());
+    // The P14 floor is a warning now, and it still says why (D63).
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    assert_eq!(issues[0].kind, IssueKind::Adjusted);
+    assert_eq!(
+        issues[0].text,
+        "`interval_ms` = 250 clamped to 500 (accepts 500-5000, P14)"
+    );
+    let (o, issues) = Options::from_table(&toml::Table::new());
     assert_eq!(o.pick, gridwatch_sources::pins::Pick::Auto);
+    assert!(issues.is_empty(), "{issues:?}");
+}
+
+/// The acceptance case (ROADMAP arc 13): `source = "i2x"` fell through to
+/// `auto` and said nothing. It names the three choices now, and the value is
+/// discarded rather than guessed at.
+#[test]
+fn an_unknown_backend_word_names_the_three_that_exist() {
+    let t: toml::Table = toml::from_str("source = \"i2x\"").unwrap();
+    let issues = gridwatch_sources::pins::check(&t);
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    assert_eq!(issues[0].kind, IssueKind::Rejected);
+    assert_eq!(
+        issues[0].text,
+        "`source` expects one of auto, i2c, exporter, found \"i2x\" — auto stands"
+    );
+    assert_eq!(
+        Options::from_table(&t).0.pick,
+        gridwatch_sources::pins::Pick::Auto
+    );
+    // A wrongly typed address keeps the default and names it.
+    let t: toml::Table = toml::from_str("exporter = 9942").unwrap();
+    let issues = gridwatch_sources::pins::check(&t);
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    assert_eq!(
+        issues[0].text,
+        "`exporter` expects a string, found an integer (9942) — \
+         the default 127.0.0.1:9942 stands"
+    );
 }
 
 /// The exporter's staleness rule (digest §2b).

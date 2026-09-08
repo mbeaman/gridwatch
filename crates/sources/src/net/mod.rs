@@ -19,9 +19,11 @@ use std::time::{Duration, Instant};
 
 use gridwatch_store::keys::net::{self, Link, Probes};
 use gridwatch_store::{
-    Cadence, Datum, Detail, Label, Level, MetricId, Sample, Source, SourceCtx, SourceInfo,
-    SourceState, SourceStatus, demo,
+    Cadence, Datum, Detail, Label, Level, MetricId, OptionIssue, Sample, Source, SourceCtx,
+    SourceInfo, SourceState, SourceStatus, demo,
 };
+
+use crate::options::Reader;
 
 pub mod link;
 
@@ -65,51 +67,51 @@ impl Default for Options {
     }
 }
 
-fn clamp(d: Duration) -> Duration {
-    d.clamp(MIN_REFRESH, MAX_REFRESH)
-}
-
 impl Options {
-    pub fn from_table(t: &toml::Table) -> Options {
+    pub fn from_table(t: &toml::Table) -> (Options, Vec<OptionIssue>) {
+        let mut r = Reader::new("net", t);
+        let o = Options::read(&mut r);
+        (o, r.finish())
+    }
+
+    /// Read in `OPTION_NAMES` order — the tripwire below pins it, and the
+    /// order is what `config check` prints the issues in.
+    fn read(r: &mut Reader) -> Options {
         let mut o = Options::default();
-        let ms = |k: &str| {
-            t.get(k)
-                .and_then(|v| v.as_integer())
-                .map(|n| Duration::from_millis(n.max(0) as u64))
-        };
-        if let Some(d) = ms("refresh_ms") {
-            o.refresh = clamp(d);
-            if o.refresh != d {
-                tracing::warn!(
-                    "[sources.net] refresh_ms = {} clamped to {}",
-                    d.as_millis(),
-                    o.refresh.as_millis()
-                );
-            }
+        let d = Options::default();
+        let ms = MIN_REFRESH.as_millis() as i64..=MAX_REFRESH.as_millis() as i64;
+        if let Some(n) = r.int_ms("refresh_ms", ms.clone(), "", d.refresh.as_millis() as i64) {
+            o.refresh = Duration::from_millis(n as u64);
         }
-        if let Some(d) = ms("link_ms") {
-            o.link = clamp(d);
+        if let Some(n) = r.int_ms("link_ms", ms.clone(), "", d.link.as_millis() as i64) {
+            o.link = Duration::from_millis(n as u64);
         }
-        if let Some(d) = ms("conns_ms") {
-            o.conns_every = clamp(d);
-        }
-        if let Some(d) = ms("probe_ms") {
-            o.probe_every = clamp(d);
-        }
-        if let Some(b) = t.get("conns").and_then(|v| v.as_bool()) {
+        if let Some(b) = r.bool("conns", d.conns) {
             o.conns = b;
         }
-        if let Some(b) = t.get("public_ip").and_then(|v| v.as_bool()) {
-            o.public_ip = b;
+        if let Some(n) = r.int_ms("conns_ms", ms.clone(), "", d.conns_every.as_millis() as i64) {
+            o.conns_every = Duration::from_millis(n as u64);
         }
-        if let Some(list) = t.get("probes").and_then(|v| v.as_array()) {
-            o.probes = list
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
+        // An empty `probes` is a value — "probe nothing" — so it is allowed;
+        // a non-string element discards the whole list rather than silently
+        // dropping the element, which is what the filter used to do (D63).
+        let defaults: Vec<&str> = d.probes.iter().map(String::as_str).collect();
+        if let Some(list) = r.str_list("probes", true, &defaults) {
+            o.probes = list;
+        }
+        if let Some(n) = r.int_ms("probe_ms", ms, "", d.probe_every.as_millis() as i64) {
+            o.probe_every = Duration::from_millis(n as u64);
+        }
+        if let Some(b) = r.bool("public_ip", d.public_ip) {
+            o.public_ip = b;
         }
         o
     }
+}
+
+/// The reader `start` runs, without starting anything (§4.3).
+pub fn check(t: &toml::Table) -> Vec<OptionIssue> {
+    Options::from_table(t).1
 }
 
 /// `gridwatch doctor`'s rows (seam 8): what the source can read here. All
@@ -338,7 +340,7 @@ pub struct NetSource {
 impl NetSource {
     pub fn new(options: &toml::Table) -> NetSource {
         NetSource {
-            options: Options::from_table(options),
+            options: Options::from_table(options).0,
         }
     }
 }
@@ -618,12 +620,14 @@ impl Prober {
 }
 
 pub fn start(options: &toml::Table) -> Box<dyn Source> {
+    crate::options::log("net", &check(options));
     Box::new(NetSource::new(options))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gridwatch_store::IssueKind;
 
     fn fixture_roots() -> Roots {
         let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/net");
@@ -670,15 +674,86 @@ probes = ["gateway"]
 public_ip = true"#,
         )
         .unwrap();
-        let o = Options::from_table(&t);
+        let (o, issues) = Options::from_table(&t);
         assert_eq!(o.refresh, MIN_REFRESH);
         assert_eq!(o.link, MAX_REFRESH);
         assert!(!o.conns);
         assert_eq!(o.probes, ["gateway"]);
         assert!(o.public_ip, "opt-in, but honoured when asked for");
-        assert_eq!(Options::from_table(&toml::Table::new()), Options::default());
+        // Both clamps are warnings, in `OPTION_NAMES` order, and nothing else.
+        let texts: Vec<&str> = issues.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "`refresh_ms` = 10 clamped to 250 (accepts 250-10000)",
+                "`link_ms` = 60000 clamped to 10000 (accepts 250-10000)",
+            ]
+        );
+        assert!(issues.iter().all(|i| i.kind == IssueKind::Adjusted));
+        assert_eq!(
+            Options::from_table(&toml::Table::new()).0,
+            Options::default()
+        );
         assert!(!Options::default().public_ip, "off by default (§9)");
-        assert_eq!(OPTION_NAMES.len(), 7);
+    }
+
+    /// D63 trap 3: the ask set is the accepted set, in order. `net` is the
+    /// source that read its keys in a different order from the one it
+    /// declared, which no test could see until this one.
+    #[test]
+    fn the_reader_asks_for_exactly_the_accepted_set() {
+        let t = toml::Table::new();
+        let mut r = Reader::new("net", &t);
+        let o = Options::read(&mut r);
+        assert_eq!(r.asked(), OPTION_NAMES);
+        assert_eq!(o, Options::default());
+        assert!(r.finish().is_empty());
+    }
+
+    #[test]
+    fn a_wrong_type_keeps_the_default_and_names_it() {
+        for (text, want) in [
+            (
+                "refresh_ms = \"fast\"",
+                "`refresh_ms` expects an integer (milliseconds), found a string (\"fast\") \
+                 — the default 1000 stands",
+            ),
+            (
+                "conns = 1",
+                "`conns` expects a boolean, found an integer (1) — the default true stands",
+            ),
+            (
+                "public_ip = \"yes\"",
+                "`public_ip` expects a boolean, found a string (\"yes\") — \
+                 the default false stands",
+            ),
+            (
+                "probes = \"gateway\"",
+                "`probes` expects a list of strings, found a string (\"gateway\") — \
+                 the default [\"gateway\", \"1.1.1.1\"] stands",
+            ),
+            (
+                "probes = [\"gateway\", 5]",
+                "`probes` expects a list of strings, found 5 at [1] — \
+                 the default [\"gateway\", \"1.1.1.1\"] stands",
+            ),
+        ] {
+            let t: toml::Table = toml::from_str(text).unwrap();
+            let (kind, got) = crate::options::only_issue(check(&t));
+            assert_eq!(kind, IssueKind::Rejected, "{text}");
+            assert_eq!(got, want, "{text}");
+            assert_eq!(Options::from_table(&t).0, Options::default(), "{text}");
+        }
+    }
+
+    /// "Probe nothing" is a value, so an empty list is accepted in silence —
+    /// unlike `[sources.sensors] chips`, which cannot run on one.
+    #[test]
+    fn an_empty_probe_list_is_a_value() {
+        let t: toml::Table = toml::from_str("probes = []").unwrap();
+        let (o, issues) = Options::from_table(&t);
+        assert!(issues.is_empty(), "{issues:?}");
+        assert!(o.probes.is_empty());
     }
 
     #[test]

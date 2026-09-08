@@ -22,13 +22,16 @@ use std::time::{Duration, Instant};
 
 use gridwatch_store::keys::audio::{self, AudioLevel, AudioSink, BANDS, SCOPE_LEN};
 use gridwatch_store::{
-    Control, Datum, Level, Sample, Source, SourceCtx, SourceInfo, SourceState, SourceStatus, Ts,
-    Vec32, demo,
+    Control, Datum, Level, OptionIssue, Sample, Source, SourceCtx, SourceInfo, SourceState,
+    SourceStatus, Ts, Vec32, demo,
 };
 
 use capture::{CaptureArgs, Pulse, Target};
 use dsp::{Dsp, DspConfig, PeakHold};
 use supervise::{Action, Policy, Silence};
+
+use crate::options;
+use crate::options::{IntOrStr, Reader};
 
 /// `[sources.audio]` (§9).
 pub const OPTION_NAMES: &[&str] = &[
@@ -85,68 +88,146 @@ pub fn clamp_fps(v: i64) -> u64 {
 }
 
 impl Options {
-    pub fn from_table(t: &toml::Table) -> Options {
+    pub fn from_table(t: &toml::Table) -> (Options, Vec<OptionIssue>) {
+        let mut r = Reader::new("audio", t);
+        let o = Options::read(&mut r);
+        (o, r.finish())
+    }
+
+    fn read(r: &mut Reader) -> Options {
         let mut o = Options::default();
-        let int = |k: &str| t.get(k).and_then(|v| v.as_integer());
-        let float = |k: &str| {
-            t.get(k)
-                .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
-                .filter(|f| {
-                    if f.is_finite() {
-                        true
-                    } else {
-                        tracing::warn!("[sources.audio] {k} is not a finite number; default kept");
-                        false
-                    }
-                })
-        };
-        if let Some(v) = t.get("sink") {
-            o.target = match v {
-                toml::Value::Integer(n) => Target::Serial((*n).max(0) as u32),
-                toml::Value::String(s) => Target::parse(s),
-                _ => Target::Auto,
-            };
+        let d = DspConfig::default();
+        // Two shapes on one key — a PipeWire object serial or a name — which
+        // is why no table of kinds could declare `[sources.audio]` (D63 E1).
+        match r.int_or_str("sink", "auto") {
+            Some(IntOrStr::Int(n)) if n >= 0 => o.target = Target::Serial(n as u32),
+            Some(IntOrStr::Int(n)) => r.rejected(
+                "sink",
+                format!(
+                    "`sink` expects an object serial >= 0 or a name, found {n} — \
+                     the default auto stands"
+                ),
+            ),
+            Some(IntOrStr::Str(s)) => o.target = Target::parse(s),
+            None => {}
         }
-        if let Some(n) = int("latency") {
-            o.latency = (n.max(0) as u32).clamp(256, 4096);
-            if i64::from(o.latency) != n {
-                tracing::warn!("[sources.audio] latency = {n} clamped to {}", o.latency);
-            }
+        if let Some(n) = r.int_in("latency", 256..=4096, "samples", "", 1024) {
+            o.latency = n as u32;
         }
-        if let Some(b) = t.get("low_latency").and_then(|v| v.as_bool()) {
+        if let Some(b) = r.bool("low_latency", o.low_latency) {
             o.low_latency = b;
         }
-        if let Some(n) = int("fft") {
-            o.dsp.fft = n.max(1) as usize;
+        // The DSP's own ranges are cross-key (`fft_bass` starts at `fft`,
+        // `hi_hz` at four times `lo_hz`) and the FFT sizes round up to a power
+        // of two, so the reader takes the number and `normalised()` below says
+        // what it kept — a clamp no per-key range could have expressed.
+        let fft = r.int_min("fft", 1, "samples", d.fft as i64);
+        if let Some(n) = fft {
+            o.dsp.fft = n as usize;
         }
-        if let Some(n) = int("fft_bass") {
-            o.dsp.fft_bass = n.max(1) as usize;
+        let fft_bass = r.int_min("fft_bass", 1, "samples", d.fft_bass as i64);
+        if let Some(n) = fft_bass {
+            o.dsp.fft_bass = n as usize;
         }
-        if let Some(f) = float("lo_hz") {
+        let lo = r.float("lo_hz", "hertz", d.lo_hz);
+        if let Some(f) = lo {
             o.dsp.lo_hz = f;
         }
-        if let Some(f) = float("hi_hz") {
+        let hi = r.float("hi_hz", "hertz", d.hi_hz);
+        if let Some(f) = hi {
             o.dsp.hi_hz = f;
         }
-        if let Some(f) = float("floor_db") {
+        let floor = r.float("floor_db", "decibels", d.floor_db);
+        if let Some(f) = floor {
             o.dsp.floor_db = f;
         }
-        if let Some(f) = float("tilt_db_oct") {
+        let tilt = r.float("tilt_db_oct", "decibels an octave", d.tilt_db_oct);
+        if let Some(f) = tilt {
             o.dsp.tilt_db_oct = f;
         }
-        if let Some(n) = int("fps") {
-            o.fps = clamp_fps(n);
-            if o.fps as i64 != n {
-                tracing::warn!("[sources.audio] fps = {n} clamped to {} (5–60)", o.fps);
-            }
+        if let Some(n) = r.int_in(
+            "fps",
+            FPS_MIN as i64..=FPS_MAX as i64,
+            "frames a second",
+            "",
+            30,
+        ) {
+            o.fps = n as u64;
         }
-        o.dsp = o.dsp.clone().normalised();
+        let want = o.dsp.clone();
+        o.dsp = want.clone().normalised();
+        // Only for a key the config actually carried: `fft = 20000` pulls
+        // `fft_bass` up with it, and naming a key nobody wrote is noise.
+        let n = &o.dsp;
+        if fft.is_some() && n.fft != want.fft {
+            r.adjusted(
+                "fft",
+                format!(
+                    "`fft` = {} clamped to {} (a power of two, 256-16384)",
+                    want.fft, n.fft
+                ),
+            );
+        }
+        if fft_bass.is_some() && n.fft_bass != want.fft_bass {
+            r.adjusted(
+                "fft_bass",
+                format!(
+                    "`fft_bass` = {} clamped to {} (a power of two, `fft` to 32768)",
+                    want.fft_bass, n.fft_bass
+                ),
+            );
+        }
+        if lo.is_some() && n.lo_hz != want.lo_hz {
+            r.adjusted(
+                "lo_hz",
+                format!(
+                    "`lo_hz` = {} clamped to {} (accepts 10-1000)",
+                    options::num(want.lo_hz),
+                    options::num(n.lo_hz)
+                ),
+            );
+        }
+        if hi.is_some() && n.hi_hz != want.hi_hz {
+            r.adjusted(
+                "hi_hz",
+                format!(
+                    "`hi_hz` = {} clamped to {} (accepts four times `lo_hz` to half the rate)",
+                    options::num(want.hi_hz),
+                    options::num(n.hi_hz)
+                ),
+            );
+        }
+        if floor.is_some() && n.floor_db != want.floor_db {
+            r.adjusted(
+                "floor_db",
+                format!(
+                    "`floor_db` = {} clamped to {} (accepts -100 to -10)",
+                    options::num(want.floor_db),
+                    options::num(n.floor_db)
+                ),
+            );
+        }
+        if tilt.is_some() && n.tilt_db_oct != want.tilt_db_oct {
+            r.adjusted(
+                "tilt_db_oct",
+                format!(
+                    "`tilt_db_oct` = {} clamped to {} (accepts 0-12)",
+                    options::num(want.tilt_db_oct),
+                    options::num(n.tilt_db_oct)
+                ),
+            );
+        }
         o
     }
 
     pub fn period(&self) -> Duration {
         Duration::from_millis(1000 / self.fps.clamp(FPS_MIN, FPS_MAX))
     }
+}
+
+/// The reader `start` runs, without starting anything (§4.3).
+pub fn check(t: &toml::Table) -> Vec<OptionIssue> {
+    Options::from_table(t).1
 }
 
 /// `gridwatch doctor`'s rows (seam 8): the binary answers `--version` and
@@ -317,7 +398,7 @@ pub struct AudioSource {
 impl AudioSource {
     pub fn new(options: &toml::Table) -> AudioSource {
         AudioSource {
-            options: Options::from_table(options),
+            options: Options::from_table(options).0,
         }
     }
 }
@@ -780,12 +861,14 @@ impl Source for AudioSource {
 }
 
 pub fn start(options: &toml::Table) -> Box<dyn Source> {
+    crate::options::log("audio", &check(options));
     Box::new(AudioSource::new(options))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gridwatch_store::IssueKind;
 
     #[test]
     fn options_parse_and_clamp() {
@@ -802,7 +885,7 @@ tilt_db_oct = 3
 fps = 200"#,
         )
         .unwrap();
-        let o = Options::from_table(&t);
+        let (o, issues) = Options::from_table(&t);
         assert_eq!(o.target, Target::Serial(61));
         assert_eq!(o.latency, 4096);
         assert!(o.low_latency);
@@ -812,13 +895,93 @@ fps = 200"#,
         assert_eq!(o.dsp.floor_db, -70.0);
         assert_eq!(o.fps, 60);
         assert_eq!(o.period(), Duration::from_millis(16));
+        // Every clamp is a warning now, and the two the DSP applies after the
+        // fact (`fft_bass` starts at `fft`) are said in the same words.
+        let texts: Vec<&str> = issues.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "`latency` = 100000 clamped to 4096 (accepts 256-4096)",
+                "`fps` = 200 clamped to 60 (accepts 5-60)",
+                "`fft_bass` = 100 clamped to 4096 (a power of two, `fft` to 32768)",
+            ]
+        );
+        assert!(issues.iter().all(|i| i.kind == IssueKind::Adjusted));
         let t: toml::Table = toml::from_str(r#"sink = "alsa_output.x""#).unwrap();
         assert_eq!(
-            Options::from_table(&t).target,
+            Options::from_table(&t).0.target,
             Target::Name("alsa_output.x".into())
         );
-        assert_eq!(Options::from_table(&toml::Table::new()), Options::default());
-        assert_eq!(OPTION_NAMES.len(), 10);
+        assert_eq!(
+            Options::from_table(&toml::Table::new()).0,
+            Options::default()
+        );
+    }
+
+    /// D63 trap 3: the ask set is the accepted set, in order.
+    #[test]
+    fn the_reader_asks_for_exactly_the_accepted_set() {
+        let t = toml::Table::new();
+        let mut r = Reader::new("audio", &t);
+        let o = Options::read(&mut r);
+        assert_eq!(r.asked(), OPTION_NAMES);
+        assert_eq!(o, Options::default());
+        assert!(r.finish().is_empty());
+    }
+
+    /// `sink` keeps both of its shapes — D63's example of what no table of
+    /// declared kinds could have expressed — and refuses the third.
+    #[test]
+    fn sink_takes_a_serial_or_a_name_and_nothing_else() {
+        for (text, want) in [
+            ("sink = 61", Target::Serial(61)),
+            (r#"sink = "auto""#, Target::Auto),
+            (r#"sink = "x.y""#, Target::Name("x.y".into())),
+        ] {
+            let t: toml::Table = toml::from_str(text).unwrap();
+            let (o, issues) = Options::from_table(&t);
+            assert_eq!(o.target, want, "{text}");
+            assert!(issues.is_empty(), "{text}: {issues:?}");
+        }
+        let t: toml::Table = toml::from_str("sink = true").unwrap();
+        let (kind, got) = crate::options::only_issue(check(&t));
+        assert_eq!(kind, IssueKind::Rejected);
+        assert_eq!(
+            got,
+            "`sink` expects an integer or a string, found a boolean (true) — \
+             the default auto stands"
+        );
+        let t: toml::Table = toml::from_str("sink = -1").unwrap();
+        let (kind, got) = crate::options::only_issue(check(&t));
+        assert_eq!(kind, IssueKind::Rejected);
+        assert_eq!(
+            got,
+            "`sink` expects an object serial >= 0 or a name, found -1 — \
+             the default auto stands"
+        );
+    }
+
+    /// Every float takes an integer (§9 writes `lo_hz = 30`), and a value
+    /// that is not a number at all is discarded by name.
+    #[test]
+    fn a_float_option_takes_an_integer_and_refuses_a_word() {
+        let t: toml::Table = toml::from_str("lo_hz = 40").unwrap();
+        let (o, issues) = Options::from_table(&t);
+        assert_eq!(o.dsp.lo_hz, 40.0);
+        assert!(issues.is_empty(), "{issues:?}");
+        let t: toml::Table = toml::from_str(r#"floor_db = "quiet""#).unwrap();
+        let (kind, got) = crate::options::only_issue(check(&t));
+        assert_eq!(kind, IssueKind::Rejected);
+        assert_eq!(
+            got,
+            "`floor_db` expects a number (decibels), found a string (\"quiet\") — \
+             the default -65 stands"
+        );
+        // The DSP's own range, said aloud rather than applied in silence.
+        let t: toml::Table = toml::from_str("lo_hz = 5000").unwrap();
+        let (kind, got) = crate::options::only_issue(check(&t));
+        assert_eq!(kind, IssueKind::Adjusted);
+        assert_eq!(got, "`lo_hz` = 5000 clamped to 1000 (accepts 10-1000)");
     }
 
     #[test]

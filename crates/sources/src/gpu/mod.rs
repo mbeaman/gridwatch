@@ -18,8 +18,10 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use gridwatch_store::{
-    Cadence, Level, Source, SourceCtx, SourceInfo, SourceState, SourceStatus, Ts, demo,
+    Cadence, Level, OptionIssue, Source, SourceCtx, SourceInfo, SourceState, SourceStatus, Ts, demo,
 };
+
+use crate::options::Reader;
 
 pub use poller::{FAN_PERIOD, PROCS_PERIOD, Plan, Poller, SLOW_PERIOD};
 pub use probe::{Fail, Probe};
@@ -30,17 +32,60 @@ const DEVICE: u16 = 0;
 /// The option names `[sources.gpu]` owns (§9): `refresh_ms` is the visible
 /// fast-tier cadence; `device` picks the NVML index (default 0).
 pub const OPTION_NAMES: &[&str] = &["refresh_ms", "device"];
+pub const MIN_REFRESH_MS: i64 = 100;
+pub const MAX_REFRESH_MS: i64 = 60_000;
+/// §9's shipped value, and the default the reader names in a message.
+pub const DEFAULT_REFRESH_MS: i64 = 500;
 
-fn cadence_from(options: &toml::Table) -> Cadence {
-    let base = demo::gpu_info().cadence;
-    let Some(ms) = options
-        .get("refresh_ms")
-        .and_then(|v| v.as_integer())
-        .filter(|ms| *ms > 0)
-    else {
-        return base;
-    };
-    let visible = Duration::from_millis((ms as u64).clamp(100, 60_000));
+/// What `[sources.gpu]` resolves to (D63).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Options {
+    pub refresh: Duration,
+    /// The NVML index.
+    pub device: u32,
+}
+
+impl Default for Options {
+    fn default() -> Options {
+        Options {
+            refresh: Duration::from_millis(DEFAULT_REFRESH_MS as u64),
+            device: u32::from(DEVICE),
+        }
+    }
+}
+
+impl Options {
+    pub fn from_table(t: &toml::Table) -> (Options, Vec<OptionIssue>) {
+        let mut r = Reader::new("gpu", t);
+        let o = Options::read(&mut r);
+        (o, r.finish())
+    }
+
+    fn read(r: &mut Reader) -> Options {
+        let mut o = Options::default();
+        if let Some(ms) = r.int_ms(
+            "refresh_ms",
+            MIN_REFRESH_MS..=MAX_REFRESH_MS,
+            "",
+            DEFAULT_REFRESH_MS,
+        ) {
+            o.refresh = Duration::from_millis(ms as u64);
+        }
+        if let Some(n) = r.int_min("device", 0, "", i64::from(DEVICE)) {
+            o.device = n as u32;
+        }
+        o
+    }
+}
+
+/// The reader `start` runs, without starting anything (§4.3).
+pub fn check(t: &toml::Table) -> Vec<OptionIssue> {
+    Options::from_table(t).1
+}
+
+/// At the shipped 500 ms this is field-identical to `demo::gpu_info().cadence`.
+pub fn cadence_from(o: &Options) -> Cadence {
+    let visible = o.refresh;
     Cadence {
         hidden: Some(visible.max(Duration::from_secs(1))),
         visible,
@@ -64,14 +109,13 @@ pub struct GpuSource {
 
 impl GpuSource {
     pub fn new(options: &toml::Table) -> GpuSource {
+        GpuSource::from_options(Options::from_table(options).0)
+    }
+
+    pub fn from_options(o: Options) -> GpuSource {
         GpuSource {
-            cadence: cadence_from(options),
-            index: options
-                .get("device")
-                .and_then(|v| v.as_integer())
-                .filter(|i| *i >= 0)
-                .map(|i| i as u32)
-                .unwrap_or(0),
+            cadence: cadence_from(&o),
+            index: o.device,
         }
     }
 }
@@ -344,7 +388,9 @@ impl GpuSource {
 
 /// `SourceDef.start` for the registry.
 pub fn start(options: &toml::Table) -> Box<dyn Source> {
-    Box::new(GpuSource::new(options))
+    let (o, issues) = Options::from_table(options);
+    crate::options::log("gpu", &issues);
+    Box::new(GpuSource::from_options(o))
 }
 
 /// `level` is unused here but part of the cadence contract callers reason

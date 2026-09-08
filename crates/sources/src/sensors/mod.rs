@@ -15,9 +15,11 @@ use std::time::{Duration, Instant};
 
 use gridwatch_store::keys::sensors::{self, RaplState, SensorsInfo};
 use gridwatch_store::{
-    Cadence, Datum, Label, Level, MetricId, Sample, Source, SourceCtx, SourceInfo, SourceState,
-    SourceStatus, Ts, demo,
+    Cadence, Datum, Label, Level, MetricId, OptionIssue, Sample, Source, SourceCtx, SourceInfo,
+    SourceState, SourceStatus, Ts, demo,
 };
+
+use crate::options::Reader;
 
 use hwmon::{Inventory, Kind};
 use rapl::Rapl;
@@ -60,41 +62,61 @@ pub fn clamp_refresh(ms: i64) -> Duration {
 /// and htop's `Tccd` column goes blank (review).
 pub const HANDOVER_CHIP: &str = "k10temp";
 
+/// What `rapl` accepts beside a boolean, in the order the message names them.
+/// `off`, `no` and `false` were the three the code consumed; the other three
+/// fell through to `true`, which is what they meant, so they stay accepted —
+/// only a word that meant nothing (`rapl = "maybe"`) is refused now (D63).
+pub const RAPL_WORDS: &[(&str, bool)] = &[
+    ("on", true),
+    ("off", false),
+    ("yes", true),
+    ("no", false),
+    ("true", true),
+    ("false", false),
+];
+
 impl Options {
-    pub fn from_table(t: &toml::Table) -> Options {
+    pub fn from_table(t: &toml::Table) -> (Options, Vec<OptionIssue>) {
+        let mut r = Reader::new("sensors", t);
+        let o = Options::read(&mut r);
+        (o, r.finish())
+    }
+
+    fn read(r: &mut Reader) -> Options {
         let mut o = Options::default();
-        if let Some(ms) = t.get("refresh_ms").and_then(|v| v.as_integer()) {
-            o.refresh = clamp_refresh(ms);
-            if o.refresh.as_millis() as i64 != ms {
-                tracing::warn!(
-                    "[sources.sensors] refresh_ms = {ms} clamped to {} (500–10000)",
-                    o.refresh.as_millis()
+        if let Some(ms) = r.int_ms(
+            "refresh_ms",
+            MIN_REFRESH.as_millis() as i64..=MAX_REFRESH.as_millis() as i64,
+            "",
+            Options::default().refresh.as_millis() as i64,
+        ) {
+            o.refresh = Duration::from_millis(ms as u64);
+        }
+        // An empty list meant "no chips at all", which the source cannot run
+        // on, and was discarded without a word: it is a rejection now (D63).
+        if let Some(mut chips) = r.str_list("chips", false, &["*"]) {
+            if !chips.iter().any(|p| hwmon::chip_matches(p, HANDOVER_CHIP)) {
+                chips.push(HANDOVER_CHIP.to_string());
+                r.adjusted(
+                    "chips",
+                    format!(
+                        "`chips` excludes {HANDOVER_CHIP}; adding it — the cpu source \
+                         handed those temperatures over (§16)"
+                    ),
                 );
             }
+            o.chips = chips;
         }
-        if let Some(list) = t.get("chips").and_then(|v| v.as_array()) {
-            let mut chips: Vec<String> = list
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
-            if !chips.is_empty() {
-                if !chips.iter().any(|p| hwmon::chip_matches(p, HANDOVER_CHIP)) {
-                    tracing::warn!(
-                        "[sources.sensors] chips = {chips:?} excludes {HANDOVER_CHIP}; \
-                         adding it — the cpu source handed those temperatures over (§16)"
-                    );
-                    chips.push(HANDOVER_CHIP.to_string());
-                }
-                o.chips = chips;
-            }
+        if let Some(b) = r.bool_or_words("rapl", RAPL_WORDS, true) {
+            o.rapl = b;
         }
-        o.rapl = match t.get("rapl") {
-            Some(toml::Value::Boolean(b)) => *b,
-            Some(toml::Value::String(s)) => !matches!(s.as_str(), "off" | "no" | "false"),
-            _ => true,
-        };
         o
     }
+}
+
+/// The reader `start` runs, without starting anything (§4.3).
+pub fn check(t: &toml::Table) -> Vec<OptionIssue> {
+    Options::from_table(t).1
 }
 
 /// `gridwatch doctor`'s row (seam 8): the chips found and the RAPL state —
@@ -258,7 +280,7 @@ pub struct SensorsSource {
 impl SensorsSource {
     pub fn new(options: &toml::Table) -> SensorsSource {
         SensorsSource {
-            options: Options::from_table(options),
+            options: Options::from_table(options).0,
         }
     }
 
@@ -360,12 +382,15 @@ impl Source for SensorsSource {
 }
 
 pub fn start(options: &toml::Table) -> Box<dyn Source> {
+    let issues = check(options);
+    crate::options::log("sensors", &issues);
     Box::new(SensorsSource::new(options))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gridwatch_store::IssueKind;
 
     /// The handover (§16): with the sensors feature on the cpu source starts
     /// with `k10temp = false` and publishes no `sensor.temp_c`; the sensors
@@ -374,7 +399,7 @@ mod tests {
     fn the_k10temp_handover_leaves_exactly_one_publisher() {
         assert_eq!(crate::cpu::k10temp_default(), !cfg!(feature = "sensors"));
         let t: toml::Table = toml::from_str(r#"chips = ["nvme*"]"#).unwrap();
-        let o = Options::from_table(&t);
+        let (o, _) = Options::from_table(&t);
         assert!(
             o.chips.iter().any(|c| c == HANDOVER_CHIP),
             "the filter cannot orphan k10temp: {:?}",
@@ -403,23 +428,98 @@ chips = ["nvme*", "k10temp"]
 rapl = "off""#,
         )
         .unwrap();
-        let o = Options::from_table(&t);
+        let (o, issues) = Options::from_table(&t);
         assert_eq!(o.refresh, MIN_REFRESH);
         assert_eq!(o.chips, ["nvme*", "k10temp"]);
         assert!(!o.rapl);
+        assert_eq!(issues.len(), 1, "only the clamp: {issues:?}");
+        assert_eq!(
+            issues[0].text,
+            "`refresh_ms` = 100 clamped to 500 (accepts 500-10000)"
+        );
+        assert_eq!(issues[0].kind, IssueKind::Adjusted);
         // `rapl` takes a bool or a word.
         for (text, want) in [
             ("rapl = false", false),
             (r#"rapl = "no""#, false),
+            (r#"rapl = "off""#, false),
             ("rapl = true", true),
+            (r#"rapl = "on""#, true),
+            (r#"rapl = "yes""#, true),
+            (r#"rapl = "true""#, true),
         ] {
             let t: toml::Table = toml::from_str(text).unwrap();
-            assert_eq!(Options::from_table(&t).rapl, want, "{text}");
+            let (o, issues) = Options::from_table(&t);
+            assert_eq!(o.rapl, want, "{text}");
+            assert!(issues.is_empty(), "{text}: {issues:?}");
         }
         let t: toml::Table = toml::from_str("refresh_ms = 60000").unwrap();
-        assert_eq!(Options::from_table(&t).refresh, MAX_REFRESH);
-        assert_eq!(Options::from_table(&toml::Table::new()), Options::default());
-        assert_eq!(OPTION_NAMES.len(), 3);
+        assert_eq!(Options::from_table(&t).0.refresh, MAX_REFRESH);
+        assert_eq!(
+            Options::from_table(&toml::Table::new()).0,
+            Options::default()
+        );
+    }
+
+    /// D63 trap 3: the ask set is the accepted set, in order.
+    #[test]
+    fn the_reader_asks_for_exactly_the_accepted_set() {
+        let t = toml::Table::new();
+        let mut r = Reader::new("sensors", &t);
+        let o = Options::read(&mut r);
+        assert_eq!(r.asked(), OPTION_NAMES);
+        assert_eq!(o, Options::default());
+        assert!(r.finish().is_empty());
+    }
+
+    /// `rapl = "maybe"` read as `true` before this existed (D63).
+    #[test]
+    fn a_word_rapl_does_not_know_is_refused_by_name() {
+        let t: toml::Table = toml::from_str(r#"rapl = "maybe""#).unwrap();
+        let (kind, text) = crate::options::only_issue(check(&t));
+        assert_eq!(kind, IssueKind::Rejected);
+        assert_eq!(
+            text,
+            "`rapl` expects a boolean or one of on, off, yes, no, true, false, \
+             found \"maybe\" — the default true stands"
+        );
+        assert!(Options::from_table(&t).0.rapl, "the default stands");
+    }
+
+    /// An empty filter meant "no chips at all" and was discarded in silence.
+    #[test]
+    fn an_empty_chip_filter_is_refused_rather_than_ignored() {
+        let t: toml::Table = toml::from_str("chips = []").unwrap();
+        let (kind, text) = crate::options::only_issue(check(&t));
+        assert_eq!(kind, IssueKind::Rejected);
+        assert_eq!(
+            text,
+            "`chips` is an empty list — the default [\"*\"] stands"
+        );
+        assert_eq!(Options::from_table(&t).0.chips, ["*"]);
+    }
+
+    /// The handover completion is a warning, never a failure: the value was
+    /// used, with `k10temp` added to it (§16).
+    #[test]
+    fn a_filter_without_k10temp_gains_it_and_says_so() {
+        let t: toml::Table = toml::from_str(r#"chips = ["nvme*"]"#).unwrap();
+        let (kind, text) = crate::options::only_issue(check(&t));
+        assert_eq!(kind, IssueKind::Adjusted);
+        assert!(text.contains("excludes k10temp; adding it"), "{text}");
+        assert_eq!(Options::from_table(&t).0.chips, ["nvme*", "k10temp"]);
+    }
+
+    /// A non-string element used to be filtered away and the rest applied.
+    #[test]
+    fn a_list_with_a_number_in_it_is_refused_whole() {
+        let t: toml::Table = toml::from_str(r#"chips = ["nvme*", 5]"#).unwrap();
+        let (kind, text) = crate::options::only_issue(check(&t));
+        assert_eq!(kind, IssueKind::Rejected);
+        assert_eq!(
+            text,
+            "`chips` expects a list of strings, found 5 at [1] — the default [\"*\"] stands"
+        );
     }
 
     /// The sampler over the torch fixture tree: every reading labelled

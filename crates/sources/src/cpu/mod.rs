@@ -12,9 +12,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gridwatch_store::{
-    Cadence, Control, Detail, Level, Sampler, Source, SourceCtx, SourceInfo, SourceState,
-    SourceStatus, Ts, demo,
+    Cadence, Control, Detail, Level, OptionIssue, Sampler, Source, SourceCtx, SourceInfo,
+    SourceState, SourceStatus, Ts, demo,
 };
+
+use crate::options::Reader;
 
 /// How long a paused source parks between checks of the stop flag. It never
 /// samples at this cadence — `sleep_until` returns early on any control.
@@ -43,19 +45,67 @@ pub fn k10temp_default() -> bool {
     !cfg!(feature = "sensors")
 }
 
+pub const MIN_REFRESH_MS: i64 = 200;
+pub const MAX_REFRESH_MS: i64 = 60_000;
+/// The shipped visible cadence, which is also `[sources.cpu] refresh_ms`'s
+/// default — §9 writes it out, so the reader can name it in a message.
+pub const DEFAULT_REFRESH_MS: i64 = 1500;
+
+/// What `[sources.cpu]` resolves to (D63): the reader's own output, so the
+/// declaration of what the key accepts is the code that reads it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Options {
+    pub refresh: Duration,
+    /// `false` hands `sensor.temp_c{k10temp:*}` to the sensors source (§16).
+    pub k10temp: bool,
+}
+
+impl Default for Options {
+    fn default() -> Options {
+        Options {
+            refresh: Duration::from_millis(DEFAULT_REFRESH_MS as u64),
+            k10temp: k10temp_default(),
+        }
+    }
+}
+
+impl Options {
+    pub fn from_table(t: &toml::Table) -> (Options, Vec<OptionIssue>) {
+        let mut r = Reader::new("cpu", t);
+        let o = Options::read(&mut r);
+        (o, r.finish())
+    }
+
+    fn read(r: &mut Reader) -> Options {
+        let mut o = Options::default();
+        if let Some(ms) = r.int_ms(
+            "refresh_ms",
+            MIN_REFRESH_MS..=MAX_REFRESH_MS,
+            "",
+            DEFAULT_REFRESH_MS,
+        ) {
+            o.refresh = Duration::from_millis(ms as u64);
+        }
+        // The default follows the build (`k10temp_default`), so the message
+        // says what this binary would keep, not a hard-coded word (D63 trap 7).
+        if let Some(b) = r.bool("k10temp", o.k10temp) {
+            o.k10temp = b;
+        }
+        o
+    }
+}
+
+/// The reader `start` runs, without starting anything (§4.3).
+pub fn check(t: &toml::Table) -> Vec<OptionIssue> {
+    Options::from_table(t).1
+}
+
 /// `[sources.cpu] refresh_ms` (§9): the *visible* cadence. Focused stays at
-/// htop's fast end, hidden at twice the visible period, both clamped so a
-/// mistyped config can never spin the poller.
-fn cadence_from(options: &toml::Table) -> Cadence {
-    let base = demo::cpu_info().cadence;
-    let Some(ms) = options
-        .get("refresh_ms")
-        .and_then(|v| v.as_integer())
-        .filter(|ms| *ms > 0)
-    else {
-        return base;
-    };
-    let visible = Duration::from_millis((ms as u64).clamp(200, 60_000));
+/// htop's fast end, hidden at twice the visible period, both bounded by the
+/// reader's clamp so a mistyped config can never spin the poller. At the
+/// shipped 1500 ms this is field-identical to `demo::cpu_info().cadence`.
+pub fn cadence_from(o: &Options) -> Cadence {
+    let visible = o.refresh;
     Cadence {
         hidden: Some(visible * 2),
         visible,
@@ -76,13 +126,13 @@ pub struct CpuSource {
 
 impl CpuSource {
     pub fn new(options: &toml::Table) -> CpuSource {
-        let k10temp = options
-            .get("k10temp")
-            .and_then(|v| v.as_bool())
-            .unwrap_or_else(k10temp_default);
+        CpuSource::from_options(Options::from_table(options).0)
+    }
+
+    pub fn from_options(o: Options) -> CpuSource {
         CpuSource {
-            sampler: CpuSampler::new(Roots::default()).with_k10temp(k10temp),
-            cadence: cadence_from(options),
+            sampler: CpuSampler::new(Roots::default()).with_k10temp(o.k10temp),
+            cadence: cadence_from(&o),
             next_scan: Ts::ZERO,
         }
     }
@@ -232,7 +282,91 @@ impl Source for CpuSource {
     }
 }
 
-/// `SourceDef.start` for the registry.
+/// `SourceDef.start` for the registry. Every issue the reader found is
+/// logged once here, at the moment the source starts on its defaults — the
+/// log keeps the lines the scattered `warn!`s used to write, and the screen
+/// gains them through `check` (D63).
 pub fn start(options: &toml::Table) -> Box<dyn Source> {
-    Box::new(CpuSource::new(options))
+    let (o, issues) = Options::from_table(options);
+    crate::options::log("cpu", &issues);
+    Box::new(CpuSource::from_options(o))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::options::only_issue;
+    use gridwatch_store::IssueKind;
+
+    fn table(text: &str) -> toml::Table {
+        text.parse().unwrap()
+    }
+
+    /// D63 trap 3: the reader must ask for exactly the accepted set, in
+    /// order — a key `OPTION_NAMES` carries and nothing reads is silence of
+    /// the kind this arc exists to end, and a key the reader reports that
+    /// the set does not carry would fail arc 11's name pass on the same file.
+    #[test]
+    fn the_reader_asks_for_exactly_the_accepted_set() {
+        let t = toml::Table::new();
+        let mut r = Reader::new("cpu", &t);
+        let o = Options::read(&mut r);
+        assert_eq!(r.asked(), OPTION_NAMES);
+        assert_eq!(o, Options::default());
+        assert!(r.finish().is_empty(), "an empty table is not a problem");
+    }
+
+    /// The acceptance case (ROADMAP arc 13): the string is discarded, and the
+    /// message says what stands instead of leaving the reader to guess.
+    #[test]
+    fn a_wrongly_typed_refresh_keeps_the_default_and_says_so() {
+        let (kind, text) = only_issue(check(&table("refresh_ms = \"1500\"")));
+        assert_eq!(kind, IssueKind::Rejected);
+        assert_eq!(
+            text,
+            "`refresh_ms` expects an integer (milliseconds), found a string (\"1500\") \
+             — the default 1500 stands"
+        );
+        assert_eq!(
+            Options::from_table(&table("refresh_ms = \"1500\""))
+                .0
+                .refresh,
+            Options::default().refresh
+        );
+    }
+
+    #[test]
+    fn a_too_fast_refresh_is_clamped_and_used() {
+        let (kind, text) = only_issue(check(&table("refresh_ms = 50")));
+        assert_eq!(kind, IssueKind::Adjusted);
+        assert_eq!(text, "`refresh_ms` = 50 clamped to 200 (accepts 200-60000)");
+        let (o, _) = Options::from_table(&table("refresh_ms = 50"));
+        assert_eq!(o.refresh, Duration::from_millis(200));
+    }
+
+    /// `k10temp`'s default follows the build (§16), so the sentence is
+    /// composed from it and never hard-coded (D63 trap 7).
+    #[test]
+    fn k10temp_names_this_builds_default() {
+        let (kind, text) = only_issue(check(&table("k10temp = \"yes\"")));
+        assert_eq!(kind, IssueKind::Rejected);
+        assert_eq!(
+            text,
+            format!(
+                "`k10temp` expects a boolean, found a string (\"yes\") — the default {} stands",
+                k10temp_default()
+            )
+        );
+    }
+
+    /// The shipped cadence must not move: `demo::cpu_info()` is what a demo
+    /// and a journal source run at, and P15's rows are taken at it.
+    #[test]
+    fn the_shipped_refresh_reproduces_the_registered_cadence() {
+        let (a, b) = (cadence_from(&Options::default()), demo::cpu_info().cadence);
+        assert_eq!(
+            (a.hidden, a.visible, a.focused, a.always_on),
+            (b.hidden, b.visible, b.focused, b.always_on)
+        );
+    }
 }

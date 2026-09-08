@@ -19,9 +19,11 @@ use astral_watch::config::{AlertPolicy, Config};
 use astral_watch::i2c::REDETECT_AFTER;
 use gridwatch_store::keys::pins::{self, PinsInfo, PinsMode, PinsState};
 use gridwatch_store::{
-    Cadence, Control, Datum, Sample, Source, SourceCtx, SourceInfo, SourceState, SourceStatus, Ts,
-    demo,
+    Cadence, Control, Datum, OptionIssue, Sample, Source, SourceCtx, SourceInfo, SourceState,
+    SourceStatus, Ts, demo,
 };
+
+use crate::options::Reader;
 
 pub use backend::{Described, Loss, PinsBackend};
 pub use bridge::Bridge;
@@ -99,36 +101,56 @@ pub fn clamp_interval(ms: i64) -> Duration {
     ))
 }
 
-impl Options {
-    pub fn from_table(t: &toml::Table) -> Options {
-        let pick = match t.get("source").and_then(|v| v.as_str()) {
-            Some("i2c") => Pick::I2c,
-            Some("exporter") => Pick::Exporter,
-            _ => Pick::Auto,
-        };
+/// The three words `source` accepts, in the order the message lists them.
+pub const PICKS: &[&str] = &["auto", "i2c", "exporter"];
+
+impl Default for Options {
+    fn default() -> Options {
         Options {
-            pick,
-            exporter: t
-                .get("exporter")
-                .and_then(|v| v.as_str())
-                .unwrap_or(DEFAULT_EXPORTER)
-                .to_string(),
-            interval: t
-                .get("interval_ms")
-                .and_then(|v| v.as_integer())
-                .map(|ms| {
-                    let c = clamp_interval(ms);
-                    if c.as_millis() as i64 != ms {
-                        tracing::warn!(
-                            "[sources.pins] interval_ms = {ms} clamped to {} (P14: 500–5000)",
-                            c.as_millis()
-                        );
-                    }
-                    c
-                })
-                .unwrap_or(MIN_INTERVAL),
+            pick: Pick::Auto,
+            exporter: DEFAULT_EXPORTER.to_string(),
+            interval: MIN_INTERVAL,
         }
     }
+}
+
+impl Options {
+    pub fn from_table(t: &toml::Table) -> (Options, Vec<OptionIssue>) {
+        let mut r = Reader::new("pins", t);
+        let o = Options::read(&mut r);
+        (o, r.finish())
+    }
+
+    fn read(r: &mut Reader) -> Options {
+        let mut o = Options::default();
+        // `source = "i2x"` fell through to `auto` before this existed, which
+        // is the silence D63 ends: the choices are named and the default
+        // stands.
+        if let Some(w) = r.one_of("source", PICKS, "auto") {
+            o.pick = match w {
+                "i2c" => Pick::I2c,
+                "exporter" => Pick::Exporter,
+                _ => Pick::Auto,
+            };
+        }
+        if let Some(a) = r.str("exporter", DEFAULT_EXPORTER) {
+            o.exporter = a.to_string();
+        }
+        if let Some(ms) = r.int_ms(
+            "interval_ms",
+            MIN_INTERVAL.as_millis() as i64..=MAX_INTERVAL.as_millis() as i64,
+            "P14",
+            MIN_INTERVAL.as_millis() as i64,
+        ) {
+            o.interval = Duration::from_millis(ms as u64);
+        }
+        o
+    }
+}
+
+/// The reader `start` runs, without starting anything (§4.3).
+pub fn check(t: &toml::Table) -> Vec<OptionIssue> {
+    Options::from_table(t).1
 }
 
 pub struct PinsSource {
@@ -138,7 +160,7 @@ pub struct PinsSource {
 impl PinsSource {
     pub fn new(options: &toml::Table) -> PinsSource {
         PinsSource {
-            options: Options::from_table(options),
+            options: Options::from_table(options).0,
         }
     }
 
@@ -531,7 +553,30 @@ impl PinsSource {
     }
 }
 
-/// `SourceDef.start` for the registry.
+/// `SourceDef.start` for the registry: the reader's issues are logged once
+/// here, where the source starts on its defaults (D63).
 pub fn start(options: &toml::Table) -> Box<dyn Source> {
-    Box::new(PinsSource::new(options))
+    let (o, issues) = Options::from_table(options);
+    crate::options::log("pins", &issues);
+    Box::new(PinsSource { options: o })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// D63 trap 3: the reader asks for exactly the accepted set, in order —
+    /// a key `OPTION_NAMES` carries and nothing reads would be silence of the
+    /// kind this arc exists to end.
+    #[test]
+    fn the_reader_asks_for_exactly_the_accepted_set() {
+        let t = toml::Table::new();
+        let mut r = Reader::new("pins", &t);
+        let o = Options::read(&mut r);
+        assert_eq!(r.asked(), OPTION_NAMES);
+        assert_eq!(o.pick, Pick::Auto);
+        assert_eq!(o.interval, MIN_INTERVAL);
+        assert_eq!(o.exporter, DEFAULT_EXPORTER);
+        assert!(r.finish().is_empty());
+    }
 }
