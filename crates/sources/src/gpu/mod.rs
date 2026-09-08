@@ -71,8 +71,26 @@ impl Options {
         ) {
             o.refresh = Duration::from_millis(ms as u64);
         }
+        // A ceiling as well as a floor: `device = 4294967296` used to
+        // truncate through `as u32` to 0 — the card the person did not
+        // ask for, silently (arc 13 review).
         if let Some(n) = r.int_min("device", 0, "", i64::from(DEVICE)) {
-            o.device = n as u32;
+            // A ceiling as well as a floor, and a rejection rather than a
+            // clamp: `device = 4294967296` used to truncate through `as u32`
+            // to 0 — the card the person did not ask for, silently — and
+            // clamping to `u32::MAX` would name a card that cannot exist
+            // either (arc 13 review).
+            if n > i64::from(u32::MAX) {
+                r.rejected(
+                    "device",
+                    format!(
+                        "`device` expects a GPU index, found {n} — \
+                         the default {DEVICE} stands"
+                    ),
+                );
+            } else {
+                o.device = n as u32;
+            }
         }
         o
     }
@@ -397,4 +415,68 @@ pub fn start(options: &toml::Table) -> Box<dyn Source> {
 /// about: exposed for tests of the plan.
 pub fn fast_period(cadence: &Cadence, level: Level) -> Option<Duration> {
     cadence.for_level(level)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gridwatch_store::IssueKind;
+
+    /// The tripwire every other source carries (D63 trap 3): the reader asks
+    /// for exactly the keys `OPTION_NAMES` accepts, in order — so a key read
+    /// but undeclared, or declared but unread, fails here. `gpu` was the one
+    /// source that had no options test at all when arc 13 shipped.
+    #[test]
+    fn the_reader_asks_for_exactly_the_accepted_set() {
+        let t = toml::Table::new();
+        let mut r = Reader::new("gpu", &t);
+        let o = Options::read(&mut r);
+        assert_eq!(r.asked(), OPTION_NAMES);
+        assert_eq!(o, Options::default());
+        assert!(r.finish().is_empty(), "an empty table is not a problem");
+    }
+
+    #[test]
+    fn a_wrongly_typed_value_is_rejected_and_the_default_stands() {
+        let t: toml::Table = toml::from_str("refresh_ms = \"500\"\ndevice = true").unwrap();
+        let (o, issues) = Options::from_table(&t);
+        assert_eq!(o, Options::default(), "both defaults stand");
+        assert_eq!(issues.len(), 2, "{issues:?}");
+        assert!(issues.iter().all(|i| i.kind == IssueKind::Rejected));
+        assert!(
+            issues[0].text.contains("expects an integer"),
+            "{:?}",
+            issues[0]
+        );
+        assert!(
+            issues[0].text.contains("the default 500 stands"),
+            "{:?}",
+            issues[0]
+        );
+    }
+
+    /// The floor and the new ceiling: a negative index and one past `u32`
+    /// both leave device 0 rather than selecting a card by accident.
+    #[test]
+    fn a_device_outside_the_range_never_selects_another_card() {
+        for text in ["device = -1", "device = 4294967296"] {
+            let t: toml::Table = toml::from_str(text).unwrap();
+            let (o, issues) = Options::from_table(&t);
+            assert_eq!(o.device, u32::from(DEVICE), "{text}");
+            assert_eq!(issues.len(), 1, "{text}: {issues:?}");
+        }
+    }
+
+    #[test]
+    fn a_refresh_out_of_range_is_clamped_and_used() {
+        let t: toml::Table = toml::from_str("refresh_ms = 10").unwrap();
+        let (o, issues) = Options::from_table(&t);
+        assert_eq!(o.refresh, Duration::from_millis(MIN_REFRESH_MS as u64));
+        assert_eq!(issues.len(), 1);
+        assert_eq!(
+            issues[0].kind,
+            IssueKind::Adjusted,
+            "a clamp is used, not discarded"
+        );
+    }
 }
