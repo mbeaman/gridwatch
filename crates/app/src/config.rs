@@ -78,7 +78,9 @@ pub struct ConfigFile {
     pub sources: toml::Table,
     #[serde(rename = "components")]
     pub components: Vec<InstanceSect>,
-    /// Parsed and ignored until the journal arc (§9): recording config.
+    /// Not read (D63): recording is `--record FILE` with `--tables on` and
+    /// `--record-input`. The loader says so; the section survives one more minor
+    /// so a config carrying it still loads.
     pub record: toml::Table,
     /// Parsed and ignored until the rules arc (§9): alert rules.
     pub rules: Vec<toml::Table>,
