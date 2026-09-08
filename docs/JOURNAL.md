@@ -6,6 +6,47 @@
 
 ---
 
+## 2026-09-07 — arc 13: the config means what it says
+
+**Models:** Fable 5.1 for the seam design (delegated — the session had switched to Opus mid-flight and D36 reserves seams for Fable); Opus 5 for the implementation and the four review lenses. **Shipped:** arc 13, 10 commits, `1ae6294 → a9572f1`. **Nothing tagged.**
+
+### What changed for Matt
+
+A misspelled source option already told him. Now a *wrongly typed* one does too: `refresh_ms = "1500"` with quotes used to be discarded in silence and run on the default, and now it fails `config check` with a sentence naming what was found, what was expected and what stands. And `[store] history` is live, so asking for an hour of history gets an hour instead of ten minutes.
+
+### The finding that changed the arc's shape
+
+**The escalation was three keys short.** The backlog said `[store]` was the last silent section in `config.toml`. The design pass checked, and found `confirm_kill` read by nothing, `[record]` warning "arrives in arc 2" eleven arcs later, and — the interesting one — **`[perf] phase_ms` naming a mechanism that was never built**. The spec and a performance row both credited a 250 ms phase grid for the wake-up budget; deadlines actually align to each source's own cadence, and the budget is met anyway. A number can be right for a reason that does not exist.
+
+So the arc stopped being "two escalations" and became a rule — every key the config accepts is read, or it says it is not — with an audit test that fails when a key is added without a consumer. That test is the durable part.
+
+**`max_mb` was retired rather than built.** The spec claimed a 32 MB store cap in two places and no byte accounting existed. Building the accounting is easy; deciding what to *do* at the limit is not. Shrinking retention makes a chart's time axis depend on how many sensors the machine has. Refusing samples discards the newest data. Neither can be reported by `config check`, because it depends on what the machine publishes at runtime. A cap that quietly changes what you see is the defect the arc exists to end, so it is a measurement now (`Store::footprint()`), not a policy.
+
+**One number made the risky half safe.** Ten minutes at four points a second is 2 400 points — exactly the `max_len` that had been hard-coded. So `history` going live is field-identical at the shipped default, and no snapshot, replay or P18 number moved. Without that coincidence the retention change would have been a gamble against the determinism tests.
+
+### What the review caught
+
+**A crash, in the arc's own new code.** `F12` on a terminal seven to ten rows tall took the whole app down, and the panic went only to the log — a blank terminal and exit 101. The HUD clamped its box but not its text rows; arc 13's own store line pushed the effects line one row down, which extended a pre-existing 7–9 row bug to 10. Only the user-path lens could find it: it needs a real terminal, a real keypress and a resize. A unit test now draws the HUD at every height from 0 to 14.
+
+**A behaviour change wider than the decision described.** D63 said `refresh_ms = 0` was "discarded without a word". True of cpu and gpu — but pins, sensors, mpris and net clamped it *up* and used it, and net's three other interval keys did so without even a log line. So nine keys across five sources changed what they resolve to, where the decision's own trap licensed two. **The behaviour stands and the sentence was corrected**: zero meaning "the default" in one source and "as fast as allowed" in another was an accident of two different fallback idioms, documented nowhere. What should have carried that decision is tests, and nothing pinned any of the nine — which is why it shipped silently. They are pinned now.
+
+**And the brief pointed at a table that does not exist.** It told the implementer the per-key contract was "the table in D63" and that table had been trimmed when the file was written. He reconstructed it from the seven parsers — exactly the work the pointer was meant to save, and exactly the drift the design had refused to create. The fix is not to write the table: E1 chose "the reader is the declaration" *because* a second copy drifts and nothing can test the drift, so the brief points at the code now.
+
+### A process note worth keeping
+
+**Two sessions in a row reverted their own uncommitted work with git.** The implementation agent ran `git checkout --` on a file mid-build and lost the loader work; then, reviewing it, this session ran `git stash` on a file and lost the crash fix and its test. Both were recovered. `CLAUDE.md`'s read-only guard covers *review* agents because a review agent once ran `git restore` — the same footgun is live for implementers and for the main session, and the guard does not reach either.
+
+### Owed to Matt after this session
+
+- **P17 at the `1h` ceiling.** A 60-minute release run is the heavy job `MACHINE.md` forbids an agent beside a game. `PERFORMANCE.md` says so plainly and records two short *debug* runs instead, labelled as such. Also owed: the 20-minute default-history run confirming the store stays under 6 MB.
+- **Everything already owed**: every tag from `v0.1.0`, the version bump, his real Ptyxis size, the game fixture, the Ptyxis and i2c rows.
+
+### Where to pick up
+
+`BACKLOG.md`'s `Next up` is the `disk` component, then what still leaves a wide terminal blank, then focus events under tmux and ssh. Four small things this arc's review recorded rather than fixed are backlogged together, the sharpest being that the `[store] history` **load** error is the one message whose meaning sits in its middle, so an 80-column toast elides the key and the filename.
+
+---
+
 ## 2026-09-06 → 07 — the wide-terminal bug, and the source-option seams
 
 **Models:** Fable 5.1 throughout (decisions, briefs, review judging); Opus 5 for both implementations and the six review lenses. **Shipped:** arcs 12 and 11, 28 commits, `8547c6d → 95977af`, CI green on both pushes. **Nothing tagged** — as always, that is Matt's.
