@@ -369,3 +369,19 @@ cargo test -p gridwatch-sources --release --test pins live_pins -- --ignored --n
   P4 and P21 (focus events), P9/P10 (Ptyxis Δ CPU and `pmon sm`), and every row
   re-taken **at Matt's actual window size** (D42's open `stty size` item) **with
   the game running** — P1's and P6's ceilings are both specified beside a game.
+
+**Arc 13 notes (2026-09-07, D63).** `[store] history` is live, so P17's requirement row now has two operating points rather than one, and the store's bytes are readable at last (`Store::footprint()` on the `F12` HUD; `store_bytes` in `--stats-log`, sampled at the same 1 Hz tick as the rest of the object, never per frame).
+
+**P18 is stated, not re-measured.** `Retention::for_history(600 s)` is field-identical to `Retention::default()` — `max_len` 2 400, `max_age` 600 s, `max_uncatalogued` 512 — and a store test pins it, so every arc-10b/11b sweep and cap number above stands unchanged at the shipped `history = "10m"`. Nothing about the sweep's cadence moves under a different history either: `sweep_every` reads `max_age` alone.
+
+**P17 at the `1h` ceiling is owed to Matt.** The row wants a 60-minute **release** run under a pty at 250×70 on an idle torch with `history = "1h"` and `--stats-log`: RSS at 1/20/40/60 min and `store_bytes` at the end, beside the arc-3b/5a rows, plus a 20-minute run at the default confirming `store_bytes` under 6 MB. What follows is **not** that row — it is a pair of short **debug** runs whose only purpose is to show the plumbing works and to size the preallocation question in `BACKLOG.md`.
+
+| what | `history = "10m"` | `history = "1h"` |
+|---|---|---|
+| `store_bytes` after 110 s (from the app's own `--stats-log`) | **572 480** | **572 512** |
+| `VmData` (heap reserved) after 40 s | **75 648 kB** | **82 256 kB** |
+| `VmRSS` after 40 s | **69 408 kB** | **69 852 kB** |
+
+Three things to read from it. (1) **The two histories hold the same points at 110 s**, which is what they should: neither retention has bitten, so the byte figure is identical to within one sample and the plumbing is doing nothing clever. (2) **The preallocation costs address space, not resident memory, until the points arrive.** `Ring::new` reserves `min(max_len, 4096)` slots, so `1h` reserves **6 608 kB** more heap than `10m` — and only **444 kB** of that is resident after 40 s, because untouched pages of a reserved `VecDeque` never fault in. D63's "≈ 10 MB before a point arrives … lands RSS near 50 of the 60 MB budget" is therefore the *reservation*, not the RSS; what the 60-minute run will actually show is the points arriving. (3) These are **debug** binaries (p50 14.9 ms a frame, ten times the release figures in the rows above), so the absolute RSS is not comparable to any row here — only the delta between the two runs is, since everything else about them is identical.
+
+*Recorded rather than reported: an earlier pass at this measurement read RSS from the wrong pid — `pgrep -f "gridwatch run --stats-log …"` matches the `script` wrapper as well as the binary, and `head -1` takes the wrapper. Its 7.5 MB figures are discarded. The `store_bytes` numbers above come from gridwatch's own stats log and were never affected.*
