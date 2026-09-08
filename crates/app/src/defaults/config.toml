@@ -7,11 +7,11 @@ fps_max = 60
 color = "auto"                # auto | always | never | 16 | 256 | truecolor
 mouse = true
 readonly = false
-confirm_kill = true
 
 [store]
+# How long the store keeps a scalar's points: 1m-1h. Charts draw what it
+# holds, so a tile asking for a longer window shows the part that exists.
 history = "10m"
-max_mb = 32
 
 [effects]
 enabled = true
@@ -19,7 +19,6 @@ budget_ms = 4
 
 [perf]
 unfocused_fps = 2
-phase_ms = 250
 
 [sources.cpu]
 refresh_ms = 1500

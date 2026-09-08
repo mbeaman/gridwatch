@@ -39,16 +39,22 @@
       "type": "boolean"
     },
     "confirm_kill": {
-      "type": "boolean"
+      "type": "boolean",
+      "deprecated": true,
+      "description": "Retired (D63): nothing ever read it. The confirm bar asks whatever an action says it must, and `readonly` is the flag that blanks kill and renice. Delete the line."
     },
     "store": {
       "type": "object",
       "properties": {
         "history": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^\\s*([0-9]+[smh])+\\s*$",
+          "description": "How long the store keeps a scalar's points: 1m-1h, shipped 10m. `<n>s`, `<n>m`, `<n>h` or a compound like `1h30m`; out of range is clamped with a warning."
         },
         "max_mb": {
-          "type": "integer"
+          "type": "integer",
+          "deprecated": true,
+          "description": "Retired (D63): there is no byte accounting to cap. `history` bounds what the store keeps, and the F12 HUD and --stats-log report the bytes it holds. Delete the line."
         }
       }
     },
@@ -70,7 +76,9 @@
           "type": "integer"
         },
         "phase_ms": {
-          "type": "integer"
+          "type": "integer",
+          "deprecated": true,
+          "description": "Retired (D63): nothing ever read it and the grid it named was never built. Each source wakes on multiples of its own cadence. Delete the line."
         }
       }
     },

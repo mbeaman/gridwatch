@@ -3,7 +3,9 @@
 //! will ever write (arc 4).
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use gridwatch_store::Retention;
 use gridwatch_ui::component::Size;
 use gridwatch_ui::layout::{BorderMode, GridSpec, Page, PlaceTarget, Placement};
 use serde::Deserialize;
@@ -63,7 +65,12 @@ pub struct ConfigFile {
     pub color: String,
     pub mouse: bool,
     pub readonly: bool,
-    pub confirm_kill: bool,
+    /// **Retired (D63).** Nothing ever read it: the confirm bar asks whatever
+    /// `Action::confirm()` says it must, unconditionally (D58 seam 2), and
+    /// `readonly` is the flag that exists. It parses for one more minor so
+    /// every existing install's config still loads under
+    /// `deny_unknown_fields`; a `Some` is one warning line and one toast.
+    pub confirm_kill: Option<bool>,
     pub store: StoreSect,
     pub effects: EffectsSect,
     pub perf: PerfSect,
@@ -103,7 +110,7 @@ impl Default for ConfigFile {
             color: "auto".into(),
             mouse: true,
             readonly: false,
-            confirm_kill: true,
+            confirm_kill: None,
             store: StoreSect::default(),
             effects: EffectsSect::default(),
             perf: PerfSect::default(),
@@ -127,15 +134,27 @@ impl Default for ConfigFile {
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct StoreSect {
+    /// How long the store keeps a scalar's points (§4.2, D63): `1m`-`1h`,
+    /// shipped `10m`. `max_age` is this, and `max_len` is derived from it.
     pub history: String,
-    pub max_mb: u32,
+    /// **Retired (D63).** There is no byte accounting in `gridwatch-store`,
+    /// and no honest policy for exceeding a cap: shrinking `max_age` would
+    /// make a chart's window depend on the machine's series count, and
+    /// refusing samples would make the newest data the casualty. What stays
+    /// is the measurement without the policy — `Store::footprint()` on the
+    /// `F12` HUD and as `store_bytes` in `--stats-log`.
+    pub max_mb: Option<u32>,
 }
+
+/// The shipped `[store] history`, in one place: the TOML, this structural
+/// default and `Retention::default()` must agree, and a test pins all three.
+pub const DEFAULT_HISTORY: &str = "10m";
 
 impl Default for StoreSect {
     fn default() -> StoreSect {
         StoreSect {
-            history: "10m".into(),
-            max_mb: 32,
+            history: DEFAULT_HISTORY.into(),
+            max_mb: None,
         }
     }
 }
@@ -160,14 +179,18 @@ impl Default for EffectsSect {
 #[serde(deny_unknown_fields, default)]
 pub struct PerfSect {
     pub unfocused_fps: u16,
-    pub phase_ms: u64,
+    /// **Retired (D63).** It named a mechanism that was never built:
+    /// `SourceCtx::next_deadline` aligns to multiples of each source's *own*
+    /// cadence from the epoch, and there is no 250 ms grid. P5 is met without
+    /// one (arc 7a measured 33 wake-ups/s with every source live).
+    pub phase_ms: Option<u64>,
 }
 
 impl Default for PerfSect {
     fn default() -> PerfSect {
         PerfSect {
             unfocused_fps: 2,
-            phase_ms: 250,
+            phase_ms: None,
         }
     }
 }
@@ -283,6 +306,81 @@ pub struct PlaceSect {
     pub priority: Option<i32>,
 }
 
+/// The floor and the ceiling `[store] history` is clamped into (D63). The
+/// floor because the sweep runs every `max_age / 10` floored at 10 s, so a
+/// sub-minute retention prunes every ring to its newest point before a chart
+/// could draw; the ceiling from arithmetic against P17 — at one hour the held
+/// points on torch's ≈ 150 series come to ≈ 12 MB and `Ring::new`'s
+/// preallocation saturates at 4 096 slots, which lands RSS near 50 of the
+/// 60 MB budget.
+pub const MIN_HISTORY: Duration = Duration::from_secs(60);
+pub const MAX_HISTORY: Duration = Duration::from_secs(3600);
+
+/// `[store] history`: `<n>s`, `<n>m`, `<n>h`, or a compound like `1h30m`.
+/// Integer arithmetic only — determinism is config, not clock (D63 trap 1),
+/// so this and `Retention::for_history` between them must produce the same
+/// numbers on every machine and in every replay.
+pub fn parse_history(text: &str) -> Result<Duration, String> {
+    let t = text.trim();
+    if t.is_empty() {
+        return Err("is empty — expected a duration like \"10m\" or \"1h30m\"".into());
+    }
+    let mut total: u64 = 0;
+    let mut digits = String::new();
+    let mut any = false;
+    for c in t.chars() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+            continue;
+        }
+        let unit = match c {
+            's' => 1u64,
+            'm' => 60,
+            'h' => 3600,
+            _ => {
+                return Err(format!(
+                    "is not a duration: '{c}' is not one of s, m, h — \
+                     write \"10m\", \"90s\" or \"1h30m\""
+                ));
+            }
+        };
+        if digits.is_empty() {
+            return Err(format!("is not a duration: '{c}' has no number before it"));
+        }
+        let n: u64 = digits
+            .parse()
+            .map_err(|_| format!("is not a duration: {digits} is too large"))?;
+        total = total
+            .checked_add(n.checked_mul(unit).ok_or("is too long a duration")?)
+            .ok_or("is too long a duration")?;
+        digits.clear();
+        any = true;
+    }
+    if !digits.is_empty() {
+        return Err(format!(
+            "is not a duration: {digits} has no unit — write \"{digits}s\", \
+             \"{digits}m\" or \"{digits}h\""
+        ));
+    }
+    if !any {
+        return Err("is not a duration — expected a number and a unit (s, m, h)".into());
+    }
+    Ok(Duration::from_secs(total))
+}
+
+/// A duration in the words `config.toml` writes, for a message: `600s` reads
+/// back as `10m`.
+fn say_duration(d: Duration) -> String {
+    let s = d.as_secs();
+    if s > 0 && s.is_multiple_of(3600) {
+        format!("{}h", s / 3600)
+    } else if s > 0 && s.is_multiple_of(60) {
+        format!("{}m", s / 60)
+    } else {
+        format!("{s}s")
+    }
+}
+
 pub struct Loaded {
     pub config: ConfigFile,
     pub grid: GridSpec,
@@ -290,6 +388,10 @@ pub struct Loaded {
     /// The `[[rules]]` that parsed (arc 7b); the ones that did not are in
     /// `warnings` and `config check` prints them as errors.
     pub rules: Vec<gridwatch_store::rules::Rule>,
+    /// `[store] history` resolved (D63): what `Store::new` is built with.
+    /// Retention is set once, at start — a reload that changes `[store]`
+    /// toasts "restart to apply", as `[sources.*]` does.
+    pub retention: Retention,
     pub warnings: Vec<String>,
     pub config_path: Option<PathBuf>,
     pub layout_path: Option<PathBuf>,
@@ -397,8 +499,68 @@ fn load_from(
     let mut config: ConfigFile = parse("config.toml", config_text)?;
     let layout: LayoutFile = parse("layout.toml", layout_text)?;
     if !config.record.is_empty() {
-        warnings.push("[record] arrives in arc 2 — ignored for now".into());
+        // Eleven arcs of "arrives in arc 2" for a section that was never
+        // going to arrive: recording is a flag, not a table (D63 E2).
+        warnings.push(
+            "[record] is not a section of config.toml — recording is `--record FILE` \
+             (with `--tables on` and `--record-input`); the table is ignored"
+                .into(),
+        );
     }
+    // The three keys nothing ever read (D63 E2). They parse for one more
+    // minor version, because every existing install's config carries them and
+    // `deny_unknown_fields` would otherwise refuse the file outright.
+    if config.confirm_kill.is_some() {
+        warnings.push(
+            "`confirm_kill` is retired — nothing ever read it: the confirm bar asks whatever \
+             an action says it must (D58), and `readonly` is the flag that blanks kill \
+             and renice. Delete the line."
+                .into(),
+        );
+    }
+    if config.store.max_mb.is_some() {
+        warnings.push(
+            "`[store] max_mb` is retired — nothing ever read it, and there is no byte cap to \
+             read it: `[store] history` bounds what the store keeps, and the F12 HUD \
+             and `--stats-log` report the bytes it holds. Delete the line."
+                .into(),
+        );
+    }
+    if config.perf.phase_ms.is_some() {
+        warnings.push(
+            "`[perf] phase_ms` is retired — nothing ever read it and the grid it named was \
+             never built: each source wakes on multiples of its own cadence. \
+             Delete the line."
+                .into(),
+        );
+    }
+    // `[store] history` is live (D63 E2): a string that is not a duration is
+    // a load error naming the file, as `borders = "nonsense"` is; an
+    // out-of-range one is clamped with a warning, because the value *is*
+    // usable at the edge of the range and refusing to start would be worse.
+    let history = match parse_history(&config.store.history) {
+        Ok(d) => d,
+        Err(why) => {
+            return Err(ConfigError(format!(
+                "config.toml: [store] history = \"{}\" {why}",
+                config.store.history
+            )));
+        }
+    };
+    let history = if history < MIN_HISTORY || history > MAX_HISTORY {
+        let c = history.clamp(MIN_HISTORY, MAX_HISTORY);
+        warnings.push(format!(
+            "[store] history = \"{}\" clamped to {} (accepts {}-{})",
+            config.store.history,
+            say_duration(c),
+            say_duration(MIN_HISTORY),
+            say_duration(MAX_HISTORY)
+        ));
+        c
+    } else {
+        history
+    };
+    let retention = Retention::for_history(history);
     // `[[rules]]` are parsed here so a bad rule is a warning at load and an
     // error in `config check` — never a surprise at the first sample.
     let (rules, rule_errors) = gridwatch_store::rules::parse_all(&config.rules, &|k| {
@@ -419,7 +581,8 @@ fn load_from(
             ))
         } else if !crate::plugin::proto::id_is_sane(&pl.id) {
             Some(format!(
-                "[[plugins]] '{}': an id must be lower case letters, digits and _ —                  it namespaces this plugin's metric keys",
+                "[[plugins]] '{}': an id must be lower case letters, digits and _ — \
+                 it namespaces this plugin's metric keys",
                 pl.id
             ))
         } else if seen.contains(&pl.id) {
@@ -550,6 +713,7 @@ fn load_from(
         grid,
         pages,
         rules,
+        retention,
         warnings,
         config_path,
         layout_path,
@@ -633,6 +797,133 @@ mod tests {
         assert_eq!(parsed, ConfigFile::default());
     }
 
+    /// D63 trap 1 — determinism is config, not clock. Four values must agree
+    /// or a replay, a `shot` and a live run could keep different windows:
+    /// the shipped TOML, the structural default, `parse_history` over it, and
+    /// `Retention::default()`, which every store test is written against.
+    #[test]
+    fn the_shipped_history_and_the_default_retention_are_the_same_thing() {
+        assert_eq!(StoreSect::default().history, DEFAULT_HISTORY);
+        let loaded = load_from(DEFAULT_CONFIG, DEFAULT_LAYOUT, None, None, false).unwrap();
+        assert_eq!(loaded.config.store.history, DEFAULT_HISTORY);
+        let d = Retention::default();
+        for r in [
+            loaded.retention,
+            Retention::for_history(parse_history(DEFAULT_HISTORY).unwrap()),
+        ] {
+            assert_eq!(
+                (r.max_len, r.max_age, r.max_uncatalogued),
+                (d.max_len, d.max_age, d.max_uncatalogued)
+            );
+        }
+    }
+
+    #[test]
+    fn parse_history_takes_the_forms_section_9_writes() {
+        for (text, secs) in [
+            ("10m", 600),
+            ("1h", 3600),
+            ("90s", 90),
+            ("1h30m", 5400),
+            ("  1h  ", 3600),
+            ("2h30m10s", 9010),
+        ] {
+            assert_eq!(parse_history(text), Ok(Duration::from_secs(secs)), "{text}");
+        }
+        for text in ["ten", "", "10", "10x", "m10", "1h 30m", "-5m"] {
+            assert!(parse_history(text).is_err(), "{text} must not parse");
+        }
+        // The message says what to write instead, in every case.
+        assert!(parse_history("ten").unwrap_err().contains("s, m, h"));
+        assert!(parse_history("10").unwrap_err().contains("\"10m\""));
+    }
+
+    /// A string that is not a duration is a load error naming the file, as
+    /// `borders = "nonsense"` is — nothing else in `config.toml` fails a load
+    /// on a value, and this one must, because there is no sane fallback that
+    /// is not the silent ten minutes D63 exists to end.
+    #[test]
+    fn a_history_that_is_not_a_duration_refuses_the_load() {
+        let text = DEFAULT_CONFIG.replace("history = \"10m\"", "history = \"ten\"");
+        let Err(e) = load_from(&text, DEFAULT_LAYOUT, None, None, false) else {
+            panic!("a non-duration must not load");
+        };
+        assert!(e.0.contains("config.toml"), "{}", e.0);
+        assert!(e.0.contains("[store] history = \"ten\""), "{}", e.0);
+    }
+
+    /// Out of range is a clamp with a warning, in both directions: the value
+    /// *is* usable at the edge, so refusing to start would be worse.
+    #[test]
+    fn a_history_out_of_range_is_clamped_and_says_so() {
+        for (text, want_secs, said) in [("30s", 60, "clamped to 1m"), ("6h", 3600, "clamped to 1h")]
+        {
+            let cfg = DEFAULT_CONFIG.replace("history = \"10m\"", &format!("history = \"{text}\""));
+            let loaded = load_from(&cfg, DEFAULT_LAYOUT, None, None, false).unwrap();
+            assert_eq!(
+                loaded.retention.max_age,
+                Duration::from_secs(want_secs),
+                "{text}"
+            );
+            assert!(
+                loaded.warnings.iter().any(|w| w.contains(said)),
+                "{text}: {:?}",
+                loaded.warnings
+            );
+            assert!(
+                loaded.warnings.iter().any(|w| w.contains("accepts 1m-1h")),
+                "{text}: {:?}",
+                loaded.warnings
+            );
+        }
+    }
+
+    /// `history = "1h"` resolves to the numbers the ROADMAP names.
+    #[test]
+    fn an_hour_of_history_is_an_hour_of_points() {
+        let cfg = DEFAULT_CONFIG.replace("history = \"10m\"", "history = \"1h\"");
+        let loaded = load_from(&cfg, DEFAULT_LAYOUT, None, None, false).unwrap();
+        assert_eq!(loaded.retention.max_age, Duration::from_secs(3600));
+        assert_eq!(loaded.retention.max_len, 14_400);
+        assert_eq!(loaded.retention.max_uncatalogued, 512);
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    }
+
+    /// D63 E2: three keys nothing ever read. They still parse — every
+    /// existing install's config carries them and `deny_unknown_fields` would
+    /// otherwise refuse the file — and each one says so, once.
+    #[test]
+    fn a_retired_key_parses_and_says_it_is_retired() {
+        for (from, to, key) in [
+            (
+                "readonly = false",
+                "readonly = false\nconfirm_kill = true",
+                "`confirm_kill` is retired",
+            ),
+            (
+                "[store]",
+                "[store]\nmax_mb = 32",
+                "`[store] max_mb` is retired",
+            ),
+            (
+                "[perf]",
+                "[perf]\nphase_ms = 250",
+                "`[perf] phase_ms` is retired",
+            ),
+        ] {
+            let line = to;
+            let cfg = DEFAULT_CONFIG.replace(from, to);
+            let loaded = load_from(&cfg, DEFAULT_LAYOUT, None, None, false)
+                .unwrap_or_else(|e| panic!("{line}: {e}"));
+            let hits: Vec<&String> = loaded.warnings.iter().filter(|w| w.contains(key)).collect();
+            assert_eq!(hits.len(), 1, "{line}: {:?}", loaded.warnings);
+            assert!(hits[0].contains("Delete the line."), "{}", hits[0]);
+        }
+        // And the shipped default carries none of them, so it is silent.
+        let loaded = load_from(DEFAULT_CONFIG, DEFAULT_LAYOUT, None, None, false).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    }
+
     /// Every rung of the §7 ladder, driven through the injected env snapshot.
     #[test]
     fn color_ladder_env_rungs() {
@@ -690,7 +981,16 @@ mod tests {
     fn record_and_rules_parse_with_warning() {
         let cfg = "schema = 1\n[record]\nring_mb = 8\n[[rules]]\nid = \"x\"\n";
         let loaded = load_from(cfg, DEFAULT_LAYOUT, None, None, false).unwrap();
-        assert!(loaded.warnings.iter().any(|w| w.contains("[record]")));
+        // Eleven arcs of "arrives in arc 2" for a section that was never
+        // going to arrive: it says what to write instead now (D63).
+        let rec: Vec<&String> = loaded
+            .warnings
+            .iter()
+            .filter(|w| w.contains("[record]"))
+            .collect();
+        assert_eq!(rec.len(), 1, "{:?}", loaded.warnings);
+        assert!(rec[0].contains("`--record FILE`"), "{}", rec[0]);
+        assert!(!rec[0].contains("arc 2"), "{}", rec[0]);
         assert!(loaded.warnings.iter().any(|w| w.contains("rules")));
     }
 
