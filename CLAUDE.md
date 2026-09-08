@@ -10,7 +10,7 @@ Modular, themeable ops-dashboard TUI for Matt's workstation "torch", in Rust (ra
 
 ## Start of every session
 
-1. Read `docs/PLAN.md`, then the current arc in `docs/ROADMAP.md` **and its brief in `docs/briefs/` if one exists**, then the tail of `docs/DECISIONS.md` and `git log --oneline -20`. Deferred work lives only in `docs/BACKLOG.md` — pulling an item into an arc is a DECISIONS entry.
+1. Read `docs/PLAN.md`, then the current arc in `docs/ROADMAP.md` **and its brief in `docs/briefs/` if one exists**, then the tail of `docs/DECISIONS.md` and `git log --oneline -20`. Deferred work lives only in `docs/BACKLOG.md`, whose header carries a **`P1`–`P4` priority tag on every open item and an ordered *Next up* list** — read it when the roadmap is empty, and remember a tag is a forecast: **pulling an item into an arc is still a DECISIONS entry**.
 2. Read the newest entry in `docs/JOURNAL.md` — it is the only file that says what the *last session* was like, including what it got wrong.
 3. Give a short state read and offer arc options with a recommended next step. Wait for Matt to pick.
 
