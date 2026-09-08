@@ -245,7 +245,10 @@ impl Shell {
         controls: Controls,
         stats_on: bool,
     ) -> Shell {
-        let mut store = Store::default();
+        // `[store] history` resolved once, at start (§4.2, D63): retention is
+        // set at `Store::new` and a reload that changes it says "restart to
+        // apply" rather than re-sizing every ring under a running chart.
+        let mut store = Store::new(loaded.retention);
         let mut cadences = BTreeMap::new();
         for def in registry.sources() {
             store.ensure_source(def.info.id);
@@ -681,6 +684,19 @@ impl Shell {
                     for w in self.source_warnings.clone() {
                         self.toast(Severity::Warn, w);
                     }
+                }
+                // Retention is set at `Store::new` (§4.2): re-sizing every
+                // ring under a running chart would change what is drawn
+                // mid-frame, so the reload says so and changes nothing.
+                let (want, have) = (loaded.retention, self.store.retention());
+                if (want.max_len, want.max_age, want.max_uncatalogued)
+                    != (have.max_len, have.max_age, have.max_uncatalogued)
+                {
+                    self.toast(
+                        Severity::Warn,
+                        "[store] history changed — the store is sized at start; \
+                         restart to apply",
+                    );
                 }
                 let restart_only = (loaded.config.mouse, loaded.config.color.clone());
                 if restart_only != self.restart_only {
@@ -1665,6 +1681,12 @@ impl Shell {
                     SolveMode::Stack => "stack",
                 },
                 recording: self.recorder.as_ref().map(|r| (r.written(), r.dropped())),
+                // Only here, inside `if self.hud`: a walk of every series is
+                // cheap but it is not free, and nothing needs it per frame.
+                store: {
+                    let f = self.store.footprint();
+                    (f.series, f.scalar_points, f.scalar_bytes)
+                },
             };
             overlay::hud(&stats, body, &self.theme, buf);
             // The rain and effects line, right under the HUD box's rows and
@@ -1675,7 +1697,8 @@ impl Shell {
                 .unwrap_or_else(|| format!(" fx {} µs ", self.effects.last_cost_us()));
             let w = line.chars().count() as u16;
             let x = body.x + body.width.saturating_sub(w + 1);
-            let y = body.y + 8;
+            // Under the HUD box's last row: the box is `lines + 2` tall.
+            let y = body.y + 9;
             for dx in 0..w {
                 if let Some(c) = buf.cell_mut((x + dx, y)) {
                     c.set_char(' ');
@@ -3658,6 +3681,7 @@ where
                     .as_ref()
                     .map(|c| c.load(std::sync::atomic::Ordering::Relaxed))
                     .unwrap_or(0),
+                shell.store.footprint().scalar_bytes,
             );
             if let Ok(mut f) = std::fs::OpenOptions::new()
                 .create(true)

@@ -293,6 +293,14 @@ pub fn run_terminal(mut registry: Registry, opts: RunOpts) -> Result<(), String>
     for w in shell.view_warnings().to_vec() {
         shell.warn_toast(w);
     }
+    // The loader's own warnings — a clamped `fps`, a clamped `history`, a
+    // retired key, a `[[rules]]` entry that did not parse — were logged at
+    // start and never shown, though `config check` printed them and a reload
+    // toasted them (D63 E2). The person inside the alternate screen sees the
+    // log least of anyone.
+    for w in loaded.warnings.clone() {
+        shell.warn_toast(w);
+    }
     // A mistyped `[sources.<id>]` key is read by nobody and, until arc 11,
     // was reported by nobody (D61); a *value* the source discarded said
     // nothing until arc 13 (D63). The source still starts, on its defaults
@@ -843,6 +851,16 @@ pub fn config_check(mut registry: Registry, theme: Option<&str>) -> Result<Check
         ),
     ];
     lines.extend(loaded.warnings.iter().map(|w| format!("warning: {w}")));
+    // What `[store] history` resolved to (D63): the numbers the store is
+    // built with, so "did my `1h` take?" is a question the check answers.
+    lines.push(format!(
+        "store: history = \"{}\" — max_age {} s, max_len {} points a series, \
+         max_uncatalogued {}",
+        loaded.config.store.history,
+        loaded.retention.max_age.as_secs(),
+        loaded.retention.max_len,
+        loaded.retention.max_uncatalogued
+    ));
     // The rules that parsed, in the words the engine will use (arc 7b): a
     // check that only counted them would not tell anyone what will fire.
     if !loaded.rules.is_empty() {

@@ -977,6 +977,90 @@ fn a_rejected_option_value_is_toasted_once_and_the_app_still_runs() {
     assert!(hits >= 1, "the source's own log line is missing: {log}");
 }
 
+/// C.35 (arc 13, D63) — `[store] history` is live. It was parsed and read by
+/// nothing for eleven arcs: `Shell::new` built `Store::default()`, so the
+/// shipped `10m` was right by coincidence and `1h` silently got ten minutes.
+#[test]
+fn config_check_resolves_the_store_history() {
+    let sandbox = Sandbox::new("history");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let check = |sandbox: &Sandbox| {
+        let mut cmd = Command::new(bin());
+        cmd.args(["config", "check"]);
+        sandbox.env(&mut cmd, "history");
+        cmd.output().expect("run config check")
+    };
+    let write = |text: String| std::fs::write(dir.join("config.toml"), text).unwrap();
+
+    // The shipped default, resolved: the numbers every store test is written
+    // against, printed rather than assumed.
+    write(gridwatch_app::config::DEFAULT_CONFIG.to_string());
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}");
+    assert!(
+        text.contains(
+            "store: history = \"10m\" — max_age 600 s, max_len 2400 points a series, \
+             max_uncatalogued 512"
+        ),
+        "{text}"
+    );
+
+    // An hour, asked for and actually given (ROADMAP acceptance).
+    write(gridwatch_app::config::DEFAULT_CONFIG.replace("history = \"10m\"", "history = \"1h\""));
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}");
+    assert!(
+        text.contains("max_age 3600 s, max_len 14400 points a series"),
+        "{text}"
+    );
+
+    // Not a duration: a load error naming the file, like `borders`.
+    write(gridwatch_app::config::DEFAULT_CONFIG.replace("history = \"10m\"", "history = \"ten\""));
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stdout: {text}\nstderr: {err}");
+    assert!(err.contains("config.toml"), "{err}");
+    assert!(err.contains("[store] history = \"ten\""), "{err}");
+
+    // Out of range: clamped, with a warning, and it still runs.
+    write(gridwatch_app::config::DEFAULT_CONFIG.replace("history = \"10m\"", "history = \"6h\""));
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}");
+    assert!(
+        text.contains("warning: [store] history = \"6h\" clamped to 1h (accepts 1m-1h)"),
+        "{text}"
+    );
+    assert!(text.contains("max_age 3600 s"), "{text}");
+
+    // A config written before 2026-09 still loads, and says which of its
+    // lines nothing ever read (D63 E2).
+    write(
+        gridwatch_app::config::DEFAULT_CONFIG
+            .replace("readonly = false", "readonly = false\nconfirm_kill = true")
+            .replace("[store]", "[store]\nmax_mb = 32")
+            .replace("[perf]", "[perf]\nphase_ms = 250"),
+    );
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "a retired key must never fail: {text}"
+    );
+    for said in [
+        "`confirm_kill` is retired",
+        "`[store] max_mb` is retired",
+        "`[perf] phase_ms` is retired",
+    ] {
+        assert!(text.contains(said), "{said} missing from: {text}");
+    }
+    assert!(text.contains("Delete the line."), "{text}");
+}
+
 /// C.15 (arc 4a) — edit mode under a pty: `e`, `L` twice on the cpu tile
 /// after narrowing it, `w`, and the sandbox's `layout.toml` carries the
 /// move; `q` exits 0 with no ERROR in the log.
@@ -1128,6 +1212,16 @@ fn stats_log_does_not_run_the_cell_diff_unless_asked() {
         .and_then(|n| n.parse().ok())
         .unwrap_or(0);
     assert!(frames > 1, "frames are still counted: {plain}");
+    // D63: §13's store budget as a number someone can read. Sampled at this
+    // 1 Hz tick, never per frame — and a demo run has published by now, so
+    // it must be above zero rather than merely present.
+    let store_bytes: u64 = plain
+        .split("\"store_bytes\":")
+        .nth(1)
+        .and_then(|r| r.split(&[',', '}'][..]).next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0);
+    assert!(store_bytes > 0, "the store's footprint is missing: {plain}");
 
     let cells = run("statscells", " --stats-cells");
     assert!(

@@ -3,6 +3,7 @@
 //! review finding.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use gridwatch_app::{Shell, config, probe, run_loop, shot_frame};
 use gridwatch_store::demo::CpuSynth;
@@ -865,6 +866,212 @@ fn both_kinds_are_toasted_at_start_with_the_failures_first() {
     let text = page_text(&mut sh, 250, 70);
     assert!(text.contains("auto, i2c, exporter"), "{text}");
     assert!(text.contains("clamped to 500"), "{text}");
+}
+
+// ────────────────── arc 13: every key is read, or says so (D63) ──────────────
+
+/// D63's rule, as a test: **every key `config.toml` accepts is read, or says
+/// it is not.** The row for a key mutates the shipped default and asserts
+/// what changed — so a key cannot be added without a consumer or a
+/// retirement, which is how `history`, `max_mb`, `phase_ms` and
+/// `confirm_kill` survived for eleven arcs doing nothing.
+#[test]
+fn every_leaf_key_of_the_shipped_default_has_a_consumer_or_a_retirement() {
+    // Each row: the leaf path, a mutation of the shipped config, and what
+    // must be true of the load it produces.
+    type Check = fn(&config::Loaded) -> Result<(), String>;
+    fn ok(b: bool, why: &str) -> Result<(), String> {
+        if b { Ok(()) } else { Err(why.to_string()) }
+    }
+    let rows: Vec<(&str, String, Check)> = vec![
+        (
+            "schema",
+            config::DEFAULT_CONFIG.replace("schema = 1", "schema = 2"),
+            // A load that refuses is the consumer; the row below asserts it.
+            |_| Err("schema = 2 must not load".into()),
+        ),
+        (
+            "theme",
+            config::DEFAULT_CONFIG.replace("theme = \"retrowave\"", "theme = \"mono\""),
+            |l| ok(l.config.theme == "mono", "theme is not followed"),
+        ),
+        (
+            "fps",
+            config::DEFAULT_CONFIG.replace("fps = 30", "fps = 12"),
+            |l| ok(l.config.fps == 12, "fps is not followed"),
+        ),
+        (
+            "fps_max",
+            config::DEFAULT_CONFIG.replace("fps_max = 60", "fps_max = 45"),
+            |l| ok(l.config.fps_max == 45, "fps_max is not followed"),
+        ),
+        (
+            "color",
+            config::DEFAULT_CONFIG.replace("color = \"auto\"", "color = \"never\""),
+            |l| ok(l.config.color == "never", "color is not followed"),
+        ),
+        (
+            "mouse",
+            config::DEFAULT_CONFIG.replace("mouse = true", "mouse = false"),
+            |l| ok(!l.config.mouse, "mouse is not followed"),
+        ),
+        (
+            "readonly",
+            config::DEFAULT_CONFIG.replace("readonly = false", "readonly = true"),
+            |l| ok(l.config.readonly, "readonly is not followed"),
+        ),
+        (
+            "store.history",
+            config::DEFAULT_CONFIG.replace("history = \"10m\"", "history = \"1h\""),
+            |l| {
+                ok(
+                    l.retention.max_age == Duration::from_secs(3600)
+                        && l.retention.max_len == 14_400,
+                    "history does not reach the store's retention",
+                )
+            },
+        ),
+        (
+            "effects.enabled",
+            config::DEFAULT_CONFIG.replace("enabled = true", "enabled = false"),
+            |l| ok(!l.config.effects.enabled, "effects.enabled is not followed"),
+        ),
+        (
+            "effects.budget_ms",
+            config::DEFAULT_CONFIG.replace("budget_ms = 4", "budget_ms = 7"),
+            |l| ok(l.config.effects.budget_ms == 7, "budget_ms is not followed"),
+        ),
+        (
+            "perf.unfocused_fps",
+            config::DEFAULT_CONFIG.replace("unfocused_fps = 2", "unfocused_fps = 5"),
+            |l| {
+                ok(
+                    l.config.perf.unfocused_fps == 5,
+                    "unfocused_fps is not followed",
+                )
+            },
+        ),
+        // The three retirements: present, parsed, and each says so once.
+        (
+            "confirm_kill (retired)",
+            config::DEFAULT_CONFIG
+                .replace("readonly = false", "readonly = false\nconfirm_kill = false"),
+            |l| {
+                ok(
+                    l.warnings
+                        .iter()
+                        .any(|w| w.contains("`confirm_kill` is retired")),
+                    "confirm_kill is accepted and says nothing",
+                )
+            },
+        ),
+        (
+            "store.max_mb (retired)",
+            config::DEFAULT_CONFIG.replace("[store]", "[store]\nmax_mb = 64"),
+            |l| {
+                ok(
+                    l.warnings
+                        .iter()
+                        .any(|w| w.contains("`[store] max_mb` is retired")),
+                    "max_mb is accepted and says nothing",
+                )
+            },
+        ),
+        (
+            "perf.phase_ms (retired)",
+            config::DEFAULT_CONFIG.replace("[perf]", "[perf]\nphase_ms = 100"),
+            |l| {
+                ok(
+                    l.warnings
+                        .iter()
+                        .any(|w| w.contains("`[perf] phase_ms` is retired")),
+                    "phase_ms is accepted and says nothing",
+                )
+            },
+        ),
+    ];
+
+    // Every leaf key the shipped default writes must appear above. The four
+    // tables with their own checks are skipped: `sources.*` is D61/D63's
+    // pass, `components`/`rules`/`plugins` are built and parsed elsewhere.
+    let doc: toml::Table = config::DEFAULT_CONFIG.parse().unwrap();
+    let mut leaves: Vec<String> = Vec::new();
+    fn walk(prefix: &str, t: &toml::Table, out: &mut Vec<String>) {
+        for (k, v) in t {
+            if prefix.is_empty()
+                && matches!(k.as_str(), "sources" | "components" | "rules" | "plugins")
+            {
+                continue;
+            }
+            let path = if prefix.is_empty() {
+                k.clone()
+            } else {
+                format!("{prefix}.{k}")
+            };
+            match v {
+                toml::Value::Table(inner) => walk(&path, inner, out),
+                _ => out.push(path),
+            }
+        }
+    }
+    walk("", &doc, &mut leaves);
+    for leaf in &leaves {
+        assert!(
+            rows.iter().any(|(p, _, _)| p == leaf),
+            "`{leaf}` is in the shipped config.toml with no row here: say what consumes it, \
+             or retire it (D63)"
+        );
+    }
+
+    for (path, text, check) in &rows {
+        match config::load_texts(text, config::DEFAULT_LAYOUT) {
+            Ok(loaded) => check(&loaded).unwrap_or_else(|why| {
+                panic!("`{path}`: {why} — say what consumes it, or retire it (D63)")
+            }),
+            // A row whose consumer is the load itself (`schema`).
+            Err(e) => assert!(
+                *path == "schema",
+                "`{path}` failed to load: {e} — say what consumes it, or retire it (D63)"
+            ),
+        }
+    }
+}
+
+/// Retention is set at `Store::new` (§4.2): a reload that changes `[store]`
+/// says so and changes nothing, because re-sizing every ring under a running
+/// chart would change what is drawn mid-frame.
+#[test]
+#[cfg(feature = "cpu")]
+fn a_reload_that_changes_history_says_restart_and_keeps_the_store() {
+    let mut sh = shell_with_config(config::DEFAULT_CONFIG);
+    let before = sh.store.retention();
+    assert_eq!(before.max_age, Duration::from_secs(600));
+    assert_eq!(before.max_len, 2400);
+    sh.reload_from_texts(
+        gridwatch_store::ReloadKind::Config,
+        &config::DEFAULT_CONFIG.replace("history = \"10m\"", "history = \"1h\""),
+        config::DEFAULT_LAYOUT,
+    );
+    let after = sh.store.retention();
+    assert_eq!(
+        (after.max_age, after.max_len),
+        (before.max_age, before.max_len),
+        "a reload must not re-size the rings under a running chart"
+    );
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("restart to apply"), "{text}");
+}
+
+/// The loader's own warnings were logged at start and never shown, though a
+/// reload toasted them and `config check` printed them (D63 E2).
+#[test]
+#[cfg(feature = "cpu")]
+fn a_retired_key_is_a_warning_the_loader_hands_to_the_screen() {
+    let text = config::DEFAULT_CONFIG.replace("[store]", "[store]\nmax_mb = 32");
+    let loaded = config::load_texts(&text, config::DEFAULT_LAYOUT).unwrap();
+    assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
+    // The store is still built, and on the history it was told.
+    assert_eq!(loaded.retention.max_age, Duration::from_secs(600));
 }
 
 // ───────────────────────────── D46 layer B ──────────────────────────────
