@@ -22,6 +22,33 @@ pub struct Retention {
     pub max_uncatalogued: usize,
 }
 
+impl Retention {
+    /// `[store] history` resolved (D63): `max_age` is the history and
+    /// `max_len` is `max_age / 250 ms` — four points a second, the fastest
+    /// *default* cadence any shipped source runs at (the gpu's focused tier).
+    /// At the shipped `10m` this is field-identical to `Retention::default()`,
+    /// so no snapshot, replay or P18 number moves. A series published faster
+    /// than that holds `max_len` points and so less than `history`; §4.2 says
+    /// so. Integer arithmetic only — determinism is config, not clock.
+    pub fn for_history(max_age: Duration) -> Retention {
+        Retention {
+            max_len: (max_age.as_millis() / 250).max(1) as usize,
+            max_age,
+            max_uncatalogued: Retention::default().max_uncatalogued,
+        }
+    }
+}
+
+/// What the store actually holds (D63), for the `F12` HUD and the stats log —
+/// a number someone can read, never a cap that changes what is shown.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Footprint {
+    pub series: usize,
+    pub scalar_points: usize,
+    /// A scalar point is a `Ts` and an `f64`: 16 bytes.
+    pub scalar_bytes: usize,
+}
+
 impl Default for Retention {
     fn default() -> Retention {
         Retention {

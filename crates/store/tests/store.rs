@@ -1452,3 +1452,58 @@ for_s = 5"#));
     assert_eq!(ev.len(), 1, "it must be able to resolve: {ev:?}");
     assert_eq!(store.alerts().active().count(), 0);
 }
+
+// ───────────────────── arc 13 seams (D63) ─────────────────────
+
+/// The shipped `history = "10m"` must resolve to exactly today's retention,
+/// field for field — that is what lets D63 promise no snapshot, replay or P18
+/// number moves. 600 s / 250 ms = 2400, which is the `max_len` that shipped.
+#[test]
+fn ten_minutes_of_history_is_the_retention_that_already_shipped() {
+    let d = Retention::default();
+    let h = Retention::for_history(Duration::from_secs(600));
+    assert_eq!(h.max_len, d.max_len, "max_len");
+    assert_eq!(h.max_age, d.max_age, "max_age");
+    assert_eq!(h.max_uncatalogued, d.max_uncatalogued, "max_uncatalogued");
+}
+
+/// Four points a second, by integer arithmetic at both ends of the range D63
+/// allows — never a float, because determinism is config, not clock.
+#[test]
+fn history_derives_four_points_a_second() {
+    assert_eq!(Retention::for_history(Duration::from_secs(60)).max_len, 240);
+    assert_eq!(
+        Retention::for_history(Duration::from_secs(3600)).max_len,
+        14_400
+    );
+    // Never zero, however short the window.
+    assert_eq!(Retention::for_history(Duration::from_millis(1)).max_len, 1);
+}
+
+/// `footprint()` counts scalar points and nothing else: a Record and a Vector
+/// hold no ring of points, so they add to `series` alone.
+#[test]
+fn the_footprint_counts_the_points_a_scalar_holds() {
+    let mut store = Store::new(Retention::default());
+    for t in 0..10u64 {
+        store.apply(&Msg::Batch(Batch {
+            source: SourceId("net"),
+            at: Ts(t * 1_000_000_000),
+            samples: vec![
+                scalar(
+                    &gridwatch_store::keys::net::RX_BPS.named(&Arc::from("eno1")),
+                    1.0,
+                ),
+                scalar(
+                    &gridwatch_store::keys::net::TX_BPS.named(&Arc::from("eno1")),
+                    2.0,
+                ),
+            ],
+        }));
+    }
+    let f = store.footprint();
+    assert_eq!(f.series, 2);
+    assert_eq!(f.scalar_points, 20);
+    assert_eq!(f.scalar_bytes, 320, "a scalar point is a Ts and an f64");
+    assert_eq!(store.retention().max_age, Retention::default().max_age);
+}

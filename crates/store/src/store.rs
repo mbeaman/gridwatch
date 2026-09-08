@@ -67,6 +67,27 @@ impl Default for Store {
 }
 
 impl Store {
+    /// What `[store] history` resolved to (D63).
+    pub fn retention(&self) -> Retention {
+        self.retention
+    }
+
+    /// What the store holds right now (D63): a number for the `F12` HUD and
+    /// the 1 Hz stats sample, never a cap and never called per frame.
+    pub fn footprint(&self) -> crate::Footprint {
+        let mut f = crate::Footprint {
+            series: self.series.len(),
+            ..Default::default()
+        };
+        for s in self.series.values() {
+            if let Series::Scalar(ring) = s {
+                f.scalar_points += ring.len();
+            }
+        }
+        f.scalar_bytes = f.scalar_points * 16;
+        f
+    }
+
     pub fn new(retention: Retention) -> Store {
         Store {
             rules: crate::rules::Rules::default(),

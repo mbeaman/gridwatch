@@ -37,10 +37,10 @@ pub use msg::{
     ActionId, Batch, Channels, ControlMsg, DATA_BOUND, Inbox, Msg, Reload, ReloadKind, Sample,
     channels,
 };
-pub use series::{Agg, Retention};
+pub use series::{Agg, Footprint, Retention};
 pub use source::{
-    Cadence, Control, Demand, Detail, Level, Sampler, Source, SourceCtx, SourceDef, SourceError,
-    SourceId, SourceInfo, SourceState, SourceStatus,
+    Cadence, Control, Demand, Detail, IssueKind, Level, OptionIssue, Sampler, Source, SourceCtx,
+    SourceDef, SourceError, SourceId, SourceInfo, SourceState, SourceStatus, no_option_issues,
 };
 pub use store::{SourceOverview, Store};
 pub use ts::{Clock, Ts};

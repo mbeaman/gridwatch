@@ -383,6 +383,46 @@ pub trait Sampler: Send + 'static {
     fn sample(&mut self, now: Ts, detail: Detail) -> Result<Vec<Sample>, SourceError>;
 }
 
+/// What a source's option reader found in one `[sources.<id>]` value (D63):
+/// the key, whether the value was used, and one sentence naming what was
+/// found, what was expected and what stands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OptionIssue {
+    pub key: &'static str,
+    pub kind: IssueKind,
+    pub text: String,
+}
+
+/// One mechanical rule decides the kind (D63): a value that is *used* after
+/// adjustment is `Adjusted`; a value that is *discarded* so the default stands
+/// is `Rejected`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IssueKind {
+    /// Not used — the default stands. A `config check` failure, because a
+    /// discarded value running on its default is the silence D63 ends.
+    Rejected,
+    /// Used, after a clamp or a completion. A warning: the value *was* applied
+    /// and the clamp exists on purpose (P14's 500 ms floor, say).
+    Adjusted,
+}
+
+impl OptionIssue {
+    pub fn rejected(key: &'static str, text: impl Into<String>) -> OptionIssue {
+        OptionIssue {
+            key,
+            kind: IssueKind::Rejected,
+            text: text.into(),
+        }
+    }
+    pub fn adjusted(key: &'static str, text: impl Into<String>) -> OptionIssue {
+        OptionIssue {
+            key,
+            kind: IssueKind::Adjusted,
+            text: text.into(),
+        }
+    }
+}
+
 /// How the registry builds a source: live, or seeded synthetic for `--demo` (§4.3).
 #[derive(Clone, Copy)]
 pub struct SourceDef {
@@ -394,6 +434,16 @@ pub struct SourceDef {
     /// and not on `SourceInfo`, which `store::demo` constructs and which a
     /// demo or journal source returns too — none of them read a table.
     pub options: &'static [&'static str],
+    /// The reader `start` runs, without starting anything (D63):
+    /// `Options::from_table(t).1`. **Pure** — no `/dev`, `/sys`, process or
+    /// bus — because `gridwatch config check` runs it on any machine and the
+    /// shell runs it on the render thread.
+    pub check: fn(&toml::Table) -> Vec<OptionIssue>,
+}
+
+/// The placeholder every source registers until it has a typed reader (D63).
+pub fn no_option_issues(_: &toml::Table) -> Vec<OptionIssue> {
+    Vec::new()
 }
 
 impl std::fmt::Debug for SourceDef {
