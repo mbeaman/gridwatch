@@ -1698,7 +1698,12 @@ impl Shell {
             let w = line.chars().count() as u16;
             let x = body.x + body.width.saturating_sub(w + 1);
             // Under the HUD box's last row: the box is `lines + 2` tall.
+            // Skipped entirely when the body has no such row — writing it took
+            // the app down on a terminal 7-10 rows tall (arc 13 review).
             let y = body.y + 9;
+            if y >= body.y.saturating_add(body.height) {
+                return;
+            }
             for dx in 0..w {
                 if let Some(c) = buf.cell_mut((x + dx, y)) {
                     c.set_char(' ');

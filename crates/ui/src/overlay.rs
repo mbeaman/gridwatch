@@ -81,10 +81,19 @@ pub fn hud(stats: &HudStats, area: Rect, theme: &Theme, buf: &mut Buffer) {
         theme,
         buf,
     );
+    // Only the rows that exist: `fill` clamps its rect to `area`, but
+    // `set_stringn` panics on a row outside the buffer, so a terminal shorter
+    // than the box (seven lines plus a border needs nine rows) took the whole
+    // app down with the message only in the log (arc 13 review).
+    let last = area.y.saturating_add(area.height);
     for (i, l) in lines.iter().enumerate() {
+        let row = y + 1 + i as u16;
+        if row >= last {
+            break;
+        }
         buf.set_stringn(
             x + 1,
-            y + 1 + i as u16,
+            row,
             l,
             (w.saturating_sub(2)) as usize,
             theme.style(Role::Text),
@@ -327,5 +336,50 @@ pub fn panel(
     if inner.height > 0 && inner.width > 0 {
         let view = crate::view::View::Text(lines.to_vec());
         theme.renderer().render(&view, inner, theme, buf);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stats() -> HudStats {
+        HudStats {
+            first_frame_ms: 12,
+            sources_live_ms: 40,
+            frame_p50_us: 300,
+            frame_p95_us: 900,
+            changed_cells: Some(120),
+            bytes_written: 4096,
+            frames: 99,
+            redraw_data: 50,
+            redraw_anim: 40,
+            redraw_heartbeat: 9,
+            mode: "grid",
+            recording: None,
+            store: (220, 838, 13_000),
+        }
+    }
+
+    /// The HUD box wants nine rows (seven lines and a border). On a terminal
+    /// shorter than that it used to write past the buffer's last row and take
+    /// the whole app down, with the panic only in the log — `gridwatch run
+    /// --stats` at ten rows, or F12 followed by a drag (arc 13 review).
+    #[test]
+    fn the_hud_draws_on_a_terminal_shorter_than_itself() {
+        let th = crate::load_builtin("modern", crate::ColorMode::TrueColor)
+            .expect("the modern theme loads");
+        for h in 0..=14u16 {
+            for w in [8u16, 40, 60, 250] {
+                let area = Rect {
+                    x: 0,
+                    y: 0,
+                    width: w,
+                    height: h,
+                };
+                let mut buf = Buffer::empty(area);
+                hud(&stats(), area, &th, &mut buf);
+            }
+        }
     }
 }
