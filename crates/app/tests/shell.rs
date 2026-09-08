@@ -762,6 +762,111 @@ fn a_reload_that_adds_a_plugin_and_its_source_table_does_not_fail_it() {
     );
 }
 
+// ─────────────────── arc 13: `[sources.<id>]` values (D63) ───────────────────
+
+/// The registry `check_sources` needs, without a shell.
+fn source_report(text: &str) -> gridwatch_app::app::SourceReport {
+    let mut reg = Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    gridwatch_sources::builtin_sources(&mut reg);
+    let loaded = config::load_texts(text, config::DEFAULT_LAYOUT).unwrap();
+    gridwatch_app::app::check_sources(
+        &reg,
+        &loaded.config.sources,
+        &std::collections::BTreeSet::new(),
+    )
+}
+
+/// D63: a value the source *discarded* is a failure, because a discarded
+/// value running on its default is exactly the silence this arc ends. Until
+/// arc 13 `config check` echoed `refresh_ms = "1500"` back as though it had
+/// been accepted (the arc-11 review's finding).
+#[test]
+#[cfg(feature = "cpu")]
+fn a_wrongly_typed_value_fails_and_says_what_stands() {
+    let r = source_report(
+        &config::DEFAULT_CONFIG.replace("refresh_ms = 1500", "refresh_ms = \"1500\""),
+    );
+    assert_eq!(r.failures.len(), 1, "{:?}", r.failures);
+    assert_eq!(
+        r.failures[0],
+        "sources.cpu: `refresh_ms` expects an integer (milliseconds), \
+         found a string (\"1500\") — the default 1500 stands"
+    );
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    // And the line is never echoed back as an accepted value beside it.
+    assert!(
+        !r.lines.iter().any(|l| l.contains("cpu — refresh_ms = ")),
+        "a key with an issue must not also be echoed as accepted: {:?}",
+        r.lines
+    );
+}
+
+/// An `Adjusted` value was *used*, so it is a warning and exit 0: the clamp
+/// exists on purpose (P14's 500 ms floor) and failing the check would change
+/// nothing about what runs.
+#[test]
+#[cfg(feature = "cpu")]
+fn a_clamped_value_warns_and_never_fails() {
+    let r = source_report(&config::DEFAULT_CONFIG.replace("refresh_ms = 1500", "refresh_ms = 50"));
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+    assert_eq!(
+        r.warnings[0],
+        "sources.cpu: `refresh_ms` = 50 clamped to 200 (accepts 200-60000)"
+    );
+    assert!(
+        r.lines
+            .iter()
+            .any(|l| l.starts_with("  warning: cpu — `refresh_ms`")),
+        "{:?}",
+        r.lines
+    );
+}
+
+/// D63 trap 5: the pty counts are exact, so the shipped default must produce
+/// no issue of any kind — not a failure, not a warning.
+#[test]
+#[cfg(feature = "cpu")]
+fn the_shipped_default_produces_no_issue_at_all() {
+    let r = source_report(config::DEFAULT_CONFIG);
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert!(
+        !r.lines.iter().any(|l| l.contains("warning")),
+        "{:?}",
+        r.lines
+    );
+}
+
+/// Both halves reach the screen, failures first (D61 R2's toast shape: the
+/// head and the tail survive an 80-column elision, and both carry meaning).
+#[test]
+#[cfg(all(feature = "cpu", feature = "pins"))]
+fn both_kinds_are_toasted_at_start_with_the_failures_first() {
+    let mut sh = shell_with_config(&format!(
+        "{}\n[sources.pins]\nsource = \"i2x\"\ninterval_ms = 100\n",
+        config::DEFAULT_CONFIG
+    ));
+    let w = sh.source_warnings().to_vec();
+    assert_eq!(w.len(), 2, "{w:?}");
+    assert_eq!(
+        w[0],
+        "sources.pins: `source` expects one of auto, i2c, exporter, \
+         found \"i2x\" — auto stands"
+    );
+    assert_eq!(
+        w[1],
+        "sources.pins: `interval_ms` = 100 clamped to 500 (accepts 500-5000, P14)"
+    );
+    for line in w {
+        sh.warn_toast(line);
+    }
+    let text = page_text(&mut sh, 250, 70);
+    assert!(text.contains("auto, i2c, exporter"), "{text}");
+    assert!(text.contains("clamped to 500"), "{text}");
+}
+
 // ───────────────────────────── D46 layer B ──────────────────────────────
 
 /// One frame's plain characters plus what the lint needs to know about it.

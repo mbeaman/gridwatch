@@ -294,9 +294,10 @@ pub fn run_terminal(mut registry: Registry, opts: RunOpts) -> Result<(), String>
         shell.warn_toast(w);
     }
     // A mistyped `[sources.<id>]` key is read by nobody and, until arc 11,
-    // was reported by nobody (D61). The source still starts and ignores it —
-    // one typo must not cost the dashboard — so this is a toast, and
-    // `config check` is where it is a failure.
+    // was reported by nobody (D61); a *value* the source discarded said
+    // nothing until arc 13 (D63). The source still starts, on its defaults
+    // for whatever was rejected — one typo must not cost the dashboard — so
+    // this is a toast, and `config check` is where a rejection is a failure.
     for w in shell.source_warnings().to_vec() {
         tracing::warn!("{w}");
         shell.warn_toast(w);

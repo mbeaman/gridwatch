@@ -191,11 +191,12 @@ pub struct Shell {
     pub stats_log: Option<std::path::PathBuf>,
     pub stats_cells: bool,
     view_warnings: Vec<String>,
-    /// What `check_sources` found in `[sources.*]` (arc 11, D61): a mistyped
-    /// option, or an id that is neither a registered source nor a plugin.
-    /// Toasted once at `run` and re-computed on a reload — the source still
-    /// starts and ignores the key, because one typo must not cost the
-    /// dashboard.
+    /// What `check_sources` found in `[sources.*]`: a mistyped option name or
+    /// an unknown id (arc 11, D61), and a value the reader rejected or
+    /// clamped (arc 13, D63). Failures first, then the warnings. Toasted once
+    /// at `run` and re-computed on a reload — the source still starts, with
+    /// the default for each rejected key and the rest of its table applied,
+    /// because one typo must not cost the dashboard.
     source_warnings: Vec<String>,
     /// `--record`: the journal tee (§4.5). `r` toggles it; the HUD counts it.
     pub recorder: Option<Recorder>,
@@ -273,7 +274,7 @@ impl Shell {
             &loaded.config.sources,
             &std::collections::BTreeSet::new(),
         )
-        .failures;
+        .toasts();
         let theme_ref = theme.name.clone();
         Shell {
             executor: None,
@@ -381,7 +382,7 @@ impl Shell {
         // Now that the plugin ids are known, `[sources.<plugin id>]` is a
         // warning line rather than "no such source in this build" (D61).
         self.source_warnings =
-            check_sources(&self.registry, &self.source_options, &self.plugin_ids).failures;
+            check_sources(&self.registry, &self.source_options, &self.plugin_ids).toasts();
     }
 
     /// Everything the plugin host has said since the last frame: toasts and
@@ -676,7 +677,7 @@ impl Shell {
                     let ids: std::collections::BTreeSet<String> =
                         loaded.config.plugins.iter().map(|p| p.id.clone()).collect();
                     self.source_warnings =
-                        check_sources(&self.registry, &self.source_options, &ids).failures;
+                        check_sources(&self.registry, &self.source_options, &ids).toasts();
                     for w in self.source_warnings.clone() {
                         self.toast(Severity::Warn, w);
                     }
@@ -810,7 +811,8 @@ impl Shell {
         &self.view_warnings
     }
 
-    /// What `[sources.*]` got wrong (arc 11, D61) — toasted once at `run`.
+    /// What `[sources.*]` got wrong — an unknown name (D61) or a value that
+    /// was discarded or clamped (D63). Toasted once at `run`.
     pub fn source_warnings(&self) -> &[String] {
         &self.source_warnings
     }
@@ -3928,9 +3930,24 @@ pub(crate) fn check_components(
 /// D61). Same shape as `ComponentReport`, and for the same reason: the
 /// lines are printed either way, the failures are what make the check exit
 /// non-zero.
-pub(crate) struct SourceReport {
+pub struct SourceReport {
     pub lines: Vec<String>,
     pub failures: Vec<String>,
+    /// What `SourceDef.check` found and the source *used* anyway (D63): a
+    /// clamp, or `chips` completed with `k10temp`. Printed and toasted, never
+    /// a non-zero exit — the value was applied and the clamp exists on
+    /// purpose, so failing the check would change nothing about what runs.
+    pub warnings: Vec<String>,
+}
+
+impl SourceReport {
+    /// What the shell toasts once at `run` and again after a reload:
+    /// failures first, because a discarded value is the worse news.
+    pub fn toasts(self) -> Vec<String> {
+        let mut out = self.failures;
+        out.extend(self.warnings);
+        out
+    }
 }
 
 /// `config check`'s source pass, and the same function the shell runs at
@@ -3949,10 +3966,13 @@ pub(crate) struct SourceReport {
 /// known) and again on a reload, and it holds `source_options`, not the
 /// `Loaded` it came from.
 ///
-/// A value's *type* is not checked: that is the source's own
-/// `Options::from_table`, which reports it with a `file:line:col` this pass
-/// could not produce.
-pub(crate) fn check_sources(
+/// **Values are checked here too (D63):** `SourceDef.check` is the reader the
+/// source's own `start` runs, without starting anything, so a wrongly typed
+/// or out-of-range value is named by the code that reads it rather than
+/// discarded in silence. A `Rejected` value is a failure — the default stands
+/// where the config said something else — and an `Adjusted` one is a warning,
+/// because it was used.
+pub fn check_sources(
     registry: &Registry,
     sources: &toml::Table,
     plugin_ids: &std::collections::BTreeSet<String>,
@@ -3960,16 +3980,8 @@ pub(crate) fn check_sources(
     let mut out = SourceReport {
         lines: vec![format!("sources: {}", sources.len())],
         failures: Vec::new(),
+        warnings: Vec::new(),
     };
-    // The echoed lines below say a *name* was accepted, never that a value
-    // was: types are each source's own `Options::from_table`, which today
-    // falls back to its default without saying so, and a reader who saw
-    // `refresh_ms = "fast"` echoed would otherwise take it as confirmation
-    // (arc 11 review; the typed-options fix is in BACKLOG.md).
-    if !sources.is_empty() {
-        out.lines
-            .push("  (option names are checked here; values are the source's own)".into());
-    }
     for (id, value) in sources {
         match registry.source(id) {
             Some(def) => {
@@ -3984,8 +3996,16 @@ pub(crate) fn check_sources(
                     ));
                     continue;
                 };
+                // The reader `start` runs, without starting anything (D63).
+                // Computed before the echo loop because a key with an issue
+                // must not also be echoed back as though it were accepted:
+                // that is exactly what the arc-11 review caught.
+                let issues = (def.check)(table);
                 for (key, v) in table {
                     if def.options.contains(&key.as_str()) {
+                        if issues.iter().any(|i| i.key == key.as_str()) {
+                            continue;
+                        }
                         out.lines.push(format!("  {id} — {key} = {v}"));
                     } else {
                         // The accepted set in declaration order: it is the
@@ -3998,6 +4018,22 @@ pub(crate) fn check_sources(
                         );
                         out.lines.push(format!("  {id} — {msg}"));
                         out.failures.push(format!("sources.{id}: {msg}"));
+                    }
+                }
+                for issue in issues {
+                    let said = format!("sources.{id}: {}", issue.text);
+                    match issue.kind {
+                        // Discarded, so the default stands where the config
+                        // said otherwise: the silence this arc ends.
+                        gridwatch_store::IssueKind::Rejected => {
+                            out.lines.push(format!("  {id} — {}", issue.text));
+                            out.failures.push(said);
+                        }
+                        // Used, after a clamp or a completion.
+                        gridwatch_store::IssueKind::Adjusted => {
+                            out.lines.push(format!("  warning: {id} — {}", issue.text));
+                            out.warnings.push(said);
+                        }
                     }
                 }
             }

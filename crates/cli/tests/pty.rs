@@ -854,6 +854,129 @@ fn config_check_validates_source_options() {
     );
 }
 
+/// C.34 (arc 13, D63) — `config check` validates the option **values** as
+/// well as the names, and a rejected one reaches the screen at `run`. Until
+/// arc 13 `refresh_ms = "1500"` was echoed back as though it had been
+/// accepted while the cpu source quietly kept 1500 (the arc-11 review).
+#[test]
+fn config_check_validates_source_option_values() {
+    let sandbox = Sandbox::new("checkvalues");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let check = |sandbox: &Sandbox| {
+        let mut cmd = Command::new(bin());
+        cmd.args(["config", "check"]);
+        sandbox.env(&mut cmd, "checkvalues");
+        cmd.output().expect("run config check")
+    };
+
+    // A discarded value: a failure, naming what was found and what stands.
+    std::fs::write(
+        dir.join("config.toml"),
+        gridwatch_app::config::DEFAULT_CONFIG.replace("refresh_ms = 1500", "refresh_ms = \"1500\""),
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stdout: {text}\nstderr: {err}");
+    assert!(
+        text.contains(
+            "cpu — `refresh_ms` expects an integer (milliseconds), found a string (\"1500\") \
+             — the default 1500 stands"
+        ),
+        "{text}"
+    );
+    // And never echoed back beside it as an accepted value.
+    assert!(!text.contains("cpu — refresh_ms = "), "{text}");
+    assert!(
+        err.contains("sources.cpu: `refresh_ms` expects an integer"),
+        "{err}"
+    );
+
+    // A clamped value: used, so a warning line and exit 0.
+    std::fs::write(
+        dir.join("config.toml"),
+        gridwatch_app::config::DEFAULT_CONFIG.replace("refresh_ms = 1500", "refresh_ms = 50"),
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stdout: {text}\nstderr: {err}");
+    assert!(
+        text.contains("warning: cpu — `refresh_ms` = 50 clamped to 200 (accepts 200-60000)"),
+        "{text}"
+    );
+
+    // The three choices, named (ROADMAP acceptance).
+    std::fs::write(
+        dir.join("config.toml"),
+        format!(
+            "{}\n[sources.pins]\nsource = \"i2x\"\n",
+            gridwatch_app::config::DEFAULT_CONFIG
+        ),
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(1), "{text}");
+    assert!(
+        text.contains("`source` expects one of auto, i2c, exporter, found \"i2x\" — auto stands"),
+        "{text}"
+    );
+
+    // D63 trap 5: the shipped default produces no issue of any kind.
+    std::fs::write(
+        dir.join("config.toml"),
+        gridwatch_app::config::DEFAULT_CONFIG,
+    )
+    .unwrap();
+    let out = check(&sandbox);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}");
+    assert!(
+        !text.lines().any(|l| l.contains("warning: cpu")),
+        "the shipped default must be silent: {text}"
+    );
+}
+
+/// C.34b — the same rejection, at `run`: it is toasted once and the
+/// dashboard still starts, because one mistyped value must not cost it.
+#[test]
+fn a_rejected_option_value_is_toasted_once_and_the_app_still_runs() {
+    if skip("a_rejected_option_value_is_toasted_once_and_the_app_still_runs") {
+        return;
+    }
+    let sandbox = Sandbox::new("valuetoast");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("config.toml"),
+        gridwatch_app::config::DEFAULT_CONFIG.replace("refresh_ms = 1500", "refresh_ms = \"1500\""),
+    )
+    .unwrap();
+    let mut s = Session::start_in("valuetoast", sandbox, 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(5), |t| t.contains("the default 1500"));
+    assert!(
+        seen.is_some(),
+        "no toast for the rejected value; screen: {:?}",
+        s.screen()
+    );
+    // The head of the message survives the toast's elision (D61 R2).
+    assert!(s.screen().contains("sources.cpu"), "{}", s.screen());
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+    // `start` logs each issue once, where the source starts on its default.
+    let hits = log
+        .lines()
+        .filter(|l| l.contains("`refresh_ms` expects an integer"))
+        .count();
+    assert!(hits >= 1, "the source's own log line is missing: {log}");
+}
+
 /// C.15 (arc 4a) — edit mode under a pty: `e`, `L` twice on the cpu tile
 /// after narrowing it, `w`, and the sandbox's `layout.toml` carries the
 /// move; `q` exits 0 with no ERROR in the log.
