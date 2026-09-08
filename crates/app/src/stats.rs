@@ -69,9 +69,12 @@ impl FrameStats {
     /// One JSON object per second for `--stats-log` (P-gate evidence). `bytes`
     /// is the terminal writer's own total, so P6's "the HUD counter must agree
     /// with Δwchar within 5 %" can be checked from a single run.
-    pub fn json_line(&self, bytes: u64) -> String {
+    /// `store_bytes` is `Store::footprint().scalar_bytes` (D63): §13's store
+    /// budget as a measurement rather than a sentence, sampled at this 1 Hz
+    /// tick and never per frame.
+    pub fn json_line(&self, bytes: u64, store_bytes: usize) -> String {
         format!(
-            r#"{{"frames":{},"p50_us":{},"p95_us":{},"changed_cells":{},"bytes":{},"redraw_data":{},"redraw_anim":{},"redraw_heartbeat":{},"first_frame_ms":{},"sources_live_ms":{},"fx_us":{},"rain_step":{}}}"#,
+            r#"{{"frames":{},"p50_us":{},"p95_us":{},"changed_cells":{},"bytes":{},"redraw_data":{},"redraw_anim":{},"redraw_heartbeat":{},"first_frame_ms":{},"sources_live_ms":{},"fx_us":{},"rain_step":{},"store_bytes":{}}}"#,
             self.frames,
             self.p50_us(),
             self.p95_us(),
@@ -86,7 +89,8 @@ impl FrameStats {
             self.first_frame_ms,
             self.sources_live_ms,
             self.fx_us,
-            self.rain_step
+            self.rain_step,
+            store_bytes
         )
     }
 }

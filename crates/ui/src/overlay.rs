@@ -26,6 +26,10 @@ pub struct HudStats {
     pub mode: &'static str,
     /// `--record`: lines written and lines dropped by the tee (§4.5).
     pub recording: Option<(u64, u64)>,
+    /// What the store holds (D63): series, scalar points, bytes. §13's
+    /// budget as a number someone can read, not a sentence nobody can check.
+    /// Computed only while the HUD is up — never per frame.
+    pub store: (usize, usize, usize),
 }
 
 pub fn hud(stats: &HudStats, area: Rect, theme: &Theme, buf: &mut Buffer) {
@@ -56,6 +60,12 @@ pub fn hud(stats: &HudStats, area: Rect, theme: &Theme, buf: &mut Buffer) {
             Some((lines, dropped)) => format!("rec {lines:>6} lines  dropped {dropped}"),
             None => "rec off".to_string(),
         },
+        format!(
+            "store {:>4} series {:>7} pts {:>5} KB",
+            stats.store.0,
+            stats.store.1,
+            stats.store.2 / 1024
+        ),
     ];
     let w = lines.iter().map(|l| l.len()).max().unwrap_or(0) as u16 + 2;
     let h = lines.len() as u16 + 2;
