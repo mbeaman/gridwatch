@@ -3762,6 +3762,7 @@ pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
     let mut sensors = gridwatch_store::demo::SensorsSynth::new(seed);
     let mut mediasynth = gridwatch_store::demo::MediaSynth::new(seed);
     let mut netsynth = gridwatch_store::demo::NetSynth::new(seed);
+    let mut disksynth = gridwatch_store::demo::DiskSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let b = synth.tick_at(at, Detail::Table);
@@ -3773,6 +3774,9 @@ pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
         shell
             .store
             .apply(&Msg::Batch(netsynth.tick_at(at, Detail::Table)));
+        // The disk synth takes no `Detail`: the disk source never raises one
+        // (D64 §8).
+        shell.store.apply(&Msg::Batch(disksynth.tick_at(at)));
         // Every synth, as `--demo` runs every source (arcs 2b, 3a); the pins
         // synth's scripted alert events go through `apply_control` so the
         // banner and the toasts see them exactly as the frame loop would.
@@ -3795,6 +3799,7 @@ pub fn feed_synth(shell: &mut Shell, seed: u64, ticks: usize) {
                 gridwatch_store::keys::sensors::SOURCE,
                 gridwatch_store::keys::media::SOURCE,
                 gridwatch_store::keys::net::SOURCE,
+                gridwatch_store::keys::disk::SOURCE,
             ] {
                 shell.store.apply(&Msg::Control(ControlMsg::Status(
                     src,

@@ -71,7 +71,7 @@ second uses your terminal's own sixteen colours by name.
 ╔ SOURCES ════════════════════════════════╗ ╔ SENSORS ══════════════════════════════════════════════════════╗
 ║audio ok                                 ║ ║spd5118 temp1 41°                                              ║  00:00
 ║cpu ok                                   ║ ║━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━────────────── max 55°║
-║gpu ok                                   ║ ║                                                               ║
+║disk ok                                  ║ ║                                                               ║
 ╚═════════════════════════════════════════╝ ╚═══════════════════════════════════════════════════════════════╝
  q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack · A alerts
 ```
