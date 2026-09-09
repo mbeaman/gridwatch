@@ -27,6 +27,7 @@ pub fn demo_store_at(seed: u64, ticks: usize, detail: gridwatch_store::Detail) -
     let mut sensors = demo::SensorsSynth::new(seed);
     let mut media = demo::MediaSynth::new(seed);
     let mut net = demo::NetSynth::new(seed);
+    let mut disk = demo::DiskSynth::new(seed);
     for i in 0..ticks {
         let at = Ts((i as u64 + 1) * 1_500_000_000);
         let batch: Batch = synth.tick_at(at, detail);
@@ -46,6 +47,10 @@ pub fn demo_store_at(seed: u64, ticks: usize, detail: gridwatch_store::Detail) -
         store.apply(&Msg::Batch(sensors.tick_at(at)));
         store.apply(&Msg::Batch(media.tick_at(at)));
         store.apply(&Msg::Batch(net.tick_at(at, detail)));
+        // The disk synth takes no `Detail` — the disk source never raises
+        // one (D64 §8), and a synth that cannot vary by detail is the
+        // cheapest proof of it.
+        store.apply(&Msg::Batch(disk.tick_at(at)));
     }
     store
 }
