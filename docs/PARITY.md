@@ -32,8 +32,8 @@ Evidence for every claim is in `docs/research/htop-parity.md`,
 | PSI **IRQ** meter | **out — the kernel does not expose it here** | torch has no `/proc/pressure/irq` (`CONFIG_IRQ_TIME_ACCOUNTING` is off) |
 | Meter **modes** Bar / Text / Graph / LED | **out of arc 1** | the theme owns widget form (`[widgets]`, §7); per-meter modes would be a component option. BACKLOG: "htop meter breadth" (D39) |
 | Configurable meter **sets** and the 13 header layouts | **out of arc 1** | gridwatch's layout is the grid itself; the tile picks its own two-column header at ≥ 76 cells. BACKLOG: "htop meter breadth" |
-| DiskIO meter | **out of arc 1** | needs `/proc/diskstats` and a `disk` source — BACKLOG ("a `disk` component") |
-| NetworkIO meter | **out of arc 1** | the `net` source and component are arc 7 |
+| DiskIO meter | **in — arc 14**, as the `disk` component rather than a header meter (row 24's precedent), with three recorded deviations | `sources::disk`, `components::disk`. Same file and the same 512-byte sector rule as `DiskIOMeter.c` 3.4.1. **(1)** htop's device rule is a name-prefix skip of `dm-`, `zram` and partitions, which does **not** exclude `loop*` — on torch that sums 52 squashfs devices into "the disks"; gridwatch asks sysfs instead (a `/sys/block` entry with a `device` link, `hidden == 0`, `size > 0` — 3 of 55 here), and `extra` opts the rest back in. **(2)** htop prints one machine-wide `U%` that may exceed 100 %; gridwatch is per device, calls it **`BUSY`**, clamps it 0–100 and draws `Q` (the mean I/Os in flight, field 14) beside it — field 13 on a 1023-deep NVMe queue is not saturation (D64). **(3)** htop's meter lives in the header; a DiskIO *meter*, configurable meter sets and the Bar/Text/Graph/LED modes stay **out** with rows 33–34 (BACKLOG: htop header-meter breadth) |
+| NetworkIO meter | **partial — arc 7a** *(row text corrected in arc 14; it had claimed arc 7 was still to come, seven arcs after it shipped)* | Every number the meter needs has been in the store since arc 7a, but **no tier draws htop's machine-wide sum over every interface but `lo`**: the `rates` tier draws the *default route's* interface and `table` draws each separately. Drawing the sum is a small addition to the net tile or part of the header-meter breadth item; it is in BACKLOG, and the `disk` component has nothing to do with it |
 | Clock / Date / DateTime / Hostname / SysArch / Battery / FileDescriptor / Systemd / SELinux / HugePage / ZFS / Zram meters | **out** | `clock` is its own component; the rest are either absent on torch or belong to `sensors` (arc 5) / a future `system` tile |
 | GPU meter (htop 3.4) | **out — the data does not exist here** | htop reads DRM fdinfo; the proprietary NVIDIA driver exposes no `drm-*` lines (verified: zero fdinfo entries across own processes). gridwatch's GPU numbers come from NVML in arc 2 |
 
@@ -233,3 +233,19 @@ Evidence for every claim is in `docs/research/htop-parity.md`,
   cpu8–15 + 24–31, SMT sibling of cpu *N* is cpu *N*+16).
 - `cargo test -p gridwatch-sources --release --test cpu -- --ignored` prints the
   live scan and asserts every published value is in range.
+
+## disk — htop's DiskIO and `iostat -x` (arc 14, `/proc/diskstats`)
+
+| upstream feature | gridwatch | Where |
+|---|---|---|
+| htop DiskIO: `r:XiB/s w:XiB/s U%` from `/proc/diskstats`, sectors × 512 | **in — arc 14** per device, summed by the tile over what it shows | `sources::disk::stat`, `components::disk::view` |
+| `iostat -x`: `r/s w/s rkB/s wkB/s` | **in — arc 14** as `disk.reads_ps` / `disk.writes_ps` / `disk.read_bps` / `disk.write_bps` | rates from the *measured* interval, `saturating_sub` on a reset |
+| `iostat -x`: `%util` | **deliberate rename**: `BUSY`, per device, clamped 0–100, with the caveat printed on the tile — on torch `nvme0n1` holds ~170 I/Os in flight whenever it is busy at all, against `nr_requests = 1023` | D64 §6 |
+| `iostat -x`: `aqu-sz` | **in — arc 14** as `disk.queue`, drawn as `Q` beside `BUSY` and printed against `nr_requests` in `full` | field 14 / Δwall |
+| `iostat -x`: `r_await` / `w_await` | **in — arc 14** as `disk.read_await_ms` / `disk.write_await_ms`, published only on a tick with completions and drawn while within 3 × the cadence (§11), `—` after that | never a `0.0` that means "no data" |
+| `iostat -x`: `d/s dkB/s` (discards) | **partial — arc 14**: `disk.discard_bps` only. Discard *IOPS* is out — one discard can free gigabytes, so the count says nothing | |
+| `iostat -x`: `rrqm/s` / `%rrqm` (merges) | **out** — the merge counters are in the file and unread; on a `none`-scheduler NVMe they are ~0. Add if someone runs `mq-deadline` on spinning rust | fields 5 / 9 |
+| NVMe drive temperature | **in — arc 14**, from the **sensors** source by joining `disk.info.device` to `ChipInfo.device`; never re-read | `components::disk` join; §8 |
+| `df` / filesystem capacity | **out — a different question**: it needs `/proc/self/mountinfo` + `statvfs`, and `statvfs` blocks on a stale NFS mount (the `getnameinfo` hazard of arc 7). BACKLOG | D64 "not in this arc" |
+| `smartctl` / `nvme smart-log`: wear, lifetime writes, media errors | **out** — needs `/dev/nvme*` and an admin passthrough, a capability this dashboard refuses (as it refuses `CAP_NET_RAW`) | D64 |
+| per-process disk I/O | **already in — arc 8a**, as htop's I/O screen (`/proc/<pid>/io` at `Detail::Columns`); the `disk` tile never raises `Detail` | §8.1 |
