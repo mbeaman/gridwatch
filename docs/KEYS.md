@@ -105,3 +105,14 @@
 | `net.route` | Record | None | `net` | static | the default route (interface, gateway, source address), the DNS servers, and the public IP when the user opted in |
 | `net.conns` | Record | None | `net` | static | the connection table at Detail::Table: protocol, endpoints, state, and the owning process where /proc/<pid>/fd was readable (the uid otherwise) |
 | `net.probe` | Record | None | `net` | static | latency statistics per target over a 60-sample ring: min/avg/max/mdev, RFC 3550 jitter and loss |
+| `disk.read_bps` | Scalar | BytesPerSec | `disk` | dynamic | read rate per {dev}, from /proc/diskstats sector deltas (always 512 B) over the measured interval |
+| `disk.write_bps` | Scalar | BytesPerSec | `disk` | dynamic | write rate per {dev}, from /proc/diskstats sector deltas over the measured interval |
+| `disk.discard_bps` | Scalar | BytesPerSec | `disk` | dynamic | discard/TRIM rate per {dev}; absent on a kernel older than 4.18, whose diskstats has no discard group |
+| `disk.reads_ps` | Scalar | Count | `disk` | dynamic | completed reads per second per {dev} (iostat's r/s) |
+| `disk.writes_ps` | Scalar | Count | `disk` | dynamic | completed writes per second per {dev} (iostat's w/s) |
+| `disk.busy_pct` | Scalar | Percent | `disk` | dynamic | share of wall time the queue was non-empty per {dev} (io_ticks), clamped 0-100 — not saturation: one I/O outstanding on a 1023-deep NVMe queue reads 100 %, so it is drawn as BUSY with disk.queue beside it |
+| `disk.queue` | Scalar | Count | `disk` | dynamic | mean I/Os in flight per {dev} over the interval (time_in_queue over wall) — iostat's aqu-sz, the honest companion to busy_pct |
+| `disk.read_await_ms` | Scalar | Milliseconds | `disk` | dynamic | mean service time of a completed read per {dev}; published only on a tick with completions, never a 0.0 that means 'no data' |
+| `disk.write_await_ms` | Scalar | Milliseconds | `disk` | dynamic | mean service time of a completed write per {dev}; published only on a tick with completions |
+| `disk.scan_ms` | Scalar | Milliseconds | `disk` | static | wall ms of the last /proc/diskstats pass (the sources tile's note, P23's evidence) |
+| `disk.info` | Record | None | `disk` | dynamic | what the device is per {dev}: model, size, rotational/removable, kind, the controller it hangs off (the temperature join key), its partitions, scheduler and nr_requests — published on change |

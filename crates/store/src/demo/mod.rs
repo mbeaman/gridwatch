@@ -2,6 +2,7 @@
 //! this generator, so snapshots and demo mode can never drift apart.
 
 mod audio;
+mod disk;
 mod gpu;
 mod media;
 mod net;
@@ -11,6 +12,9 @@ mod sensors;
 mod synth;
 
 pub use audio::{AudioSynth, audio_demo, audio_info, audio_sink, band_of};
+pub use disk::{
+    DEVICES as DISK_DEVICES, DiskSynth, disk_demo, disk_info, disk_info_exemplar, disk_infos,
+};
 pub use gpu::{GpuSynth, gpu_demo, gpu_info, gpu_procs};
 pub use media::{ART_PX, BUS as MEDIA_BUS, MediaSynth, art_for, media_demo, media_info};
 pub use net::{NetSynth, conns_exemplar as net_conns_exemplar, net_demo, net_info};

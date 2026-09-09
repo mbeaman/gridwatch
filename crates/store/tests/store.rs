@@ -1507,3 +1507,85 @@ fn the_footprint_counts_the_points_a_scalar_holds() {
     assert_eq!(f.scalar_bytes, 320, "a scalar point is a Ts and an f64");
     assert_eq!(store.retention().max_age, Retention::default().max_age);
 }
+
+/// D64 trap 7 and D61's sweep together: a drive that has completed no I/O
+/// for minutes still publishes `disk.read_bps = 0.0` on every tick, so its
+/// `(disk, <dev>)` pair stays **alive** and the await series it published
+/// once — and its `disk.info` Record — survive. That is what lets the tile
+/// choose between "the last await, still fresh" and `—` on its own terms
+/// (§11's 3 × cadence rule) rather than having the store decide for it by
+/// deleting the series underneath.
+///
+/// The drive that is actually *gone* is the control: nothing publishes for
+/// it at all, so the sweep takes everything, exactly as it does for a net
+/// interface that was unplugged.
+#[test]
+fn an_idle_drive_keeps_its_awaits_and_a_vanished_one_loses_everything() {
+    use gridwatch_store::keys::disk;
+    let mut store = Store::new(Retention {
+        max_len: 2400,
+        max_age: Duration::from_secs(60),
+        max_uncatalogued: 512,
+    });
+    let at = |t: u64| Ts(t * 1_000_000_000);
+    let disk_batch = |t: u64, samples: Vec<Sample>| {
+        Msg::Batch(Batch {
+            source: disk::SOURCE,
+            at: at(t),
+            samples,
+        })
+    };
+    let info = |dev: &str| Sample {
+        id: disk::INFO.named(&Arc::from(dev)).id,
+        datum: Datum::Record(Arc::new(disk::DiskInfo {
+            name: dev.to_string(),
+            ..disk::DiskInfo::default()
+        })),
+    };
+    // Both drives are seen once, and both complete an I/O in the first five
+    // seconds. `usb0` is unplugged at t = 5; `nvme2n1` goes quiet but stays.
+    store.apply(&disk_batch(0, vec![info("nvme2n1"), info("usb0")]));
+    for t in 0..5 {
+        store.apply(&disk_batch(
+            t,
+            vec![
+                scalar(&disk::READ_AWAIT_MS.named(&Arc::from("nvme2n1")), 0.31),
+                scalar(&disk::READ_AWAIT_MS.named(&Arc::from("usb0")), 7.4),
+                scalar(&disk::READ_BPS.named(&Arc::from("nvme2n1")), 4096.0),
+                scalar(&disk::READ_BPS.named(&Arc::from("usb0")), 4096.0),
+            ],
+        ));
+    }
+    // Five minutes of an idle drive: a rate every tick, no completions.
+    for t in 5..300 {
+        store.apply(&disk_batch(
+            t,
+            vec![scalar(&disk::READ_BPS.named(&Arc::from("nvme2n1")), 0.0)],
+        ));
+    }
+    let idle = Arc::from("nvme2n1");
+    let gone = Arc::from("usb0");
+    assert_eq!(
+        store.last(&disk::READ_BPS.named(&idle)).map(|(_, v)| v),
+        Some(0.0),
+        "an idle drive publishes an honest zero, which is what keeps it alive"
+    );
+    assert_eq!(
+        store
+            .last(&disk::READ_AWAIT_MS.named(&idle))
+            .map(|(_, v)| v),
+        Some(0.31),
+        "the await published 295 s ago is still there: the label is alive, so the \
+         tile — not the store — decides whether it is too old to draw"
+    );
+    assert!(
+        store.record(&disk::INFO.named(&idle)).is_some(),
+        "`disk.info` is published on change only, so it must outlive any amount of quiet"
+    );
+    assert!(store.last(&disk::READ_BPS.named(&gone)).is_none());
+    assert!(store.last(&disk::READ_AWAIT_MS.named(&gone)).is_none());
+    assert!(
+        store.record(&disk::INFO.named(&gone)).is_none(),
+        "an unplugged drive's Record goes with its dead label"
+    );
+}

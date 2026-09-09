@@ -30,6 +30,7 @@ fn exemplar(name: &str) -> Option<Arc<dyn RecordValue>> {
         "gpu.procs" => Arc::new(demo::gpu_procs(3, 3)),
         "pins.info" => Arc::new(demo::pins_info()),
         "sensor.info" => Arc::new(demo::sensors_info()),
+        "disk.info" => Arc::new(demo::disk_info_exemplar()),
         "media.now" => Arc::new(demo::MediaSynth::now_at(Ts(5_000_000_000))),
         "net.link" => Arc::new(gridwatch_store::keys::net::Link {
             iface: "eno1".into(),
