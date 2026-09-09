@@ -45,6 +45,26 @@ default options. Never both.
 Overlaps and out-of-bounds placements are refused at load with both names, so a
 typo is an error you can read rather than a tile that vanished.
 
+Some tiles are not in the shipped default and are worth adding by hand. The
+disk tile is one — the Overview is full, so where it belongs is your call:
+
+```toml
+# In layout.toml: an anonymous instance, default options.
+{ kind = "disk", at = [8, 3], size = [4, 2] },
+
+# …or configure one in config.toml and place it by id, so it can be filtered:
+# [[components]]
+# id = "drives"
+# kind = "disk"
+# options = { devices = ["nvme*"], sort = "traffic", series = "busy" }
+{ id = "drives", at = [8, 3], size = [4, 2] },
+```
+
+It needs `4x2` to reach its table and `6x3` for the chart; at `1x1` it is a
+read/write pair and a busy chip, and zooming it (`z`) reaches the per-drive
+pane. `[sources.disk] partitions = true` and `extra = ["dm-*"]` change what
+the *source* publishes; `devices` and `hide` change only what this tile draws.
+
 `cell_aspect` is why `6x3` looks square-ish and not like a letterbox: at 0.5 a
 unit is twice as wide in cells as it is tall, which cancels the cell's own
 shape.

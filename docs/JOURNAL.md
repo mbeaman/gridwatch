@@ -6,6 +6,55 @@
 
 ---
 
+## 2026-09-09 — arc 14: what the drives are doing
+
+**Models:** Opus 5 for the whole arc (D64, the ARCHITECTURE edits and the brief were written by an Opus session the day before, because Fable was rate-limited). **Shipped:** arc 14, 14a in four commits and 14b in three. **Nothing tagged. No review yet** — that is the next session's, and the ROADMAP box for it is still open.
+
+### What changed for Matt
+
+gridwatch can finally answer "which drive is busy, how hard, and how much is that hurting". Nothing in the project had ever opened `/proc/diskstats`. There is now a `disk` source and a five-tier tile — read/write rates, IOPS, service times, the drive's temperature, and one column that deliberately disagrees with every other tool on the machine.
+
+**The tile says `BUSY`, not `%util`, and that is the whole point of the arc.** Every disk tool prints field 13 of diskstats as utilisation. On an NVMe drive it means almost nothing: it is the share of wall time the queue was non-empty, so *one* outstanding I/O reads 100 % while a thousand slots sit free. Torch proved it twice today. Over its uptime `nvme0n1`'s queue was non-empty 1.15 % of the time while holding a mean of 1.94 I/Os — about 169 in flight whenever it was busy at all, against `nr_requests = 1023`. Then one 537 MB direct read measured **524 MB/s at 7.3 % util** with `aqu-sz 0.38`. So the column is `BUSY`, `Q` (the mean in flight) sits beside it, and the sentence explaining the difference is on the tile rather than buried in a decision file.
+
+**A drive is a sysfs fact.** `/sys/block/<dev>/device` exists if and only if the device is real hardware — exactly 3 of torch's 55 `/sys/block` entries. htop's rule is a name-prefix skip that does not exclude `loop*`, which on this machine sums 52 squashfs devices into "the disks". `extra` opts the refused ones back in, and 16 devices is a hard cap, because nine scalars over all 64 diskstats lines would be about 22 MB of store against a 60 MB budget.
+
+**And the drive's temperature comes from the sensors source, joined by device.** `disk.info{nvme0n1}.device` is `nvme0`; so is the hwmon chip's `ChipInfo.device`. Never by index — on torch hwmon0/1/2 are nvme1/nvme2/nvme0, and any agreement between the two numberings is a coincidence.
+
+### The brief was wrong about the field guard, in a way that mattered
+
+The brief said "guard `>= 20` fields while tolerating both more and fewer" and asked for "a 17-field pre-5.5 diskstats" fixture. Neither is right. The layout has grown twice: 11 stats before 4.18 (14 fields), 15 with the discard group (18), 17 with the flush group (20). **17 fields is a shape no kernel has ever emitted**, and a `>= 20` guard would have silently dropped `disk.discard_bps` on a real 4.18–5.4 machine that has it. The guard is per group now — the core needs 14 fields, `discard_bps` needs the whole discard group, a longer tail is ignored — and the fixture is a genuine 14-field pre-4.18 file.
+
+The traps the brief *did* record all bit, and were cheap because they were written down: the 1-based field numbering (`io_ticks` is index 12 after splitting, not 9), the 512-byte sector rule, `canonicalize` erroring on a missing `device` link being the signal rather than a failure. One trap of the same class was **not** in the brief and is now in the code: **sysfs `size` is in 512-byte sectors too**, so `nvme0n1` reads 7 814 037 168 and a forgotten multiply prints 7.8 GB for a 4 TB drive — plausible, and wrong.
+
+### Two hours lost to a stale binary, and what it cost
+
+The performance run said the disk source was sitting at 0.5 wake-ups/s with the tile visible — a hidden cadence. Chasing that produced a good deal of confusion about layout resolution and demand levels before the real cause turned up: **`scripts/gate.sh --quick` does not build release**, and `target/release/gridwatch` still predated 14b. The tile in the measured run was a placeholder chip reading "arrives in a later arc". The lesson is small and worth keeping: **any measurement of a component must first prove the component drew**, and the cheapest proof is grepping the typescript for something only that tile says.
+
+### P5 is over its ceiling, and it is not this arc's fault
+
+Measured with the disk tile visible: **69.6 wake-ups/s against a ceiling of 40**. Without it: 71.7. `gw-disk` is 1.0 /s visible and 0.5 /s hidden — the tile costs half a wake-up a second. The row is over for two reasons, both older than arc 14 and both worth a decision:
+
+1. **`gw-audio` at 37–40 /s.** P5's derivation budgets "audio idle 2", but the shipped Overview places the `viz` tile, so the DSP runs at 30 fps whenever page 1 is on screen. The derivation and the shipped layout disagree.
+2. **`gw-sensors` at 14 /s on a 1 s cadence.** Σ Δ`voluntary_ctxt_switches` — the metric P5's own protocol prescribes — counts *every* yield, including a blocking sysfs read. The sensors source reads ~40 hwmon files a second and books ~14 switches per pass. The number is real; what it measures is not only what "wake-ups per second" suggests.
+
+Neither is fixed here. Recording the disk source's contribution as an isolated number is the useful thing: the next session starts from evidence rather than suspicion.
+
+A second measurement disagreement is recorded and not chased: **P6's HUD cross-check is off by 2×** (Δ`wchar` 10.6 kB/s against the stats log's own `bytes` at 4.9), where P6 requires 5 %. The recorded typescript sides with `wchar`, the row is inside its ceiling by either number, and nothing in this arc touches the byte accounting.
+
+### The pty test that taught me something about diff streams
+
+C.36 presses `1`–`4` to change the charted series and asserts the legend changed. It kept failing on `queue` while passing on `write` and `busy`. The typescript is a **diff stream**: `busy` → `queue` shares its second character, so the terminal is sent `q`, a cursor move, then `eue over …`, and the stripped text reads `qeue over`. The assertions are on the transitions whose *word length* changes, because then the rest of the line shifts and is redrawn whole. The four keys are pinned exactly in a unit test; the pty row only proves they arrive.
+
+### Owed to Matt after this session
+
+- **The arc-end adversarial review**, with the lens D64 asks for: grep the component for `std::fs` and for `Detail::`.
+- **The write-side `iostat` cross-check under real load**, and the loaded tile-versus-`iostat` comparison — the read side ran once, bounded, and an agent does not write half a gigabyte to his boot drive.
+- **Where `disk` belongs in the shipped `layout.toml`.** The Overview is full; every candidate slot displaces a tile a test or the performance protocol depends on. Acceptance used a sandbox layout.
+- **P5 with the pins source on `auto`** (it opens `/dev/i2c-*`, so the run above pinned it to `exporter`), and every row beside the game.
+- **`v0.14.0`**, and every tag from `v0.1.0`.
+
+---
+
 ## 2026-09-07 — arc 13: the config means what it says
 
 **Models:** Fable 5.1 for the seam design (delegated — the session had switched to Opus mid-flight and D36 reserves seams for Fable); Opus 5 for the implementation and the four review lenses. **Shipped:** arc 13, 10 commits, `1ae6294 → a9572f1`. **Nothing tagged.**

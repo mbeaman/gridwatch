@@ -38,6 +38,7 @@ Every number below is a **ceiling in a release build on torch**, measured over 6
 | P19 | Frame cost | draw + write **p95 ≤ 8 ms** at 250×70; **mean ≤ 3 ms** at the Overview's ≈ 2 frames/s and **≤ 1.3 ms** at 30 fps (render cache: only the animated tile re-renders; the whole-frame diff is ~0.3 ms); missed frames **< 1 %** | `F12` HUD (p50/p95, changed cells, bytes) |
 | P20 | Effects (arc 4) | ≤ `budget_ms` (4 ms) per frame, area-scoped, ≤ 600 ms per event; the repeating alert pulse alone at 8 fps; `--no-effects` honours P6/P8 exactly | `F12` HUD effect column, `fx_us` in `--stats-log` |
 | P22 | Plugin host (arc 8b) | with a plugin rendering at 1 Hz the host's two threads (`gw-plugins`, `gw-plugin-<id>`) are **below `pidstat`'s resolution** and there is **no measurable delta against the same page with no plugin configured** — that, rather than a number nobody can reproduce, is the gate; a plugin that floods costs the host **no more** — the reader takes at most `MAX_MSGS_PER_SEC` (500) messages/s from one plugin, so its pipe fills and the child blocks rather than either process spinning; the inbound queue is 64 deep and drops the oldest; a plugin over 50 % of a core for 10 s is stopped; at most 256 distinct metric names per plugin. Startup: `hello_ms` (2 s default) is added to P18's first frame **only when a plugin is configured**, and every plugin is waited on together | `pidstat -u -t` (the `gw-plugins` and `gw-plugin-<id>` threads are named), `pidstat -p <child>`, task-summed context switches |
+| P23 | Disk source (arc 14) | one `/proc/diskstats` read per tick ≤ **1 ms** wall and **≤ 0.2 %** of one core at the shipped 1 s cadence, with `disk.scan_ms` as the evidence; device **classification is once per device name**, not per tick (D64 §5), so the first pass is allowed to cost more than the steady state and is measured separately; the source never raises `Detail`, so P13 and P15 are untouched | `disk.scan_ms` in the store and on the `sources` tile's NOTE column; `pidstat -u -t` for the `gw-disk` thread |
 | P21 | Unfocused throttle | on `FocusLost` every animated tile drops to `unfocused_fps` (default 2), every source but `always_on` ones goes `Hidden` / `Meters`; restored on `FocusGained` within one frame; VTE 0.84 implements focus reporting (DECSET 1004 → `CSI I`/`CSI O`, verified in `vte.cc`) and crossterm 0.29 maps it to `FocusGained`/`FocusLost` | `F12` HUD; confirmed interactively once in arc 1 |
 
 ## Showcase class — ceilings that apply only while a `class = "showcase"` theme is active **and the terminal is focused**
@@ -385,3 +386,71 @@ cargo test -p gridwatch-sources --release --test pins live_pins -- --ignored --n
 Three things to read from it. (1) **The two histories hold the same points at 110 s**, which is what they should: neither retention has bitten, so the byte figure is identical to within one sample and the plumbing is doing nothing clever. (2) **The preallocation costs address space, not resident memory, until the points arrive.** `Ring::new` reserves `min(max_len, 4096)` slots, so `1h` reserves **6 608 kB** more heap than `10m` — and only **444 kB** of that is resident after 40 s, because untouched pages of a reserved `VecDeque` never fault in. D63's "≈ 10 MB before a point arrives … lands RSS near 50 of the 60 MB budget" is therefore the *reservation*, not the RSS; what the 60-minute run will actually show is the points arriving. (3) These are **debug** binaries (p50 14.9 ms a frame, ten times the release figures in the rows above), so the absolute RSS is not comparable to any row here — only the delta between the two runs is, since everything else about them is identical.
 
 *Recorded rather than reported: an earlier pass at this measurement read RSS from the wrong pid — `pgrep -f "gridwatch run --stats-log …"` matches the `script` wrapper as well as the binary, and `head -1` takes the wrapper. Its 7.5 MB figures are discarded. The `store_bytes` numbers above come from gridwatch's own stats log and were never affected.*
+
+---
+
+## Arc 14 (2026-09-09, D64) — the disk source and tile
+
+Release build, pty at 250×70, torch idle (**no game**), the shipped Overview
+with the `disk` tile in the clock's slot, `[sources.pins] source = "exporter"`
+so nothing opens `/dev/i2c-*` (CLAUDE.md forbids an agent that bus; the pins
+source reports `Unavailable` and costs 0.1 wake-ups/s instead of 2).
+
+| gate | ceiling | measured | verdict |
+|---|---|---|---|
+| **P23** (new) | pass ≤ 1 ms, ≤ 0.2 % of a core at 1 s | **0.28–0.35 ms** steady state (`disk.scan_ms`, release, torch's 64-line/4 205-byte file) → **0.032 %** of one core at 1 s. The **first** pass is **6.5–7.0 ms**: it classifies all 64 diskstats names through sysfs, once, and never again — a device is classified on first sight and forgotten when it leaves diskstats, so a second pass 200 ms later costs the steady-state figure. Ceiling for comparison: the Python upper bound in the brief was 69.5 µs to read *and* parse, so the Rust pass is dominated by neither | ✓ |
+| P5 | ≤ 40 wake-ups/s | **69.6 /s with the disk tile visible, 71.7 /s without it** (same build, same config, back to back). `gw-disk` is **1.00 /s** visible and **0.50 /s** hidden — the whole tile costs half a wake-up a second. **The row is over its ceiling, and arc 14 is not why**: `gw-audio` 37–40 /s and `gw-sensors` 14 /s are 75 % of the total | ✗ **over, and escalated** — see the note below |
+| P1 / P2 | ≤ 2 % silent · ≤ 6 % with the visualizer | **2.57 %** of one core. The shipped Overview carries the `viz` tile, so the audio DSP is live at 30 fps and this is **P2's** row, not P1's | ✓ against P2 |
+| P6 | ≤ 25 kB/s | **10.6 kB/s** (Δ`wchar` over 60 s, the stats log's own 13 kB subtracted; the recorded typescript agrees at ≈ 12 kB/s including startup) | ✓ — but the HUD cross-check disagrees, below |
+| P8 | ≈ 2 frames/s on the Overview, every frame caused | **2.10 /s**; 126 data-caused redraws, 0 animated, 0 heartbeat over the window | ✓ |
+| P19 | p95 ≤ 8 ms, mean ≤ 3 ms | p50 **1.63 ms**, p95 **2.04 ms** | ✓ |
+| P17 | RSS ≤ 60 MB | **47.8 MB**; `store_bytes` **340 kB** held. Arithmetic for the disk keys alone: 3 drives × 9 scalars × 38 400 B ≈ **1.0 MB** reserved; `partitions = true` on torch (12 devices) ≈ **4.2 MB**; the 16-device cap ≈ **5.5 MB**; **all 64 diskstats lines ≈ 22 MB** — which is the whole reason the device rule and the cap exist | ✓ |
+| P13, P15 | unchanged | asserted rather than measured: `no_tier_ever_raises_detail` walks every `disk` tier and requires `Detail::Meters`, so the pid-level scan and the gated columns are untouched by this arc | ✓ |
+| cross-check | `iostat -x` beside the tile | idle: both read zero on `nvme1n1` and `nvme2n1` and the same trickle on `nvme0n1`. Loaded read side: one bounded `dd … iflag=direct bs=1M count=512` — see below. **The write-side row is Matt's**: an agent does not write half a gigabyte to his boot drive | partial |
+
+**P5 is over, and it is not the disk source.** 0.5 wake-ups/s is the tile's whole
+cost, against a total of 70. Two things account for the gap between this and
+arc 7a's measured 33 /s, and both are older than arc 14:
+
+1. **`gw-audio` at 37–40 /s.** P5's derivation budgets "audio idle 2", but the
+   shipped Overview places the `viz` tile, so the DSP runs at its 30 fps
+   default whenever page 1 is on screen. The derivation and the shipped layout
+   disagree; one of them should move.
+2. **`gw-sensors` at 14 /s on a 1 s cadence.** Σ Δ`voluntary_ctxt_switches` —
+   the metric P5's own protocol prescribes — counts **every** yield, including
+   a blocking sysfs read, not only a timer wake. The sensors source reads
+   ~40 hwmon files a second, so it books ~14 switches per pass. The number is
+   real; what it measures is not only what "wake-ups per second" suggests.
+
+Neither is arc 14's to fix, and neither is fixed here. The row is recorded as
+**over** with the disk source's contribution isolated, so the next session
+starts from a number rather than from a suspicion.
+
+**The P6 HUD cross-check disagrees by 2×** — Δ`wchar` 10.6 kB/s against the
+stats log's own `bytes` counter at 4.9 kB/s over the same window, where P6
+requires them to agree within 5 %. The recorded typescript (839 472 B over
+70 s) sides with `wchar`. Nothing in arc 14 touches the byte accounting, and
+the row is inside its ceiling by either number, so this is **recorded, not
+chased**: it wants a run with `--stats-log` off and the HUD read by eye.
+
+**The read-side cross-check, and what it says about `BUSY`.** One bounded
+`dd if=<an existing 1 GB file> of=/dev/null iflag=direct bs=1M count=512` moved
+537 MB in 0.082 s. `iostat -x 1` caught it on `nvme0n1` in one sample:
+
+```
+Device      r/s     rkB/s  r_await rareq-sz  aqu-sz  %util
+nvme0n1  4609.00 524292.00    0.08   113.75    0.38   7.30
+```
+
+**524 MB/s at 7.3 % util** — the same argument D64 makes, from the other
+direction: field 13 is the share of wall time the queue was non-empty, and a
+drive that answers in 80 µs empties its queue between requests however much
+work it is doing. `aqu-sz 0.38` is the honest number, and it is what the tile
+draws as `Q`. This is the **read** side only, run **once** (an agent does not
+benchmark a disk beside a game); the tile's own row under that load was not
+captured cleanly in the same second, so **the loaded tile-versus-`iostat`
+comparison is owed to Matt** along with the write side.
+
+**Still owed to Matt on this arc:** the write-side `iostat` cross-check under
+real load, every row above re-taken beside the game, and P5 with the pins
+source on its real backend (`auto`, which opens `/dev/i2c-*`).
