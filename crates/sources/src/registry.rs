@@ -57,6 +57,14 @@ pub fn builtin_sources(reg: &mut Registry) {
         options: crate::mpris::OPTION_NAMES,
         check: crate::mpris::check,
     });
+    #[cfg(feature = "disk")]
+    reg.register_source(gridwatch_store::SourceDef {
+        info: gridwatch_store::demo::disk_info(),
+        start: crate::disk::start,
+        demo: gridwatch_store::demo::disk_demo,
+        options: crate::disk::OPTION_NAMES,
+        check: crate::disk::check,
+    });
     #[cfg(feature = "net")]
     reg.register_source(gridwatch_store::SourceDef {
         info: gridwatch_store::demo::net_info(),

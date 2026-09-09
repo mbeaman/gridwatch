@@ -62,6 +62,7 @@ jobs:
       - run: cargo check -p gridwatch --no-default-features --features cpu
       - run: cargo check -p gridwatch --no-default-features --features gpu
       - run: cargo check -p gridwatch --no-default-features --features pins
+      - run: cargo check -p gridwatch --no-default-features --features disk
       - run: cargo check -p gridwatch --all-features
 
   docs:

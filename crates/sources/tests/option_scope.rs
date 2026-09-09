@@ -31,6 +31,8 @@ fn interval_cases(clamping_only: bool) -> Vec<Case> {
     cases.push(("gpu", "refresh_ms", gridwatch_sources::gpu::check));
     #[cfg(feature = "pins")]
     cases.push(("pins", "interval_ms", gridwatch_sources::pins::check));
+    #[cfg(feature = "disk")]
+    cases.push(("disk", "refresh_ms", gridwatch_sources::disk::check));
     if !clamping_only {
         #[cfg(feature = "sensors")]
         cases.push(("sensors", "refresh_ms", gridwatch_sources::sensors::check));

@@ -7,6 +7,8 @@
 pub mod audio;
 #[cfg(feature = "cpu")]
 pub mod cpu;
+#[cfg(feature = "disk")]
+pub mod disk;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 #[cfg(feature = "mpris")]
