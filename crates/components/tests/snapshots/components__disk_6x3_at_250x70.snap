@@ -1,0 +1,127 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(di.as_mut(), &history, &th, size)"
+---
+size: 122x31
+tier: chart
+view:
+  stack:
+    children:
+      - - Len(4)
+        - table:
+            columns:
+              - DEVICE
+              - READ
+              - WRITE
+              - BUSY
+              - °C
+              - R/S
+              - W/S
+              - Q
+              - MODEL
+            rows:
+              - - ● nvme0n1
+                - 993M
+                - 202M
+                - 56%
+                - 50°
+                - "7575"
+                - "3077"
+                - "20.6"
+                - Samsung SSD 9100 PRO 4TB
+              - - ● nvme1n1
+                - 78k
+                - 459k
+                - 0%
+                - 47°
+                - "1"
+                - "14"
+                - "0.0"
+                - WD_BLACK SN850X 2000GB
+              - - ○ nvme2n1
+                - 0B
+                - 0B
+                - 0%
+                - 37°
+                - "0"
+                - "0"
+                - "0.0"
+                - Samsung SSD 990 PRO 1TB
+            scroll: 0
+            selected: ~
+            sort: ~
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "series "
+              - bold: true
+                role: Text
+                s: read
+              - bold: false
+                role: TextMuted
+                s: " over 60 s  "
+              - bold: false
+                role: AccentPrimary
+                s: "1 read "
+              - bold: false
+                role: TextGhost
+                s: "2 write "
+              - bold: false
+                role: TextGhost
+                s: "3 busy "
+              - bold: false
+                role: TextGhost
+                s: "4 queue "
+      - - Fill(1)
+        - chart:
+            - label: nvme0n1
+              points: 39
+            - label: nvme1n1
+              points: 39
+            - label: nvme2n1
+              points: 39
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "await "
+              - bold: false
+                role: Text
+                s: "nvme0n1 "
+              - bold: false
+                role: AccentPrimary
+                s: r 0.80 ms
+              - bold: false
+                role: AccentSecondary
+                s: "  w 5.40 ms"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "nvme1n1 "
+              - bold: false
+                role: AccentPrimary
+                s: r 0.20 ms
+              - bold: false
+                role: AccentSecondary
+                s: "  w 0.60 ms"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "nvme2n1 "
+              - bold: false
+                role: AccentPrimary
+                s: r —
+              - bold: false
+                role: AccentSecondary
+                s: "  w —"
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: 3 devices · sort traffic · s sort
+    dir: V

@@ -71,6 +71,14 @@ A tile's keys are live only while it holds the keys — focus it and press `Ente
 | `[ ]` | window |
 | `s` | sink |
 
+### `disk` — disks
+
+| key | does |
+|---|---|
+| `s` | sort |
+| `1-4` | chart series |
+| `↑/↓` | scroll |
+
 ### `gpu` — GPU
 
 | key | does |

@@ -35,7 +35,7 @@ view:
         - 0s
         - "0"
         - "0"
-        - ""
+        - scan 0.30 ms
       - - gpu
         - starting
         - "3"

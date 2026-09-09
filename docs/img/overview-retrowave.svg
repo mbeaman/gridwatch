@@ -1366,7 +1366,7 @@
 <text x="264" y="1020" fill="#8a7fb0" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0s</text>
 <text x="320" y="1020" fill="#8a7fb0" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
 <text x="352" y="1020" fill="#8a7fb0" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
-<text x="368" y="1020" fill="#3d2a63" textLength="128" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo)</text>
+<text x="368" y="1020" fill="#3d2a63" textLength="248" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · scan 0.30 ms</text>
 <text x="656" y="1020" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="672" y="1020" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="680" y="1020" fill="#efe9ff" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">nvme</text>

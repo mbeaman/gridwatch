@@ -48,10 +48,14 @@ fn net() -> Box<dyn Component> {
     Box::new(gridwatch_components::net::Net::default())
 }
 
+fn disk() -> Box<dyn Component> {
+    Box::new(gridwatch_components::disk::Disk::default())
+}
+
 #[test]
 fn tiers_are_well_formed() {
     for mk in [
-        clock, sources, htop, gpu, pins, alerts, audio, sensors, winamp, net,
+        clock, sources, htop, gpu, pins, alerts, audio, sensors, winamp, net, disk,
     ] {
         let c = mk();
         assert_tiers_well_formed(c.tiers());
@@ -75,6 +79,7 @@ fn renders_everywhere() {
         assert_renders_everywhere(&|| audio(), &store, &empty, &th);
         assert_renders_everywhere(&|| sensors(), &store, &empty, &th);
         assert_renders_everywhere(&|| winamp(), &store, &empty, &th);
+        assert_renders_everywhere(&|| disk(), &store, &empty, &th);
     }
 }
 
@@ -135,6 +140,11 @@ fn view_snapshots_at_real_grid_sizes() {
             format!("winamp_{name}"),
             view_snapshot(wa.as_mut(), &history, &th, size)
         );
+        let mut di = disk();
+        insta::assert_yaml_snapshot!(
+            format!("disk_{name}"),
+            view_snapshot(di.as_mut(), &history, &th, size)
+        );
     }
 }
 
@@ -169,6 +179,26 @@ fn view_snapshots_at_real_grid_sizes() {
 ///   made its bar band and sparkline grow; it is 1.53x and asserted now.)
 /// - `net` `table` 108 -> 119 (1.10x) wide, 108 -> 108 tall: the tier holds a
 ///   text table and a footer, no `Fill` drawing at all.
+///
+/// Arc 14 measured the `disk` tile's five tiers the same way (2026-09-09);
+/// three axes are asserted below and four are recorded here:
+///
+/// - `disk` `rates` 16 -> 23 (1.44x) wide, 16 -> 16 (1.00x) tall. The tier is
+///   three `Len(1)` text lines inside an 8x3 minimum — a rate pair and a busy
+///   chip, with the drive's name added from 14 columns. There is no `Fill`
+///   drawing to scale, and a taller 8-wide tile has nothing more to say.
+/// - `disk` `table` height 95 -> 95 (1.00x): the row count is the number of
+///   drives, not the number of rows that fit. (Its width is 1.87x and is
+///   asserted: the column-drop order really does put content in a wider
+///   rect.)
+/// - `disk` `chart` height 318 -> 351 (1.10x), for `gpu` `charts`' reason: a
+///   braille *line* mark lights about one cell per column per series however
+///   tall the band is, so height buys y-resolution rather than cells.
+/// - `disk` `full` 1003 -> 1212 (1.21x) wide, -> 1274 (1.27x) tall. The
+///   zoom-only tier is fixed-width text panes over a chart with the same line
+///   shape; at 100x24 the panes already fill it and a taller rect draws the
+///   drives that were below the fold, which is a handful of rows and not a
+///   proportional gain.
 #[test]
 fn drawings_grow_with_the_rect() {
     let store = demo_store(42, 40);
@@ -212,6 +242,21 @@ fn drawings_grow_with_the_rect() {
         &th,
         &[Growth::new(sensors_chart, false, true)],
     );
+    // The disk tile's three tiers with a drawing that takes its size from
+    // the rect: the sparklines both ways, the table's columns and the
+    // chart's buckets by width. The other four axes are in the comment
+    // above with their measured numbers.
+    let (disk_sparks, disk_table, disk_chart) = (1usize, 2usize, 3usize);
+    assert_grows_with_area(
+        &|| disk(),
+        &store,
+        &th,
+        &[
+            Growth::new(disk_sparks, true, true),
+            Growth::new(disk_table, true, false),
+            Growth::new(disk_chart, true, false),
+        ],
+    );
 }
 
 /// The numbers the comment on `drawings_grow_with_the_rect` records, printed
@@ -230,7 +275,7 @@ fn growth_ratios() {
             .count()
     };
     type Mk = fn() -> Box<dyn Component>;
-    let cands: [(&str, Mk, usize); 8] = [
+    let cands: [(&str, Mk, usize); 13] = [
         ("htop", htop, 3),
         ("gpu", gpu, 3),
         ("pins", pins, 3),
@@ -239,6 +284,11 @@ fn growth_ratios() {
         ("audio", audio, 3),
         ("sensors", sensors, 3),
         ("winamp", winamp, 3),
+        ("disk", disk, 0),
+        ("disk", disk, 1),
+        ("disk", disk, 2),
+        ("disk", disk, 3),
+        ("disk", disk, 4),
     ];
     for (name, mk, ti) in cands {
         let t = mk().tiers()[ti];

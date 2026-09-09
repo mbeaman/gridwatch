@@ -109,6 +109,17 @@ fn note(cx: &RenderCx<'_>, s: &gridwatch_store::SourceOverview<'_>) -> String {
             out.push_str(" · spec row disagrees with NVML");
         }
     }
+    // The disk source's last `/proc/diskstats` pass (P23's evidence, D64):
+    // `scan 0.31 ms`. The classification walk is paid once per device name
+    // ever, so this number is the steady-state cost of a tick.
+    if s.id == gridwatch_store::keys::disk::SOURCE
+        && let Some((_, ms)) = cx.store.last(&gridwatch_store::keys::disk::SCAN_MS)
+    {
+        if !out.is_empty() {
+            out.push_str(" · ");
+        }
+        out.push_str(&format!("scan {ms:.2} ms"));
+    }
     // The audio source's last DSP pass (P16's evidence): `dsp 0.4 ms`.
     if s.id == gridwatch_store::keys::audio::SOURCE
         && let Some((_, ms)) = cx.store.last(&gridwatch_store::keys::audio::DSP_MS)

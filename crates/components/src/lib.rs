@@ -7,6 +7,8 @@ pub mod alerts;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod clock;
+#[cfg(feature = "disk")]
+pub mod disk;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 #[cfg(feature = "htop")]

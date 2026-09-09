@@ -7,6 +7,7 @@
 | `alerts` | Alerts | — | 4x1 | list → log | active alerts worst-first and the event log |
 | `audio` | audio visualizer | `audio` | 4x2 | vu → mini → scope → spectrum → full | the default sink's spectrum, scope and VU — Winamp or cava ballistics, a sink picker |
 | `clock` | Clock | — | 2x1 | mini → big | wall-clock time |
+| `disk` | disks | `disk`, `sensors`? | 4x2 | rates → sparks → table → chart → full | per-device read/write rates, BUSY with the queue depth beside it, service times and the drive's temperature |
 | `gpu` | GPU | `gpu`, `cpu`? | 6x3 | badge → gauges → header → charts → procs → full | nvtop's header, gauges, ten-minute charts and the GPU process table over NVML |
 | `htop` | CPU | `cpu` | 6x3 | tiny → big-number → meters → cores → table → full | htop's meters, per-core CCD blocks, memory, load and pressure |
 | `net` | network | `net` | 4x2 | rates → sparks → table → conns → full | interface rates and link state, the default route and DNS, latency probes and the connection table |
@@ -68,6 +69,29 @@ wall-clock time
 |---|---|---|---|---|
 | `mini` | 8×3 | Meters | — | non-blank |
 | `big` | 26×6 | Meters | big digits | non-blank |
+
+## `disk` — disks
+
+per-device read/write rates, BUSY with the queue depth beside it, service times and the drive's temperature
+
+- contract 1 · chrome Themed · footprints 1x1 2x1 4x2 6x3 · default 4x2
+- requires none · optional none
+- sources `disk` · optional sources `sensors`
+- example `options = { devices = ["nvme*"], sort = "traffic" }`
+
+| tier | min | demand | adds | signature |
+|---|---|---|---|---|
+| `rates` | 8×3 | Meters | the read/write pair over the drives shown, a busy chip | `rd` |
+| `sparks` | 20×5 | Meters | read and write sparklines, the busiest drive's name | `rd` |
+| `table` | 36×8 | Meters | one row per drive: DEVICE READ WRITE BUSY, widening to °C R/S W/S Q and the model | `DEVICE` `BUSY` |
+| `chart` | 56×14 | Meters | a braille chart, one line per drive, the await pair | `series` |
+| `full` (zoom) | 100×24 | Meters | the per-drive pane: model, size, scheduler, queue depth, the controller and its hwmon chip, what busy cannot tell you | `model` |
+
+Keys once captured with `Enter`:
+
+- `s` — sort
+- `1-4` — chart series
+- `↑/↓` — scroll
 
 ## `gpu` — GPU
 

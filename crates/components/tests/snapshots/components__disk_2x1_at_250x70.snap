@@ -1,0 +1,38 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(di.as_mut(), &history, &th, size)"
+---
+size: 38x8
+tier: table
+view:
+  stack:
+    children:
+      - - Fill(1)
+        - table:
+            columns:
+              - DEVICE
+              - READ
+              - WRITE
+              - BUSY
+            rows:
+              - - ● nvme0n1
+                - 993M
+                - 202M
+                - 56%
+              - - ● nvme1n1
+                - 78k
+                - 459k
+                - 0%
+              - - ○ nvme2n1
+                - 0B
+                - 0B
+                - 0%
+            scroll: 0
+            selected: ~
+            sort: ~
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: 3 devices · sort traffic · s sort
+    dir: V
