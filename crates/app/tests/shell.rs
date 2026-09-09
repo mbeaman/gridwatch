@@ -529,6 +529,8 @@ fn source_and_component_option_names_are_disjoint() {
     table.push(("winamp", gridwatch_components::winamp::OPTION_NAMES));
     #[cfg(feature = "net")]
     table.push(("net", gridwatch_components::net::OPTION_NAMES));
+    #[cfg(feature = "disk")]
+    table.push(("disk", gridwatch_components::disk::OPTION_NAMES));
 
     // The four pairs that already violated §9 when the test was generalised
     // (arc 11; the brief assumed the walk would pass). Each is a real

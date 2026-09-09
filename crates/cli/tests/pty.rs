@@ -1864,3 +1864,158 @@ fn quitting_stops_the_plugin_children() {
     });
     assert!(gone, "plugin child {pid} outlived gridwatch");
 }
+
+/// C.36 (arc 14, D64) — the disk tile, in a sandbox layout of its own,
+/// drawing the three synthetic drives with rates, `BUSY`, `Q` and a
+/// temperature joined from the **sensors** source by device; then `1`–`4`
+/// change the chart series and `q` exits 0.
+///
+/// The layout is the sandbox's, never the shipped one: the Overview is full
+/// and where `disk` lives in the default is Matt's call (D64 "not in this
+/// arc").
+#[test]
+fn demo_shows_the_disk_tile_with_a_joined_temperature() {
+    if skip("demo_shows_the_disk_tile_with_a_joined_temperature") {
+        return;
+    }
+    let sandbox = Sandbox::new("disk");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Keep the shipped grid block (a layout without it does not load) and
+    // replace the pages with one full-screen disk tile. `kind = "disk"`
+    // places an anonymous default-options instance (§9), so `config.toml`
+    // needs no `[[components]]` entry.
+    let shipped = gridwatch_app::config::DEFAULT_LAYOUT;
+    let grid = &shipped[..shipped.find("[[pages]]").expect("a pages section")];
+    std::fs::write(
+        dir.join("layout.toml"),
+        format!(
+            "{grid}[[pages]]\nname = \"disks\"\nplace = [{{ kind = \"disk\", at = [0, 0], size = [12, 6] }}]\n"
+        ),
+    )
+    .unwrap();
+    let mut s = Session::start_in("disk", sandbox, 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(5), |t| {
+        t.contains("nvme0n1") && t.contains("BUSY")
+    });
+    assert!(seen.is_some(), "no disk tile; screen: {:?}", s.screen());
+    let screen = s.screen();
+    // The three synthetic drives, the columns the arc argues for, and a
+    // temperature — which can only be there if the cross-source join by
+    // `device` worked, because the disk source never reads hwmon.
+    for want in ["nvme0n1", "nvme1n1", "nvme2n1", "BUSY", "MODEL", "°"] {
+        assert!(screen.contains(want), "{want:?} missing from: {screen}");
+    }
+    assert!(screen.contains("series read"), "the chart legend: {screen}");
+    // Capture the tile, then change the series. `1`-`4` are page keys until
+    // `Enter` hands them to the component (§10).
+    s.keys("\r");
+    std::thread::sleep(Duration::from_millis(400));
+    // The typescript is a **diff stream**, so only the cells that changed
+    // are written — and a cell that happens to hold the right character
+    // already is skipped, which lands in the middle of a word. `read` ->
+    // `busy` leaves the shared trailing " over" alone; `queue` -> `write`
+    // leaves the shared `e` and writes `writ` + `e`. So the words asserted
+    // here are the ones whose *length* changes, because the rest of the
+    // line then shifts and is redrawn with them. All four keys are pinned
+    // exactly in `components/tests/disk.rs`; this proves they arrive.
+    s.keys("2");
+    let seen = s.wait_for(Duration::from_secs(3), |t| t.contains("write over"));
+    assert!(
+        seen.is_some(),
+        "`2` did not change the chart series: {:?}",
+        s.screen()
+    );
+    s.keys("3");
+    let seen = s.wait_for(Duration::from_secs(3), |t| t.contains("busy over"));
+    assert!(
+        seen.is_some(),
+        "`3` did not select the busy series: {:?}",
+        s.screen()
+    );
+    // Back to `read` (same length as `busy`, so nothing to assert on), then
+    // out to `queue`, which is a character longer again.
+    s.keys("1");
+    std::thread::sleep(Duration::from_millis(400));
+    s.keys("4");
+    let seen = s.wait_for(Duration::from_secs(4), |t| t.contains("queue over"));
+    assert!(
+        seen.is_some(),
+        "`4` did not select the queue series: {:?}",
+        s.screen()
+    );
+    s.keys("\x1b");
+    std::thread::sleep(Duration::from_millis(300));
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}
+
+/// C.37 (arc 14, D64) — `[sources.disk] refresh_ms = "1000"` is a *value*
+/// error, so `config check` exits non-zero with D63's sentence and `run`
+/// toasts it once while starting on the default.
+#[test]
+fn a_quoted_disk_refresh_fails_config_check_and_toasts_at_run() {
+    let sandbox = Sandbox::new("diskopt");
+    let dir = sandbox.root.join("config/gridwatch");
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = format!(
+        "{}\n[sources.disk]\nrefresh_ms = \"1000\"\n",
+        gridwatch_app::config::DEFAULT_CONFIG
+    );
+    std::fs::write(dir.join("config.toml"), &config).unwrap();
+    let mut cmd = Command::new(bin());
+    cmd.args(["config", "check"]);
+    sandbox.env(&mut cmd, "diskopt");
+    let out = cmd.output().expect("run config check");
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stdout: {text}\nstderr: {err}");
+    assert!(
+        text.contains(
+            "disk — `refresh_ms` expects an integer (milliseconds), found a string (\"1000\") \
+             — the default 1000 stands"
+        ),
+        "{text}"
+    );
+    assert!(
+        err.contains("sources.disk: `refresh_ms` expects an integer"),
+        "{err}"
+    );
+    // And a clamp is a warning rather than a failure: the value was used.
+    std::fs::write(dir.join("config.toml"), config.replace("\"1000\"", "30")).unwrap();
+    let mut cmd = Command::new(bin());
+    cmd.args(["config", "check"]);
+    sandbox.env(&mut cmd, "diskopt");
+    let out = cmd.output().expect("run config check");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}");
+    assert!(
+        text.contains("warning: disk — `refresh_ms` = 30 clamped to 250 (accepts 250-10000)"),
+        "{text}"
+    );
+
+    if skip("a_quoted_disk_refresh_fails_config_check_and_toasts_at_run") {
+        return;
+    }
+    std::fs::write(dir.join("config.toml"), &config).unwrap();
+    let mut s = Session::start_in("diskopt", sandbox, 70, 250, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(5), |t| {
+        t.contains("sources.disk") && t.contains("the default 1000")
+    });
+    assert!(
+        seen.is_some(),
+        "no toast for the rejected value; screen: {:?}",
+        s.screen()
+    );
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0, "one mistyped value must not cost the dashboard");
+    assert!(!log.contains("ERROR"), "{log}");
+    let hits = log
+        .lines()
+        .filter(|l| l.contains("`refresh_ms` expects an integer"))
+        .count();
+    assert!(hits >= 1, "the source's own log line is missing: {log}");
+}
