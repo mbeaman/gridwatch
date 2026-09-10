@@ -371,3 +371,38 @@ fn the_full_tier_scrolls_a_long_reading_list() {
         "the selected reading is off screen after 39 downs:\n{text}"
     );
 }
+
+/// `full` is cumulative over `table` and `chart` (§4.6: a tier draws the one
+/// below it plus its own `adds`). It drew neither the warn/crit bars nor the
+/// chart when arc 15 added them, so `z` on a wide terminal made the tile
+/// strictly *poorer* than the one it zoomed — twenty drawn rows of a hundred
+/// and thirty-one (arc 15 review, F1). No snapshot could see it: at every
+/// grid size the snapshot matrix picks `chart`, not `full`.
+#[test]
+fn the_zoomed_tier_keeps_the_bars_and_the_chart() {
+    let store = demo_store(7, 40);
+    let th = theme("modern");
+    let mut t = tile();
+    tick(&mut t, &store, 1);
+    let (tier, buf) = render_component(&mut t, &store, &th, Size::new(248, 66), true);
+    assert_eq!(
+        t.tiers()[tier].name,
+        "full",
+        "a zoomed 248x66 tile must reach the zoom-only tier"
+    );
+    let text = plain_text(&buf);
+    assert!(
+        text.chars().any(|c| matches!(c, '━' | '█' | '▓' | '#')),
+        "the zoomed tier must draw the warn/crit bars the `table` tier below it draws \
+         (the theme picks the glyph):\n{text}"
+    );
+    assert!(
+        text.contains("chart ·"),
+        "the zoomed tier must draw the chart the `chart` tier below it draws:\n{text}"
+    );
+    let drawn = text.lines().filter(|l| !l.trim().is_empty()).count();
+    assert!(
+        drawn > 40,
+        "a 66-row zoomed tile drawing {drawn} rows is the F1 regression again:\n{text}"
+    );
+}
