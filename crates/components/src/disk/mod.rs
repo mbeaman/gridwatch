@@ -248,7 +248,11 @@ pub struct Drive {
     pub name: String,
     pub read_bps: f64,
     pub write_bps: f64,
-    pub discard_bps: f64,
+    /// `None` on a kernel older than 4.18, whose diskstats has no discard
+    /// group — the source refuses to publish a fabricated `0.0` there, and so
+    /// must the tile, or the pane prints `discard 0B/s` for a number nobody
+    /// measured (arc 14 review).
+    pub discard_bps: Option<f64>,
     pub reads_ps: f64,
     pub writes_ps: f64,
     pub busy_pct: f64,
@@ -320,7 +324,7 @@ impl Model {
             let mut d = Drive {
                 read_bps: last(&disk::READ_BPS),
                 write_bps: last(&disk::WRITE_BPS),
-                discard_bps: last(&disk::DISCARD_BPS),
+                discard_bps: store.last(&disk::DISCARD_BPS.named(name)).map(|(_, v)| v),
                 reads_ps: last(&disk::READS_PS),
                 writes_ps: last(&disk::WRITES_PS),
                 busy_pct: last(&disk::BUSY_PCT),

@@ -643,7 +643,7 @@ fn pane(d: &Disk, dr: &Drive, cx: &RenderCx<'_>) -> Vec<Line> {
                 " · r/s {:.0} · w/s {:.0} · discard {}/s",
                 dr.reads_ps,
                 dr.writes_ps,
-                rate(dr.discard_bps)
+                dr.discard_bps.map(rate).unwrap_or_else(|| "—".into())
             ),
         ),
     ]);
