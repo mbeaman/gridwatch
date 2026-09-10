@@ -240,3 +240,70 @@ fn an_empty_store_says_so() {
         assert!(!text.contains("°C"), "nothing fabricated: {text}");
     }
 }
+
+/// D65 §2, the headline of arc 15: the `sensor` column was `Elastic` and sat
+/// *before* the fixed ones, so at the reference 250×70 the sensor name was at
+/// column 17 and its value at column 104 — eighty-seven blank cells between a
+/// row's identity and its number, on every terminal since arc 5b. The
+/// renderer's cap (D65 §3) ends the table at its content.
+#[test]
+fn the_value_sits_beside_the_sensor_it_belongs_to() {
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    let mut c = tile();
+    // The tile's own 6x1 slot on the Overview at 250×70.
+    let (_, buf) = render_component(&mut c, &store, &th, Size::new(122, 8), false);
+    let text = plain_text(&buf);
+    let header = text.lines().next().expect("a header row");
+    let sensor = header.find("sensor").expect("the sensor column");
+    let value = header.find("value").expect("the value column");
+    assert!(
+        value - sensor < 20,
+        "the value column is {} cells from the sensor column:\n{text}",
+        value - sensor
+    );
+}
+
+/// D65 §7: the warn/crit bars §8 has promised since arc 5b. One `Len(1)`
+/// gauge per *shown* row under a header spacer, so each bar sits on the row it
+/// pictures — and each row therefore carries its percentage twice, once in the
+/// `of lim` column it is sorted by and once at the far end of its own bar.
+#[test]
+fn the_bars_sit_on_the_rows_they_picture() {
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    let mut c = tile();
+    let (_, buf) = render_component(&mut c, &store, &th, Size::new(122, 8), false);
+    let text = plain_text(&buf);
+    let rows: Vec<&str> = text
+        .lines()
+        .skip(1)
+        .filter(|l| l.contains("°C"))
+        .collect::<Vec<_>>();
+    assert!(rows.len() >= 4, "too few reading rows:\n{text}");
+    for row in &rows {
+        assert_eq!(
+            row.matches('%').count(),
+            2,
+            "a row without its bar's percentage:\n{text}"
+        );
+    }
+    // The header row carries no bar: the spacer is what lines the bars up.
+    let header = text.lines().next().expect("a header row");
+    assert!(!header.contains('%'), "the spacer row drew a bar: {header}");
+}
+
+/// …and below the width the bars need, the table is the whole tier — a bar
+/// short enough to read as a chip is worse than no bar (arc 14's `MODEL`
+/// rule).
+#[test]
+fn a_narrow_tile_draws_no_bars() {
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    let mut c = tile();
+    let (_, buf) = render_component(&mut c, &store, &th, Size::new(48, 8), false);
+    let text = plain_text(&buf);
+    for row in text.lines().filter(|l| l.contains("°C")) {
+        assert_eq!(row.matches('%').count(), 1, "a bar at 48 wide:\n{text}");
+    }
+}

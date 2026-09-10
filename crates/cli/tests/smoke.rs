@@ -235,14 +235,56 @@ fn frame_rows(w: u16, h: u16) -> Vec<Vec<char>> {
 /// The cell floors are 0.6x the measured value, as D62 asks; they are collapse
 /// guards, not a re-proof of the fix. The **row** coverage is the number that
 /// tells the two frames apart — the gpu chart band was clamped to eight rows
-/// and left two thirds of the tile untouched — so its floor is 0.8x, which the
-/// pre-fix frame's 0.323 fails. The gpu tile's cell fraction stays low on
-/// purpose: its band is a braille line chart, and a taller band buys
-/// y-resolution rather than ink (see `drawings_grow_with_the_rect`).
+/// and left two thirds of the tile untouched — so its floor is 0.8x.
+///
+/// **Arc 15 (D65), measured 2026-09-09.** Every tile of the Overview, before
+/// and after:
+///
+/// | 480x135 | cells before | after | rows before | after | cols before | after |
+/// |---|---|---|---|---|---|---|
+/// | CPU     | 0.333 | 0.333 | 0.892 | 0.892 | 0.996 | 0.996 |
+/// | GPU     | 0.131 | **0.183** | 0.554 | **0.415** | 1.000 | 1.000 |
+/// | PINS    | 0.314 | 0.314 | 0.585 | 0.585 | 1.000 | 1.000 |
+/// | NETWORK | 0.058 | **0.152** | 0.268 | **0.415** | 0.561 | **1.000** |
+/// | AUDIO   | 0.089 | 0.089 | 0.707 | 0.707 | 0.713 | 0.713 |
+/// | SOURCES | 0.117 | 0.117 | 0.474 | 0.474 | 0.456 | 0.456 |
+/// | SENSORS | 0.225 | **0.597** | 0.842 | 0.842 | 1.000 | 1.000 |
+///
+/// Three things in that table are worth more than the numbers.
+///
+/// **The gpu tile's row coverage went *down* while its cell coverage went up**,
+/// and both are the same change: the 24-wide spec column lit sixteen rows down
+/// the right-hand edge of a 46-row band, and it is now a two-row strip under a
+/// chart that has the whole width. Fewer rows carry ink; 40 % more cells do.
+/// Its row floor comes down with it, and the sentence saying why is the point
+/// — D65 §9: **the cell fraction is a collapse guard, never a proof.**
+///
+/// **The `sensors` tile is the arc's headline and its 250×70 column coverage
+/// did not move at all** (0.285 before and after — see the reference-size test
+/// below), because the same number of columns carried ink; they were simply
+/// eighty-seven cells apart. The defect these numbers were supposed to find
+/// was invisible to them.
+///
+/// **The NETWORK number is fixture-shaped.** `demo::NetSynth` publishes five
+/// connections and three interfaces while reporting `scanned: 103`; torch's
+/// `/proc/net/{tcp,tcp6,udp,udp6}` hold 109 sockets and `/proc/net/dev` nine
+/// interfaces, so on a real machine the connection band fills and the demo
+/// leaves eighteen rows empty. This floor pins the synth as much as the tile
+/// (D65's own note; fixing the synths is a `BACKLOG.md` item).
+///
+/// No floor for SOURCES, AUDIO or PINS: those numbers are content- or
+/// construction-bounded and a floor would pin the demo synth rather than the
+/// tile (AUDIO's ⅔ of columns is the bar-and-gap construction, SOURCES' rows
+/// are its sources).
 #[test]
 fn a_wide_terminal_fills_its_tiles() {
     // (title, cell floor, lit-row floor, lit-column floor)
-    let floors = [("CPU", 0.19, 0.71, 0.77), ("GPU", 0.06, 0.44, 0.80)];
+    let floors = [
+        ("CPU", 0.19, 0.71, 0.77),
+        ("GPU", 0.11, 0.33, 0.80),
+        ("NETWORK", 0.09, 0.33, 0.80),
+        ("SENSORS", 0.35, 0.67, 0.80),
+    ];
     let mut sizes = vec![(480u16, 135u16)];
     sizes.extend(MATT_TERMINAL);
     for (w, h) in sizes {
@@ -281,6 +323,18 @@ fn the_tile_finder_survives_shared_borders() {
 /// The same tiles at the reference size, so the floors are not a wide-only
 /// accident. Measured 2026-09-06: CPU 0.347/0.939/0.984, GPU 0.291/0.818/1.000
 /// (before the fixes: CPU 0.337/0.939/0.984, GPU 0.271/0.636/1.000).
+///
+/// **Arc 15, 2026-09-09.** CPU 0.347/0.939/0.984 (unmoved), GPU
+/// 0.326 → 0.445 / 0.818 → 0.788 / 1.000, NETWORK 0.244 → 0.244 / 0.579 /
+/// 0.889 → 0.840, SENSORS 0.204 → **0.716** / 1.000 / **0.285 → 0.870**.
+///
+/// The floors below are **not** re-fitted to the improved numbers (D65 trap
+/// 1). Two of the movements are worth reading: `sensors` is where the arc
+/// began — 0.285 of its columns before *and* after the eighty-seven-cell gap
+/// was the defect, and only the *cell* fraction and the column fraction
+/// together tell the two frames apart — and NETWORK's column coverage went
+/// **down**, from 0.889 to 0.840, because its connection table now ends at its
+/// content. A falling number is what fixing a stretch looks like.
 #[test]
 fn the_reference_size_fills_its_tiles_too() {
     let rows = frame_rows(250, 70);

@@ -2019,3 +2019,94 @@ fn a_quoted_disk_refresh_fails_config_check_and_toasts_at_run() {
         .count();
     assert!(hits >= 1, "the source's own log line is missing: {log}");
 }
+
+/// C.38 (arc 15, D65) — a **very wide** terminal, in a real pty, drawing the
+/// two tiles the arc rebuilt. At 480×135 the `sensors` tile's bars sit on the
+/// rows they picture (each reading row carries its percentage twice, once in
+/// the `of lim` column it is sorted by and once at the far end of its own bar)
+/// and the `gpu` tile's spec strip prints its **last** row — `vbios`, which
+/// the full-height 24-wide column it replaces silently cut at every size the
+/// band was shorter than the list, the reference 250×70 included.
+///
+/// The shipped layout, not a sandbox one: these are the tiles Matt has on his
+/// Overview, and a wide terminal is the report this arc came from.
+#[test]
+fn a_very_wide_terminal_draws_the_bars_and_the_whole_spec_strip() {
+    if skip("a_very_wide_terminal_draws_the_bars_and_the_whole_spec_strip") {
+        return;
+    }
+    let sandbox = Sandbox::new("wide");
+    let mut s = Session::start_in("wide", sandbox, 135, 480, "run --demo");
+    let seen = s.wait_for(Duration::from_secs(6), |t| {
+        t.contains("vbios") && t.contains("of lim")
+    });
+    assert!(
+        seen.is_some(),
+        "no spec strip or no sensors table; screen: {:?}",
+        s.screen()
+    );
+    let screen = s.screen();
+    // Every spec row, including the two the old form lost.
+    for want in ["arch", "transistors", "launch", "driver", "vbios"] {
+        assert!(screen.contains(want), "{want:?} missing from: {screen}");
+    }
+    // A sensors bar sits on the row it pictures, so the row reads
+    // `… 63 %━━━━━───── 63 %`: the sort key in the `of lim` column, the bar,
+    // and the same number again at the far end of it. The typescript is a
+    // cursor-addressed diff stream and has no terminal rows in it, so the
+    // assertion walks the characters rather than the lines.
+    let bars: Vec<(String, String)> = screen
+        .match_indices('%')
+        .filter_map(|(i, _)| {
+            let rest = &screen[i + 1..];
+            let fill: String = rest
+                .chars()
+                .take_while(|c| matches!(c, '━' | '─' | '█' | '░' | '▓'))
+                .collect();
+            if fill.chars().count() < 8 {
+                return None;
+            }
+            let before: String = screen[..i]
+                .chars()
+                .rev()
+                .take_while(|c| c.is_ascii_digit() || *c == ' ')
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let tail = &rest[fill.len()..];
+            let after: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == ' ')
+                .collect();
+            // The number at the end of the bar is only that if a `%` closes
+            // it: the stream runs on into the next tile with no row break.
+            tail[after.len()..]
+                .starts_with('%')
+                .then(|| (before.trim().to_string(), after.trim().to_string()))
+        })
+        .collect();
+    assert!(
+        bars.len() >= 4,
+        "fewer than four sensor bars in: {screen:?}"
+    );
+    for (of_lim, at_the_end) in &bars {
+        assert_eq!(
+            of_lim, at_the_end,
+            "a bar does not belong to the row it is drawn on: {bars:?}"
+        );
+    }
+    // And the net tile's mirrored chart, whose zero line is the renderer's
+    // midpoint gridline (D65 §5): the rx half names its interface. It needs a
+    // second tick — the first frame has one sample and no traffic yet.
+    let seen = s.wait_for(Duration::from_secs(6), |t| t.contains("↓eno1"));
+    assert!(
+        seen.is_some(),
+        "no mirrored rx/tx chart in: {:?}",
+        s.screen()
+    );
+    s.keys("q");
+    let (code, _, log) = s.finish();
+    assert_eq!(code, 0);
+    assert!(!log.contains("ERROR"), "{log}");
+}

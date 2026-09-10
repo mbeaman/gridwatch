@@ -224,11 +224,25 @@ fn drawings_grow_with_the_rect() {
         &th,
         &[Growth::new(pins_trend, true, true)],
     );
+    // The `table` tier asserted **neither** axis before arc 15, because it had
+    // no drawing at all: an interface table, a probe strip and a footer. It
+    // now carries the mirrored rx/tx chart (D65 §5) and both axes pass —
+    // width 1.50x (203 -> 305 cells) and height 1.54x (-> 312). Both are close
+    // to the bar and that is honest rather than lucky: the tier is mostly
+    // content-sized text plus one chart, so only the chart grows, and D62 §4
+    // set the ratio at 1.5 precisely because a header line and a footer are
+    // legitimately constant. The brief predicted the *height* axis would fail
+    // as `gpu` `charts` does; it does not, because this band absorbs every row
+    // the constant text leaves.
+    let net_table = 2usize;
     assert_grows_with_area(
         &|| net(),
         &store,
         &th,
-        &[Growth::new(net_sparks, true, true)],
+        &[
+            Growth::new(net_sparks, true, true),
+            Growth::new(net_table, true, true),
+        ],
     );
     assert_grows_with_area(
         &|| audio(),

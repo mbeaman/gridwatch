@@ -37,13 +37,45 @@ fn gpu_tiers_match_the_real_grid_sizes() {
     assert_eq!(tier(248, 66, false), ("procs", false), "full is zoom-only");
 }
 
-/// §8.1 row budget (D62): 12 at 250×70 (the band takes the 12 rows the header
-/// and a 10-row table leave), 7 in a 4x2 (a 4-row band at the floor), 5 at the
-/// dense floor and 6 one row taller; zoomed, the band is a third and the table
-/// takes the rest.
+/// A gpu whose joined table holds `n` rows. The row budget reserves the rows
+/// the table **has** (§8.1, D65 §6), so a default `Gpu` measures the empty
+/// case whether a test means it to.
+fn gpu_with_rows(n: i32) -> Gpu {
+    let mut g = gpu();
+    let rows = (0..n)
+        .map(|i| row(1000 + i, GpuProcKind::Graphics, 100, 1))
+        .collect();
+    let store = procs_store(rows, None, 1);
+    gridwatch_ui::testkit::tick(&mut g, &store, TIER_PROCS);
+    g
+}
+
+/// §8.1's reservation is `min(table_rows, the rows the table has)` (D65 §6):
+/// a five-process list leaves the band five more rows than the option's
+/// ceiling would, and no blank rows under the table.
+#[test]
+fn the_reservation_is_the_rows_the_table_has() {
+    let g = gpu_with_rows(5);
+    // 250×70's 6x3: five rows reserved, not ten.
+    assert_eq!(g.band_rows(TIER_PROCS, 31, false), 31 - 8 - 1 - 5);
+    assert_eq!(g.body_rows(TIER_PROCS, 31, false), 5);
+    // A wide terminal's 6x3: the table is still five rows and the band takes
+    // every row it does not need.
+    assert_eq!(g.band_rows(TIER_PROCS, 65, false), 65 - 8 - 1 - 5);
+    assert_eq!(g.body_rows(TIER_PROCS, 65, false), 5);
+    // With no rows at all the table keeps one row for its "waiting" line.
+    let empty = gpu();
+    assert_eq!(empty.band_rows(TIER_PROCS, 31, false), 31 - 8 - 1 - 1);
+    assert_eq!(empty.body_rows(TIER_PROCS, 31, false), 1);
+}
+
+/// The rest of the budget, measured on a table with more rows than the
+/// option's ceiling so the ceiling is what binds: 12 at 250×70, 7 in a 4x2 (a
+/// 4-row band at the floor), 5 at the dense floor and 6 one row taller;
+/// zoomed, the band is a third and the table takes the rest.
 #[test]
 fn row_budget_at_the_real_grid_sizes() {
-    let g = gpu();
+    let g = gpu_with_rows(32);
     assert_eq!(g.band_rows(TIER_PROCS, 31, false), 31 - 8 - 1 - 10);
     assert_eq!(g.body_rows(TIER_PROCS, 31, false), 10);
     assert_eq!(g.band_rows(TIER_PROCS, 20, false), 4);
@@ -573,5 +605,63 @@ fn paging_the_zoomed_gpu_table_moves_the_rows_that_are_on_screen() {
         index(&g),
         Some(g.body_rows(TIER_PROCS, 66, false)),
         "the grid tier still pages by its own budget"
+    );
+}
+
+/// D65 §6: the spec strip prints **every** row. The full-height 24-wide column
+/// it replaces silently cut the list at the band's height, which at the
+/// reference size lost `driver` and `vbios` — the two rows a person actually
+/// goes looking for.
+#[test]
+fn the_spec_strip_prints_every_row() {
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    // 122 wide is the 6x3 tile at 250×70; 237 is the same tile at 480×135.
+    for (w, h) in [(122u16, 31u16), (237, 65)] {
+        let mut c = gpu();
+        let (_, buf) = render_component(&mut c, &store, &th, Size::new(w, h), false);
+        let text = plain_text(&buf);
+        for want in [
+            "arch",
+            "cores",
+            "SMs",
+            "TMU/ROP",
+            "RT/tensor",
+            "L2",
+            "base/boost",
+            "memory",
+            "bandwidth",
+            "TDP",
+            "die",
+            "transistors",
+            "launch",
+            "bus",
+            "driver",
+            "vbios",
+        ] {
+            assert!(text.contains(want), "{want:?} missing at {w}x{h}:\n{text}");
+        }
+    }
+}
+
+/// …and the chart keeps the full width, because the strip costs rows rather
+/// than columns. The band's braille reaches the tile's last column.
+#[test]
+fn the_chart_keeps_the_full_width_beside_the_strip() {
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    let mut c = gpu();
+    let (_, buf) = render_component(&mut c, &store, &th, Size::new(122, 31), false);
+    let text = plain_text(&buf);
+    let braille = |l: &str| l.chars().any(|c| ('\u{2800}'..='\u{28ff}').contains(&c));
+    let widest = text
+        .lines()
+        .filter(|l| braille(l))
+        .map(|l| l.trim_end().chars().count())
+        .max()
+        .unwrap_or(0);
+    assert!(
+        widest > 100,
+        "the chart stops at column {widest} of 122:\n{text}"
     );
 }

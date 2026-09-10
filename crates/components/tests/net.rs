@@ -333,3 +333,137 @@ fn the_interface_table_scrolls_to_the_rows_below_the_fold() {
     let (_, buf) = render_component(&mut c, &store, &th, size, false);
     assert!(plain_text(&buf).contains("eth00"));
 }
+
+/// A store whose connection scan published `n` rows, on top of the demo's
+/// interfaces — torch's `/proc/net/{tcp,tcp6,udp,udp6}` hold 109 sockets
+/// where the synth publishes five, and the fold only exists above the band's
+/// height (D65's own note on what the NETWORK number measures).
+fn store_with_conns(n: usize) -> Store {
+    let mut store = store();
+    let rows: Vec<net::Conn> = (0..n)
+        .map(|i| net::Conn {
+            proto: net::Proto::Tcp,
+            local: format!("10.0.0.1:{}", 20000 + i),
+            remote: format!("10.9.9.{}:443", i % 250),
+            state: "ESTAB".into(),
+            inode: i as u64,
+            pid: Some(1000 + i as u32),
+            uid: 1000,
+            process: format!("proc{i:03}"),
+        })
+        .collect();
+    store.apply(&Msg::Batch(gridwatch_store::Batch {
+        source: net::SOURCE,
+        at: Ts(9_000_000_000),
+        samples: vec![gridwatch_store::Sample {
+            id: net::CONNS.id.clone(),
+            datum: gridwatch_store::Datum::Record(std::sync::Arc::new(net::Conns {
+                rows,
+                scanned: n,
+                attributed: n,
+                scan_ms: 1.0,
+            })),
+        }],
+    }));
+    store
+}
+
+/// D65 §5: the connection table used to compute its scroll viewport from the
+/// **tile's** inner height while it was drawn in a band roughly half that, so
+/// a cursor below the band's last row scrolled the table to a page that did
+/// not contain it and the selection vanished. Each table's viewport is now the
+/// band it was given.
+#[test]
+fn the_connection_cursor_stays_on_screen_past_the_fold() {
+    let caps = gridwatch_store::CapSet::default();
+    let th = theme("modern");
+    let store = store_with_conns(60);
+    let mut c = tile();
+    let size = Size::new(120, 40);
+    tick(&mut c, &store, 3);
+    let (_, buf) = render_component(&mut c, &store, &th, size, false);
+    assert!(
+        !plain_text(&buf).contains("proc059"),
+        "the fixture must not fit in one band"
+    );
+    let cx = InputCx {
+        store: &store,
+        inner: Rect {
+            x: 0,
+            y: 0,
+            width: size.w,
+            height: size.h,
+        },
+        caps: &caps,
+        readonly: false,
+        zoomed: false,
+        tier: 3,
+    };
+    // Capture, then walk past the fold one row at a time.
+    for _ in 0..59 {
+        assert!(matches!(
+            c.on_key(
+                KeyEvent {
+                    code: KeyCode::Down,
+                    mods: Mods::NONE,
+                },
+                &cx,
+            ),
+            Outcome::Consumed
+        ));
+    }
+    let (_, buf) = render_component(&mut c, &store, &th, size, false);
+    let text = plain_text(&buf);
+    assert!(
+        text.contains("proc059"),
+        "the selected connection is off screen after 59 downs:\n{text}"
+    );
+}
+
+/// D65 §5: the `table` tier's first `Fill` drawing — one line pair per shown
+/// interface, rx above the renderer's midpoint gridline and tx below it. The
+/// tier asserted neither growth axis before arc 15 because it had no drawing
+/// at all.
+#[test]
+fn the_table_tier_draws_the_mirrored_chart() {
+    let store = store();
+    let th = theme("modern");
+    let mut c = tile();
+    // 64 wide is under the `conns` tier's 70, so this is the `table` tier.
+    let (tier, buf) = render_component(&mut c, &store, &th, Size::new(64, 14), false);
+    assert_eq!(c.tiers()[tier].name, "table");
+    let text = plain_text(&buf);
+    let braille = text
+        .lines()
+        .filter(|l| l.chars().any(|c| ('\u{2800}'..='\u{28ff}').contains(&c)))
+        .count();
+    assert!(braille >= 2, "no mirrored chart:\n{text}");
+    // Each half names the interface it belongs to, at its newest point.
+    assert!(text.contains("↓eno1"), "no rx label:\n{text}");
+    assert!(
+        text.contains("↑eno1") || text.contains("↑wlp7s0"),
+        "no tx label:\n{text}"
+    );
+}
+
+/// The interface band is the rows it has, not `Fill` (§4.6, D65 §5): three
+/// interfaces cannot use sixteen rows, and the rows it gives back are what the
+/// chart draws in.
+#[test]
+fn the_interface_band_is_the_rows_it_has() {
+    let store = store();
+    let th = theme("modern");
+    let mut c = tile();
+    let (_, buf) = render_component(&mut c, &store, &th, Size::new(120, 40), false);
+    let text = plain_text(&buf);
+    let lines: Vec<&str> = text.lines().collect();
+    // Header, then one row per shown interface, then the probe strip — the
+    // band ends where its content does.
+    assert!(lines[0].contains("iface"), "{text}");
+    let ifaces = c.model().ifaces.len();
+    assert!(
+        lines[ifaces + 1].contains("ms") || lines[ifaces + 1].trim().is_empty(),
+        "row {} should be the probe strip, not more band:\n{text}",
+        ifaces + 1
+    );
+}
