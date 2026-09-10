@@ -3,9 +3,9 @@
 use gridwatch_components::htop::{Htop, OPTION_NAMES, Options};
 use gridwatch_ui::component::{Component, Size, pick_tier};
 use gridwatch_ui::testkit::{
-    Growth, assert_grows_with_area, assert_min_tier_fits, assert_renders_everywhere,
-    assert_tiers_well_formed, demo_store, real_grid_sizes, render_component, theme, view_of,
-    view_snapshot,
+    Growth, assert_every_drawing_grows, assert_grows_with_area, assert_min_tier_fits,
+    assert_renders_everywhere, assert_tables_end_at_their_content, assert_tiers_well_formed,
+    demo_store, real_grid_sizes, render_component, theme, view_of, view_snapshot,
 };
 
 fn clock() -> Box<dyn Component> {
@@ -257,6 +257,73 @@ fn drawings_grow_with_the_rect() {
             Growth::new(disk_chart, true, false),
         ],
     );
+}
+
+/// Every component the registry holds, built the way the app builds one, so a
+/// new tile joins the two sweeps below by being registered rather than by
+/// being remembered (D65 §9: the instruments run over the registry, not over
+/// a hand-picked list).
+type MakeComponent = Box<dyn Fn() -> Box<dyn Component>>;
+
+fn every_registered_component() -> Vec<(&'static str, MakeComponent)> {
+    let mut reg = gridwatch_ui::Registry::default();
+    gridwatch_components::builtin_components(&mut reg);
+    let kinds: Vec<&'static str> = reg.components().map(|d| d.manifest.kind).collect();
+    kinds
+        .into_iter()
+        .map(|kind| {
+            let mk: MakeComponent = Box::new(move || {
+                let mut reg = gridwatch_ui::Registry::default();
+                gridwatch_components::builtin_components(&mut reg);
+                let def = reg.component(kind).expect("a registered kind");
+                let options = toml::Table::new();
+                let caps: gridwatch_store::CapSet =
+                    gridwatch_store::ALL_CAPABILITIES.iter().copied().collect();
+                let mut cx = gridwatch_ui::BuildCx {
+                    options: &options,
+                    caps: &caps,
+                    instance: "test",
+                };
+                (def.build)(&mut cx).expect("a built-in builds with default options")
+            });
+            (kind, mk)
+        })
+        .collect()
+}
+
+/// D65 §10, question (i) at the resolution `assert_grows_with_area` cannot
+/// reach: **per leaf**, not per tier. A capped drawing that is a small share
+/// of a tier's ink hides inside the tier-wide count — that is how D62 passed
+/// `pins` and `gpu` while both were still broken.
+///
+/// The exemptions are named once, in `testkit::drawing_axes`, because they
+/// are properties of the *renderer* and identical for every component: a
+/// `Bars` leaf draws `values.len()` bars whatever the width, a `Chart`'s line
+/// mark lights about one cell per column however tall the band, and a `Gauge`
+/// or `Segmented` draws on one row. `Len`-pinned axes, `View::Custom` and
+/// text leaves are exempt by rule.
+#[test]
+fn every_drawing_grows_with_its_own_rect() {
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    for (kind, mk) in every_registered_component() {
+        println!("assert_every_drawing_grows: {kind}");
+        assert_every_drawing_grows(&*mk, &store, &th);
+    }
+}
+
+/// D65 §9, question (ii): **every table ends where its content ends** — a
+/// defect at every size, not a wide-terminal one. It would have caught the
+/// `sensors` table at 250×70 in arc 5b, where the value column sat 87 cells
+/// from the sensor it belonged to.
+#[test]
+fn every_table_ends_at_its_content() {
+    let store = demo_store(42, 40);
+    let th = theme("modern");
+    for (kind, mk) in every_registered_component() {
+        println!("assert_tables_end_at_their_content: {kind}");
+        assert_tables_end_at_their_content(&*mk, &store, &th);
+    }
 }
 
 /// The numbers the comment on `drawings_grow_with_the_rect` records, printed

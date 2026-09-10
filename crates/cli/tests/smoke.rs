@@ -299,9 +299,12 @@ fn the_reference_size_fills_its_tiles_too() {
 #[test]
 #[ignore = "diagnostic; prints the tile coverage the floors are set from"]
 fn measure_coverage() {
+    const TILES: [&str; 7] = [
+        "CPU", "GPU", "PINS", "NETWORK", "AUDIO", "SOURCES", "SENSORS",
+    ];
     for (w, h) in [(480u16, 135u16), (250, 70)] {
         let rows = frame_rows(w, h);
-        for title in ["CPU", "GPU"] {
+        for title in TILES {
             let (c, lr, lc) = coverage(&rows, title);
             println!("{w}x{h} {title}: cells {c:.3} rows {lr:.3} cols {lc:.3}");
         }
