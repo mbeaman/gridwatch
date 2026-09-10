@@ -22,7 +22,7 @@ pub fn render(s: &Sensors, cx: &RenderCx<'_>) -> View {
     match cx.tier {
         TIER_HOTTEST => hottest(s, cx),
         TIER_STRIP => strip(s, cx),
-        TIER_TABLE => table_tier(s, cx, None),
+        TIER_TABLE => table_tier(s, cx, None, cx.inner.height),
         TIER_CHART => chart_tier(s, cx),
         _ => full(s, cx),
     }
@@ -211,8 +211,34 @@ fn table_rows(temps: &[Reading], with_bar: bool) -> Vec<Vec<Line>> {
         .collect()
 }
 
-fn table_view(s: &Sensors, cx: &RenderCx<'_>, rows: Vec<Vec<Line>>) -> View {
-    let with_bar = cx.inner.width >= 48;
+/// The cells this table draws into: its fixed widths as declared, its elastic
+/// column at the widest cell it holds, and one separator between each. The
+/// elastic half comes from the renderer's own measurement so the number the
+/// tier reserves and the number the renderer draws cannot drift (D65 §3).
+fn table_natural_width(columns: &[Column], rows: &[Vec<Line>]) -> u16 {
+    let natural = gridwatch_ui::renderer::table_natural_widths(columns, rows);
+    let sum: u16 = columns
+        .iter()
+        .zip(&natural)
+        .map(|(c, n)| match c.width {
+            ColWidth::Fixed(w) => w,
+            ColWidth::Elastic => *n,
+        })
+        .sum();
+    sum + u16::try_from(columns.len().saturating_sub(1)).unwrap_or(0)
+}
+
+/// The cells the bar column needs beyond the table's own width before it is
+/// worth drawing: a bar short enough to read as a chip is worse than none.
+/// Arc 14's `MODEL` rule — a column appears when there is room for it.
+const GAUGES_AT: u16 = 16;
+
+/// The table's columns for a width. Split out from `table_view` so the tier
+/// can ask what the table is *worth* — its natural width — before deciding
+/// whether there is room beside it for the bars (§4.6, D65 §1: text gives the
+/// rect its size).
+fn table_columns(width: u16) -> Vec<Column> {
+    let with_bar = width >= 48;
     // The chip is a name, not a paragraph: the elastic column is the
     // sensor label, so the numbers sit beside the chips.
     let mut columns = vec![
@@ -244,14 +270,22 @@ fn table_view(s: &Sensors, cx: &RenderCx<'_>, rows: Vec<Vec<Line>>) -> View {
             right: true,
         });
     }
-    // `scroll` is the table's top row: derive it from the cursor so the
-    // selection stays visible and the last page is never scrolled past
-    // (review: 20 downs left one row on screen).
-    let body = usize::from(cx.inner.height).saturating_sub(2).max(1);
-    let cursor = s.scroll().min(rows.len().saturating_sub(1));
-    let top = cursor
+    columns
+}
+
+/// The table's top row for a cursor and a body height. `scroll` is derived
+/// from the cursor so the selection stays visible and the last page is never
+/// scrolled past (review: 20 downs left one row on screen).
+fn top_row(cursor: usize, len: usize, body: usize) -> usize {
+    cursor
         .saturating_sub(body.saturating_sub(1))
-        .min(rows.len().saturating_sub(body.min(rows.len())));
+        .min(len.saturating_sub(body.min(len)))
+}
+
+fn table_view(s: &Sensors, cx: &RenderCx<'_>, rows: Vec<Vec<Line>>, body: usize) -> View {
+    let columns = table_columns(cx.inner.width);
+    let cursor = s.scroll().min(rows.len().saturating_sub(1));
+    let top = top_row(cursor, rows.len(), body);
     View::Table {
         columns,
         rows,
@@ -261,17 +295,72 @@ fn table_view(s: &Sensors, cx: &RenderCx<'_>, rows: Vec<Vec<Line>>) -> View {
     }
 }
 
-fn table_tier(s: &Sensors, cx: &RenderCx<'_>, footer: Option<Line>) -> View {
+/// One `Len(1)` bar per *shown* row under a `View::Empty` header spacer, so
+/// the bars sit on the rows they belong to — the warn/crit bars §8 has
+/// promised since arc 5b (D65 §7). The value is the same `heat` the table
+/// sorts by and the `of lim` column prints; the bar is that number's picture,
+/// not its replacement, and the percentage at the far end of a bar that can be
+/// two hundred cells long is what says where the end is.
+///
+/// The per-row **mini sparklines** §8 also names are not here and cannot be: a
+/// table cell is a `Vec<Span>` and a component may not write a glyph (§4.6),
+/// so they need a third pane. `BACKLOG.md`.
+fn gauge_pane(temps: &[Reading], top: usize, body: usize) -> View {
+    let mut children: Vec<(Constraint, View)> = vec![(Constraint::Len(1), View::Empty)];
+    for r in temps.iter().skip(top).take(body) {
+        let heat = r.heat();
+        children.push((
+            Constraint::Len(1),
+            View::Gauge {
+                label: Cow::Borrowed(""),
+                value: (heat as f32).clamp(0.0, 1.0),
+                gradient: GradientId::Temp,
+                text: Some(Cow::Owned(format!("{:>3.0} %", heat * 100.0))),
+            },
+        ));
+    }
+    View::Stack {
+        dir: Dir::V,
+        children,
+    }
+}
+
+/// The table, and beside it the bars when the width beyond the table's own
+/// content allows. `rows_available` is the band the caller is giving this
+/// table — not the tile's inner height, which is what the viewport used to be
+/// computed from at the `chart` tier, where the table only gets three fifths
+/// of it.
+fn table_tier(s: &Sensors, cx: &RenderCx<'_>, footer: Option<Line>, rows_available: u16) -> View {
     let m = s.model();
     if m.temps.is_empty() {
         return empty(cx);
     }
-    let rows = table_rows(&m.temps, cx.inner.width >= 48);
-    let mut children = vec![(Constraint::Fill(1), table_view(s, cx, rows))];
     let rapl_hint = m
         .info
         .as_ref()
         .is_some_and(|i| i.rapl == RaplState::RootOnly);
+    let footer_rows = u16::from(footer.is_some() || (rapl_hint && cx.inner.height >= 10));
+    let body = usize::from(rows_available.saturating_sub(1 + footer_rows)).max(1);
+    let rows = table_rows(&m.temps, cx.inner.width >= 48);
+    let natural = table_natural_width(&table_columns(cx.inner.width), &rows);
+    let cursor = s.scroll().min(rows.len().saturating_sub(1));
+    let top = top_row(cursor, rows.len(), body);
+    let table = table_view(s, cx, rows, body);
+    let with_gauges = cx.inner.width >= natural.saturating_add(GAUGES_AT);
+    let pane = if with_gauges {
+        View::Stack {
+            dir: Dir::H,
+            children: vec![
+                // One cell more than the table draws into, so the bars do not
+                // start against the `of lim` column they picture.
+                (Constraint::Len(natural + 1), table),
+                (Constraint::Fill(1), gauge_pane(&m.temps, top, body)),
+            ],
+        }
+    } else {
+        table
+    };
+    let mut children = vec![(Constraint::Fill(1), pane)];
     if let Some(f) = footer {
         children.push((Constraint::Len(1), View::Text(vec![f])));
     } else if rapl_hint && cx.inner.height >= 10 {
@@ -385,12 +474,18 @@ fn chart_tier(s: &Sensors, cx: &RenderCx<'_>) -> View {
         return empty(cx);
     }
     let span = chart_span_text(cx);
+    // The table's viewport is the band *this* tier gives it, three fifths of
+    // the body, not the tile's inner height — the same rect the renderer will
+    // hand it, taken from the renderer's own split so the two cannot drift
+    // (§4.6, D65 §5: a scroll viewport is the band a table was given).
+    let children = [Constraint::Fill(3), Constraint::Len(1), Constraint::Fill(2)];
+    let bands = gridwatch_ui::layout::split(&children, cx.inner.height);
     View::Stack {
         dir: Dir::V,
         children: vec![
-            (Constraint::Fill(3), table_tier(s, cx, None)),
-            (Constraint::Len(1), View::Text(vec![chart_legend(s, &span)])),
-            (Constraint::Fill(2), chart_view(s, cx)),
+            (children[0], table_tier(s, cx, None, bands[0])),
+            (children[1], View::Text(vec![chart_legend(s, &span)])),
+            (children[2], chart_view(s, cx)),
         ],
     }
 }
@@ -492,7 +587,7 @@ fn full(s: &Sensors, cx: &RenderCx<'_>) -> View {
     let table = if m.temps.is_empty() {
         empty(cx)
     } else {
-        table_view(s, cx, table_rows(&m.temps, true))
+        table_view(s, cx, table_rows(&m.temps, true), m.temps.len().max(1))
     };
     let rows = u16::try_from(m.temps.len().saturating_add(1)).unwrap_or(u16::MAX);
     View::Stack {
