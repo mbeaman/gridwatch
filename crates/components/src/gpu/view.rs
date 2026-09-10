@@ -14,8 +14,8 @@ use ratatui_core::layout::Rect;
 
 use super::format as fmt;
 use super::{
-    CHART_SPAN, Gpu, HEADER_ROWS, SERIES, TIER_BADGE, TIER_CHARTS, TIER_GAUGES, TIER_HEADER,
-    TIER_PROCS,
+    BAND_MIN, CHART_SPAN, Gpu, HEADER_ROWS, SERIES, TIER_BADGE, TIER_CHARTS, TIER_GAUGES,
+    TIER_HEADER, TIER_PROCS,
 };
 
 /// The GPU-Z column's width when the chart band is at least this wide.
@@ -627,16 +627,19 @@ fn chart_band(g: &Gpu, cx: &RenderCx<'_>, width: u16, rows: u16) -> View {
     }
 }
 
-/// The GPU-Z column (§8, digest §4): the spec row plus what NVML confirmed.
-fn spec_column(cx: &RenderCx<'_>) -> View {
+type SpecRow = (
+    Cow<'static, str>,
+    Vec<Span>,
+    Option<gridwatch_store::Severity>,
+);
+
+/// The GPU-Z spec rows (§8, digest §4): the hand-verified spec row plus what
+/// NVML confirmed. Empty until the source has published `gpu.info`.
+fn spec_rows(cx: &RenderCx<'_>) -> Vec<SpecRow> {
     let Some(i) = info(cx.store) else {
-        return View::Text(vec![vec![ghost("spec: —")]]);
+        return Vec::new();
     };
-    let mut rows: Vec<(
-        Cow<'static, str>,
-        Vec<Span>,
-        Option<gridwatch_store::Severity>,
-    )> = Vec::new();
+    let mut rows: Vec<SpecRow> = Vec::new();
     let mut kv = |k: &'static str, v: String| rows.push((k.into(), vec![value(v)], None));
     if !i.arch.is_empty() {
         kv("arch", i.arch.clone());
@@ -673,32 +676,71 @@ fn spec_column(cx: &RenderCx<'_>) -> View {
             None,
         ));
     }
-    View::KeyValue(rows)
+    rows
+}
+
+/// The spec strip (D65 §6): the same rows, wrapped into `width / 25`
+/// side-by-side columns and placed **under** the chart rather than beside it.
+///
+/// The full-height column form put twenty-four cells of `KeyValue` across the
+/// whole band, which was thirty blank rows at 480×135 and — worse — silently
+/// dropped `driver` and `vbios` at the *reference* size, where the band is
+/// twelve rows and the list is sixteen. Under the chart the chart keeps the
+/// full width and every spec row is printed. The option is still called
+/// `spec_column`: D63's config audit walks that key.
+///
+/// Returns the strip and the rows it needs; a caller that cannot spare them
+/// draws no strip, because half a spec list is the defect this replaces.
+fn spec_strip(cx: &RenderCx<'_>, width: u16) -> (View, u16) {
+    let rows = spec_rows(cx);
+    if rows.is_empty() {
+        return (View::Empty, 0);
+    }
+    let cols = usize::from(width / (SPEC_COLUMN_W + 1)).max(1);
+    let per = rows.len().div_ceil(cols);
+    let children: Vec<(Constraint, View)> = rows
+        .chunks(per)
+        .map(|chunk| {
+            (
+                Constraint::Len(SPEC_COLUMN_W + 1),
+                View::KeyValue(chunk.to_vec()),
+            )
+        })
+        .collect();
+    let height = u16::try_from(per).unwrap_or(u16::MAX);
+    (
+        View::Stack {
+            dir: Dir::H,
+            children,
+        },
+        height,
+    )
 }
 
 fn charts(g: &Gpu, cx: &RenderCx<'_>) -> View {
     let band = g.band_rows(TIER_CHARTS, cx.inner.height, cx.zoomed);
     let width = cx.inner.width;
-    let with_spec = g.options().spec_column && width >= SPEC_COLUMN_AT;
-    let chart_w = if with_spec {
-        width.saturating_sub(SPEC_COLUMN_W + 1)
+    let (strip, strip_h) = if g.options().spec_column && width >= SPEC_COLUMN_AT {
+        spec_strip(cx, width)
     } else {
-        width
+        (View::Empty, 0)
     };
-    let band_view = if with_spec {
-        View::Stack {
-            dir: Dir::H,
-            children: vec![
-                (Constraint::Fill(1), chart_band(g, cx, chart_w, band)),
-                (Constraint::Len(1), View::Empty),
-                (Constraint::Len(SPEC_COLUMN_W), spec_column(cx)),
-            ],
-        }
+    // The strip costs rows, not columns. It is drawn only when the band can
+    // pay for it *and* still leave the chart its legend and `BAND_MIN` rows:
+    // a strip that fits by cutting itself in half is the form this replaced.
+    let strip_h = if strip_h > 0 && band >= strip_h + 1 + BAND_MIN {
+        strip_h
     } else {
-        chart_band(g, cx, chart_w, band)
+        0
     };
     let mut children = header_block(g, cx, width);
-    children.push((Constraint::Fill(1), band_view));
+    children.push((
+        Constraint::Fill(1),
+        chart_band(g, cx, width, band.saturating_sub(strip_h)),
+    ));
+    if strip_h > 0 {
+        children.push((Constraint::Len(strip_h), strip));
+    }
     View::Stack {
         dir: Dir::V,
         children,

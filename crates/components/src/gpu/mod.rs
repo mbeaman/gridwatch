@@ -362,8 +362,15 @@ impl Gpu {
         if tier < TIER_PROCS {
             return inner_height.saturating_sub(HEADER_ROWS).max(BAND_MIN);
         }
+        // The reservation is the rows the table **has**, not the option's
+        // ceiling (§8.1, D65 §6): a five-process list used to reserve ten and
+        // leave five blank rows under itself at every size. The band therefore
+        // moves when the process list changes length, which is accepted
+        // without hysteresis — the band's height is y-resolution only.
+        let have = u16::try_from(self.derived.rows.len()).unwrap_or(u16::MAX);
+        let reserve = self.options.table_rows.min(have).max(1);
         let grid = inner_height
-            .saturating_sub(HEADER_ROWS + 1 + self.options.table_rows)
+            .saturating_sub(HEADER_ROWS + 1 + reserve)
             .max(BAND_MIN);
         if zoomed {
             // A third of the body — but never a taller band than the grid's,
