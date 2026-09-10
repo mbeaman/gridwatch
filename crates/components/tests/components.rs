@@ -310,7 +310,7 @@ fn every_registered_component() -> Vec<(&'static str, MakeComponent)> {
 /// of a tier's ink hides inside the tier-wide count — that is how D62 passed
 /// `pins` and `gpu` while both were still broken.
 ///
-/// The exemptions are named once, in `testkit::drawing_axes`, because they
+/// The exemptions are named once, in `testkit::drawing_oracle`, because they
 /// are properties of the *renderer* and identical for every component: a
 /// `Bars` leaf draws `values.len()` bars whatever the width, a `Chart`'s line
 /// mark lights about one cell per column however tall the band, and a `Gauge`

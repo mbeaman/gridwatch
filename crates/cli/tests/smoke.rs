@@ -330,9 +330,12 @@ fn the_tile_finder_survives_shared_borders() {
 ///
 /// The floors below are **not** re-fitted to the improved numbers (D65 trap
 /// 1). Two of the movements are worth reading: `sensors` is where the arc
-/// began — 0.285 of its columns before *and* after the eighty-seven-cell gap
-/// was the defect, and only the *cell* fraction and the column fraction
-/// together tell the two frames apart — and NETWORK's column coverage went
+/// began, and at **480×135** its column coverage is 1.000 both before and
+/// after: every column carried ink either way, with a temperature at column
+/// 104 and the sensor it belongs to at column 17, so the metric scored the
+/// broken frame perfectly. Its *cell* fraction is what moved (0.225 → 0.597
+/// there, 0.204 → 0.716 at 250×70), which is why a review asks D65 §9's three
+/// questions rather than reading one number — and NETWORK's column coverage went
 /// **down**, from 0.889 to 0.840, because its connection table now ends at its
 /// content. A falling number is what fixing a stretch looks like.
 #[test]

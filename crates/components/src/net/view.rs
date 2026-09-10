@@ -686,7 +686,15 @@ fn full(n: &Net, cx: &RenderCx<'_>) -> View {
     View::Stack {
         dir: Dir::V,
         children: vec![
-            (cs[0], iface_table(n, cx, n.model().ifaces.len())),
+            // The band it was given, never the row count — the fifth of the
+            // five viewports this arc corrected, and the one the review found
+            // because the brief named four (arc 15 review, F6). Below
+            // `ifaces + 1` rows the old form told the table it had more rows
+            // than its band, which collapses the selection and pins the top.
+            (
+                cs[0],
+                iface_table(n, cx, usize::from(bands[0].saturating_sub(1))),
+            ),
             (cs[1], View::Text(route_lines(n))),
             (cs[2], View::Text(detail)),
             (cs[3], View::Text(probe_rows)),
