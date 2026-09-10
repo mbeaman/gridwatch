@@ -429,6 +429,7 @@ fn series_labels(
     buf: &mut Buffer,
 ) {
     let right = area.x + area.width;
+    let mut drawn: Vec<(u16, u16, u16)> = Vec::new();
     for s in series {
         if s.label.is_empty() {
             continue;
@@ -445,12 +446,32 @@ fn series_labels(
         } else {
             right.saturating_sub(w).max(area.x)
         };
-        let avail = usize::from(right.saturating_sub(start));
+        let avail = right.saturating_sub(start);
         if avail == 0 {
             continue;
         }
+        let end = start + w.min(avail);
+        // A label is never drawn over another one. Series whose newest points
+        // sit within a row of each other — the net tile's four idle
+        // interfaces around its zero line — would otherwise stack on one cell
+        // and the last one would win, which is a legend nobody can read. The
+        // first series to claim the row keeps it, and series arrive in the
+        // component's own order, so the one it thinks matters most is first.
+        if drawn
+            .iter()
+            .any(|(dy, ds, de)| *dy == y && start < *de && *ds < end)
+        {
+            continue;
+        }
+        drawn.push((y, start, end));
         let colour = theme.gradient(s.gradient).sample(fy as f32);
-        buf.set_stringn(start, y, s.label.as_ref(), avail, Style::new().fg(colour));
+        buf.set_stringn(
+            start,
+            y,
+            s.label.as_ref(),
+            usize::from(avail),
+            Style::new().fg(colour),
+        );
     }
 }
 
