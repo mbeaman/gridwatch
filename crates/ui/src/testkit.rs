@@ -8,6 +8,7 @@ use ratatui_core::layout::Rect;
 
 use crate::component::{Component, Size, Tier, pick_tier};
 use crate::theme::{ColorMode, GRADIENTS, ROLES, Theme, load_builtin};
+use crate::view::Renderer as _;
 
 /// A store fed by the seeded cpu and gpu synths at fixed 1.5 s ticks — the
 /// same generators `--demo` uses, so snapshots and demo mode cannot drift
@@ -692,23 +693,48 @@ pub fn assert_tables_end_at_their_content(
             if columns.is_empty() || rows.is_empty() {
                 continue;
             }
-            let widths = crate::renderer::table_widths(columns, rows, leaf.area.width);
-            let natural = crate::renderer::table_natural_widths(columns, rows);
+            // Measured from a rendered buffer at two widths, never from the
+            // renderer's own width helper: an assertion that compares
+            // `table_widths` against `table_natural_widths` is comparing a
+            // function with the helper it just called, and can only fail if
+            // someone deletes the `min` (arc 15 review, F1). The external
+            // property is the rule itself — **a table that ends at its
+            // content does not move its ink right when given more room** —
+            // so the same leaf drawn twice as wide must ink the same extent.
             let titles: Vec<&str> = columns.iter().map(|c| c.title.as_ref()).collect();
-            for ((c, drawn), want) in columns.iter().zip(&widths).zip(&natural) {
-                if c.width == crate::view::ColWidth::Elastic {
-                    assert!(
-                        drawn <= want,
-                        "tier `{name}` at {}x{}: the elastic `{}` column is drawn {drawn} cells \
-                         wide where its widest cell and its own title want {want} — a table ends \
-                         where its content ends (D65 §1, ARCHITECTURE §4.6). Widths {widths:?} \
-                         against naturals {natural:?} for {titles:?}",
-                        size.w,
-                        size.h,
-                        c.title
-                    );
+            let extent = |w: u16| -> u16 {
+                let r = Rect {
+                    x: 0,
+                    y: 0,
+                    width: w,
+                    height: leaf.area.height.max(1),
+                };
+                let mut buf = Buffer::empty(r);
+                crate::renderer::DefaultRenderer.render(leaf.view, r, th, &mut buf);
+                let mut last = 0;
+                for y in r.y..r.y + r.height {
+                    for x in r.x..r.x + r.width {
+                        if let Some(c) = buf.cell((x, y))
+                            && !c.symbol().trim().is_empty()
+                        {
+                            last = last.max(x + 1);
+                        }
+                    }
                 }
-            }
+                last
+            };
+            let narrow = extent(leaf.area.width);
+            let wide = extent(leaf.area.width.saturating_mul(2).max(leaf.area.width));
+            assert!(
+                wide <= narrow,
+                "tier `{name}` at {}x{}: a table inks {narrow} cells in a {}-wide rect and \
+                 {wide} in one twice as wide — it is stretching rather than ending at its \
+                 content (D65 §1, ARCHITECTURE §4.6). Columns {titles:?}",
+                size.w,
+                size.h,
+                leaf.area.width
+            );
+            let widths = crate::renderer::table_widths(columns, rows, leaf.area.width);
             let total: u16 = widths.iter().sum::<u16>() + columns.len().saturating_sub(1) as u16;
             assert!(
                 total <= leaf.area.width,
@@ -720,6 +746,7 @@ pub fn assert_tables_end_at_their_content(
                 size.h,
                 leaf.area.width
             );
+            let natural = crate::renderer::table_natural_widths(columns, rows);
             for ((c, drawn), want) in columns.iter().zip(&widths).zip(&natural) {
                 assert!(
                     *drawn > 0 || *want == 0,

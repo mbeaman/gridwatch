@@ -792,8 +792,14 @@ fn table(
             }
         };
         if sel {
+            // To the table's drawn extent, not the rect's: the header bar was
+            // capped with the elastic columns in this arc, and a selection bar
+            // running past it to the rect edge makes the two disagree about
+            // where the table ends (arc 15 review, F3).
             let style = sel_style();
-            for cx in area.x..area.x + area.width {
+            let extent = widths.iter().sum::<u16>()
+                + u16::try_from(columns.len().saturating_sub(1)).unwrap_or(0);
+            for cx in area.x..area.x + extent.min(area.width) {
                 buf.set_string(cx, y, " ", style);
             }
         }
