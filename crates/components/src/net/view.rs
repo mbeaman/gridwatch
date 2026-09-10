@@ -385,8 +385,14 @@ fn conn_table(n: &Net, cx: &RenderCx<'_>, body: usize) -> View {
                 right: false,
             },
             Column {
+                // The one free-text column, and last — §4.6's text rule, which
+                // this table broke in the direction the arc's grep did not
+                // look for (fixed where elastic belongs, rather than elastic
+                // before fixed). At `Fixed(18)` it cut `firefox-bin (50558)`
+                // mid-pid while up to 550 columns sat empty to its right
+                // (arc 15 review, F2).
                 title: "process".into(),
-                width: ColWidth::Fixed(18),
+                width: ColWidth::Elastic,
                 right: false,
             },
         ],

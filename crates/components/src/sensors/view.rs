@@ -342,6 +342,7 @@ fn table_tier(s: &Sensors, cx: &RenderCx<'_>, footer: Option<Line>, rows_availab
     let footer_rows = u16::from(footer.is_some() || (rapl_hint && cx.inner.height >= 10));
     let body = usize::from(rows_available.saturating_sub(1 + footer_rows)).max(1);
     let rows = table_rows(&m.temps, cx.inner.width >= 48);
+    let rows_len = rows.len();
     let natural = table_natural_width(&table_columns(cx.inner.width), &rows);
     let cursor = s.scroll().min(rows.len().saturating_sub(1));
     let top = top_row(cursor, rows.len(), body);
@@ -360,7 +361,17 @@ fn table_tier(s: &Sensors, cx: &RenderCx<'_>, footer: Option<Line>, rows_availab
     } else {
         table
     };
-    let mut children = vec![(Constraint::Fill(1), pane)];
+    // The table is as many rows as the machine has readings and can never
+    // use more, so it asks for them rather than for `Fill` — §4.6's text rule,
+    // which arc 15 applied to net's interface band and left standing here, in
+    // the tile it rebuilt: at 480×135 that was sixty-one blank rows, 45 % of
+    // the terminal (arc 15 review, F3). Capped at two thirds of the body so a
+    // short tile still leaves room for the footer.
+    let table_h = u16::try_from(rows_len + 1)
+        .unwrap_or(u16::MAX)
+        .min(rows_available.saturating_sub(footer_rows).saturating_mul(2) / 3)
+        .max(1);
+    let mut children = vec![(Constraint::Len(table_h), pane)];
     if let Some(f) = footer {
         children.push((Constraint::Len(1), View::Text(vec![f])));
     } else if rapl_hint && cx.inner.height >= 10 {
@@ -590,27 +601,54 @@ fn full(s: &Sensors, cx: &RenderCx<'_>) -> View {
     // the bottom (§4.6, D65 §5).
     let rows = u16::try_from(m.temps.len().saturating_add(1)).unwrap_or(u16::MAX);
     let band = rows.min(cx.inner.height);
+    let body = usize::from(band.saturating_sub(1)).max(1);
     let table = if m.temps.is_empty() {
         empty(cx)
     } else {
-        table_view(
-            s,
-            cx,
-            table_rows(&m.temps, true),
-            usize::from(band.saturating_sub(1)).max(1),
-        )
+        table_view(s, cx, table_rows(&m.temps, true), body)
     };
+    // `full` is cumulative over `table` and `chart` (§4.6: tiers are supersets),
+    // so it carries their bars and their chart. It used to draw neither, which
+    // made `z` on a wide terminal *poorer* than the tile it zoomed — twenty
+    // drawn rows of a hundred and thirty-one, no bars and no chart, beside an
+    // unzoomed tile with fifteen bars and a fifty-two-row chart (arc 15 review,
+    // F1).
+    let rows = table_rows(&m.temps, cx.inner.width >= 48);
+    let natural = table_natural_width(&table_columns(cx.inner.width), &rows);
+    let cursor = s.scroll().min(rows.len().saturating_sub(1));
+    let top = top_row(cursor, rows.len(), body);
+    let head = if !m.temps.is_empty() && cx.inner.width >= natural.saturating_add(GAUGES_AT) {
+        View::Stack {
+            dir: Dir::H,
+            children: vec![
+                (Constraint::Len(natural + 1), table),
+                (Constraint::Fill(1), gauge_pane(&m.temps, top, body)),
+            ],
+        }
+    } else {
+        table
+    };
+    let mut children = vec![
+        (Constraint::Len(band), head),
+        (Constraint::Len(1), View::Text(vec![others])),
+        (Constraint::Len(1), View::Text(vec![rapl_line(s)])),
+        (Constraint::Len(1), View::Text(vec![psi_line(cx)])),
+        (Constraint::Len(1), View::Text(vec![gpu_line(cx)])),
+    ];
+    // Whatever is left is the chart's, floored at the height that makes one
+    // legible; below that the tile ends where its text ends.
+    let used = band + 4;
+    if !m.temps.is_empty() && cx.inner.height >= used.saturating_add(6) {
+        children.push((
+            Constraint::Len(1),
+            View::Text(vec![chart_legend(s, &chart_span_text(cx))]),
+        ));
+        children.push((Constraint::Fill(1), chart_view(s, cx)));
+    } else {
+        children.push((Constraint::Fill(1), View::Empty));
+    }
     View::Stack {
         dir: Dir::V,
-        children: vec![
-            // The table takes its rows, not the whole tile: the RAPL, PSI
-            // and gpu lines belong under the data (review).
-            (Constraint::Len(band), table),
-            (Constraint::Len(1), View::Text(vec![others])),
-            (Constraint::Len(1), View::Text(vec![rapl_line(s)])),
-            (Constraint::Len(1), View::Text(vec![psi_line(cx)])),
-            (Constraint::Len(1), View::Text(vec![gpu_line(cx)])),
-            (Constraint::Fill(1), View::Empty),
-        ],
+        children,
     }
 }

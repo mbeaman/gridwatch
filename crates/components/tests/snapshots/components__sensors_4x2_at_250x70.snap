@@ -10,7 +10,7 @@ view:
       - - Fill(3)
         - stack:
             children:
-              - - Fill(1)
+              - - Len(6)
                 - stack:
                     children:
                       - - Len(48)

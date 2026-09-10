@@ -1,6 +1,5 @@
 ---
 source: crates/components/tests/components.rs
-assertion_line: 107
 expression: "view_snapshot(au.as_mut(), &store, &th, size)"
 ---
 size: 17x8

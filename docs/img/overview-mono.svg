@@ -24,7 +24,7 @@
 <rect x="728" y="672" width="168" height="16" fill="#c8c8c8"/>
 <rect x="904" y="672" width="152" height="16" fill="#c8c8c8"/>
 <rect x="1064" y="672" width="72" height="16" fill="#c8c8c8"/>
-<rect x="1144" y="672" width="144" height="16" fill="#c8c8c8"/>
+<rect x="1144" y="672" width="112" height="16" fill="#c8c8c8"/>
 <rect x="8" y="960" width="64" height="16" fill="#c8c8c8"/>
 <rect x="80" y="960" width="88" height="16" fill="#c8c8c8"/>
 <rect x="176" y="960" width="48" height="16" fill="#c8c8c8"/>
@@ -129,8 +129,8 @@
 <text x="728" y="684" fill="#101010" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">local                </text>
 <text x="904" y="684" fill="#101010" textLength="152" lengthAdjust="spacingAndGlyphs" xml:space="preserve">remote             </text>
 <text x="1064" y="684" fill="#101010" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve">state    </text>
-<text x="1144" y="684" fill="#101010" textLength="144" lengthAdjust="spacingAndGlyphs" xml:space="preserve">process           </text>
-<text x="1288" y="684" fill="#c8c8c8" textLength="712" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     │ │                                                                                │</text>
+<text x="1144" y="684" fill="#101010" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">process       </text>
+<text x="1256" y="684" fill="#c8c8c8" textLength="744" lengthAdjust="spacingAndGlyphs" xml:space="preserve">         │ │                                                                                │</text>
 <text x="0" y="700" fill="#c8c8c8" textLength="2000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│███████████ ███████████ ███████████ ▔▔▔▔▔▔▔▔▔▔▔ ▔▔▔▔▔▔▔▔▔▔▔ ▔▔▔▔▔▔▔▔▔▔▔          │ │tcp   192.168.100.154:52344 140.82.112.4:443    ESTAB     firefox (4242)         │ │                                                                                │</text>
 <text x="0" y="716" fill="#c8c8c8" textLength="2000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│1           2           3           4           5           6                    │ │tcp   192.168.100.154:44120 162.159.130.234:443 ESTAB     steam (9001)           │ │                               ▔▔                                               │</text>
 <text x="0" y="732" fill="#c8c8c8" textLength="2000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│p1 1.7 p2 1.7 p3 1.6 p4 1.5 p5 1.4 p6 1.3                                        │ │tcp   0.0.0.0:22            0.0.0.0:0           LISTEN    uid 1000               │ │                               ██             ▔▔                                │</text>
@@ -180,15 +180,9 @@
 <text x="0" y="1036" fill="#c8c8c8" textLength="904" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│gpu      ok              40     0s     0   0 synthetic (demo) · nvml 0.1+2.4+2.1 │ │nvme#2           Composite  </text>
 <text x="904" y="1036" fill="#c8c8c8" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">47.0°C</text>
 <text x="952" y="1036" fill="#c8c8c8" textLength="1048" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   84°   56 % ███████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  56 %│                                         </text>
-<text x="0" y="1052" fill="#c8c8c8" textLength="904" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│mpris    ok              40     0s     0   0 synthetic (demo)                    │ │k10temp          Tctl       </text>
-<text x="904" y="1052" fill="#c8c8c8" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">53.1°C</text>
-<text x="952" y="1052" fill="#c8c8c8" textLength="1048" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ~95°   56 % ███████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  56 %│                                         </text>
-<text x="0" y="1068" fill="#c8c8c8" textLength="904" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│net      ok              40     0s     0   0 synthetic (demo) · scan 3.3 ms · 87/│ │nvme             Sensor 2   </text>
-<text x="904" y="1068" fill="#c8c8c8" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">53.0°C</text>
-<text x="952" y="1068" fill="#c8c8c8" textLength="1048" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ~100°   53 % █████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  53 %│                                         </text>
-<text x="0" y="1084" fill="#c8c8c8" textLength="904" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│pins     ok              40     0s     0   0 synthetic (demo) · read 4.7 ms · ≤2 │ │k10temp          Tccd1      </text>
-<text x="904" y="1084" fill="#c8c8c8" font-weight="bold" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">50.1°C</text>
-<text x="952" y="1084" fill="#c8c8c8" textLength="1048" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ~95°   53 % ████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  53 %│                                         </text>
+<text x="0" y="1052" fill="#c8c8c8" textLength="2000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│mpris    ok              40     0s     0   0 synthetic (demo)                    │ │                                                                                                                           │                                         </text>
+<text x="0" y="1068" fill="#c8c8c8" textLength="2000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│net      ok              40     0s     0   0 synthetic (demo) · scan 3.3 ms · 87/│ │                                                                                                                           │                                         </text>
+<text x="0" y="1084" fill="#c8c8c8" textLength="2000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│pins     ok              40     0s     0   0 synthetic (demo) · read 4.7 ms · ≤2 │ │                                                                                                                           │                                         </text>
 <text x="0" y="1100" fill="#c8c8c8" textLength="2000" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└─────────────────────────────────────────────────────────────────────────────────┘ └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘                                         </text>
 <text x="0" y="1116" fill="#c8c8c8" textLength="2000" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> q quit · ? help · [ ] pages · hjkl focus · Enter capture · z zoom · d dense · t theme · T reload · space pause · a ack · A alerts · S shot · e edit · F12 hud                                                                                            </text>
 </svg>
