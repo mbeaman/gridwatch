@@ -399,7 +399,7 @@ source reports `Unavailable` and costs 0.1 wake-ups/s instead of 2).
 | gate | ceiling | measured | verdict |
 |---|---|---|---|
 | **P23** (new) | pass ≤ 1 ms, ≤ 0.2 % of a core at 1 s | **0.28–0.35 ms** steady state (`disk.scan_ms`, release, torch's 64-line/4 205-byte file) → **0.032 %** of one core at 1 s. The **first** pass is **6.5–7.0 ms**: it classifies all 64 diskstats names through sysfs, once, and never again — a device is classified on first sight and forgotten when it leaves diskstats, so a second pass 200 ms later costs the steady-state figure. Ceiling for comparison: the Python upper bound in the brief was 69.5 µs to read *and* parse, so the Rust pass is dominated by neither | ✓ |
-| P5 | ≤ 40 wake-ups/s | **69.6 /s with the disk tile visible, 71.7 /s without it** (same build, same config, back to back). `gw-disk` is **1.00 /s** visible and **0.50 /s** hidden — the whole tile costs half a wake-up a second. **The row is over its ceiling, and arc 14 is not why**: `gw-audio` 37–40 /s and `gw-sensors` 14 /s are 75 % of the total | ✗ **over, and escalated** — see the note below |
+| P5 | ≤ 40 wake-ups/s | **34.0 /s** live at 250×70 with the shipped Overview, the disk tile visible and a **silent** sink — the row's own condition. `gw-sensors` 13.5 · render 4.0 · `gw-watch` 4.0 · `gw-gpu` 3.2 · `gw-mpris` 2.2 · **`gw-audio` 2.0** · `gw-cpu` 2.0 · `gw-net-probe` 1.5 · `gw-net` 1.0 · **`gw-disk` 0.50** · `gw-pins` 0.1. The whole disk tile costs half a wake-up a second | ✓ |
 | P1 / P2 | ≤ 2 % silent · ≤ 6 % with the visualizer | **2.57 %** of one core. The shipped Overview carries the `viz` tile, so the audio DSP is live at 30 fps and this is **P2's** row, not P1's | ✓ against P2 |
 | P6 | ≤ 25 kB/s | **10.6 kB/s** (Δ`wchar` over 60 s, the stats log's own 13 kB subtracted; the recorded typescript agrees at ≈ 12 kB/s including startup) | ✓ — but the HUD cross-check disagrees, below |
 | P8 | ≈ 2 frames/s on the Overview, every frame caused | **2.10 /s**; 126 data-caused redraws, 0 animated, 0 heartbeat over the window | ✓ |
@@ -408,19 +408,12 @@ source reports `Unavailable` and costs 0.1 wake-ups/s instead of 2).
 | P13, P15 | unchanged | asserted rather than measured: `no_tier_ever_raises_detail` walks every `disk` tier and requires `Detail::Meters`, so the pid-level scan and the gated columns are untouched by this arc | ✓ |
 | cross-check | `iostat -x` beside the tile | idle: both read zero on `nvme1n1` and `nvme2n1` and the same trickle on `nvme0n1`. Loaded read side: one bounded `dd … iflag=direct bs=1M count=512` — see below. **The write-side row is Matt's**: an agent does not write half a gigabyte to his boot drive | partial |
 
-**P5 is over, and it is not the disk source.** 0.5 wake-ups/s is the tile's whole
-cost, against a total of 70. Two things account for the gap between this and
-arc 7a's measured 33 /s, and both are older than arc 14:
+**P5 holds, and the disk tile costs half a wake-up a second.** The arc's first pass recorded this row as **over** at 69.6 /s and escalated two causes; re-measured during the review, **both readings were of the wrong thing** and the row is inside its ceiling at **34.0 /s**.
 
-1. **`gw-audio` at 37–40 /s.** P5's derivation budgets "audio idle 2", but the
-   shipped Overview places the `viz` tile, so the DSP runs at its 30 fps
-   default whenever page 1 is on screen. The derivation and the shipped layout
-   disagree; one of them should move.
-2. **`gw-sensors` at 14 /s on a 1 s cadence.** Σ Δ`voluntary_ctxt_switches` —
-   the metric P5's own protocol prescribes — counts **every** yield, including
-   a blocking sysfs read, not only a timer wake. The sensors source reads
-   ~40 hwmon files a second, so it books ~14 switches per pass. The number is
-   real; what it measures is not only what "wake-ups per second" suggests.
+1. **The 69.6 /s pass had sound playing.** P5's row is titled *"Overview, silent audio"* and its derivation budgets `audio idle 2`. Under silence the DSP does exactly that: `gw-audio` books **2.00 /s**, because the source publishes at `fps` only while the input is above the floor and at 2 Hz otherwise (D55, and arc 5a's P16 row measured the same path at 0.0 % of a core). The first pass saw `gw-audio` at 37–40 /s, which is the 30 fps *sound-playing* path — a correct number for a condition this row excludes. The claim that "the shipped Overview places the `viz` tile, so the DSP runs at 30 fps whenever page 1 is on screen" is wrong: what raises it is sound, not visibility. **A demo run is not a substitute either** — `--demo`'s audio synth is never silent, and measured the same way it gives **72.9 /s** with `gw-audio` at 30.4 /s. Anyone re-taking this row must confirm the sink is idle first.
+2. **`gw-sensors` at 13.5 /s on a 1 s cadence is real, and it is the instrument.** Σ Δ`voluntary_ctxt_switches` — the metric this file's own protocol prescribes (§ measurement, step 2) — counts **every** voluntary yield, including a blocking sysfs read, not only a timer wake. The sensors source reads ~40 hwmon files a second, so it books ~13 switches per pass. The number is true; what it measures is not only what "wake-ups per second" suggests, and the same overcount applies to every source that reads several files per tick. The budget's `sensors 1` is counting ticks. **Recorded, not fixed** — reconciling the derivation with the instrument is a `PERFORMANCE.md` question of its own, and nothing about it changes what the program does.
+
+*Method, so this is reproducible: release binary under a `script` pty at 250×70, `XDG_CONFIG_HOME` pointing at the shipped default plus `[sources.pins] source = "exporter"` (an agent must not open `/dev/i2c-*`), Σ Δ`voluntary_ctxt_switches` over `/proc/<pid>/task/*/status` across a 10 s window starting 10 s after launch. Resolve the pid with `pgrep -x gridwatch` — `pgrep -f` matches the `script` wrapper, which is how an earlier pass in this project reported a wrapper's RSS as the program's.*
 
 Neither is arc 14's to fix, and neither is fixed here. The row is recorded as
 **over** with the disk source's contribution isolated, so the next session

@@ -225,9 +225,14 @@ the brief and are recorded rather than smoothed over:
    is `["cpu", "gpu", "pins"]` and has never carried `net` or `sensors`
    either; the three that matter (`components`, `app`, `cli`) all gained it,
    as did CI's feature matrix.
-3. **P5 is over its ceiling and the disk source is not why** — 0.5 wake-ups/s
-   of a measured 70. `PERFORMANCE.md` isolates the two causes, both older than
-   this arc.
+3. **P5 holds at 34.0 /s, and the disk tile costs 0.5 wake-ups/s.** The arc's
+   first pass recorded the row as *over* at 69.6 /s; the review re-measured it
+   and the reading was of the wrong thing — the row's condition is a **silent**
+   sink, and the first pass had sound playing, which is the 30 fps DSP path.
+   Under silence `gw-audio` books exactly the 2.00 /s the derivation budgets.
+   `PERFORMANCE.md` carries the corrected row, the method that reproduces it,
+   and the one sub-finding that survived: Σ Δ`voluntary_ctxt_switches` counts a
+   blocking sysfs read, so `gw-sensors` books ~13 /s on a 1 s cadence.
 4. **The growth sweep asserts three of the five tiers.** `sparks` both ways,
    `table` and `chart` by width; the four excluded axes are named with their
    measured ratios in the test's comment, as arc 12 did.
