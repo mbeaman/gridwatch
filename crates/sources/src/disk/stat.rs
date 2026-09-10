@@ -80,6 +80,17 @@ pub struct Rates {
     pub write_await_ms: Option<f64>,
 }
 
+/// The mean service time of a completed I/O over one interval, or `None` when
+/// the interval cannot say: nothing completed, or the service-time counter
+/// went backwards (a 32-bit wrap, or a device re-created on the same name).
+/// Never `Some(0.0)` from a wrap — that would read as "instant" (D64 R1).
+fn await_ms(completions: u64, now: u64, then: u64) -> Option<f64> {
+    if completions == 0 || now < then {
+        return None;
+    }
+    Some((now - then) as f64 / completions as f64)
+}
+
 impl Counters {
     /// Rates from the previous sample over `dt` — the interval the sampler
     /// *measured*, never the configured one (D57 amendment 1).
@@ -109,11 +120,16 @@ impl Counters {
             busy_pct: (d(self.io_ticks, prev.io_ticks) as f64 / ms * 100.0).clamp(0.0, 100.0),
             // ms-of-I/O per ms of wall = the mean number in flight.
             queue: d(self.time_in_queue, prev.time_in_queue) as f64 / ms,
-            // Published only on a tick that completed something: a `0.0`
-            // await would read as "instant", not "nothing happened".
-            read_await_ms: (reads > 0).then(|| d(self.read_ms, prev.read_ms) as f64 / reads as f64),
-            write_await_ms: (writes > 0)
-                .then(|| d(self.write_ms, prev.write_ms) as f64 / writes as f64),
+            // Published only on a tick that completed something *and* whose
+            // service-time counter moved forward: a `0.0` await would read as
+            // "instant", not "nothing happened". The backwards case is not
+            // hypothetical — diskstats prints the service-time counters
+            // truncated to 32 bits, so on a busy drive they wrap every few
+            // days (D64 amendment 1: torch's `write_ms` was three days from
+            // wrapping when this was written), and `saturating_sub` would
+            // otherwise turn that tick into an impossibly fast one.
+            read_await_ms: await_ms(reads, self.read_ms, prev.read_ms),
+            write_await_ms: await_ms(writes, self.write_ms, prev.write_ms),
         }
     }
 }
@@ -197,18 +213,25 @@ mod tests {
         assert_eq!(d.time_in_queue, 466_175_438, "field 14 is index 13");
         assert_eq!(d.discard_sectors, Some(4_795_115_808));
         // D64's own arithmetic, reproduced from the recorded counters: the
-        // drive's queue was non-empty for 1.15 % of the 239 939 s of uptime
-        // at which the file was recorded, while holding a mean of 1.94
-        // I/Os — i.e. ~169 in flight whenever it was busy at all, against
-        // nr_requests = 1023. This is *why* the column is BUSY, and the
-        // shape is the argument: the exact ratio drifts with everything the
-        // machine has ever done (D64 §6).
-        let uptime_ms = 239_939_000.0;
-        let busy = d.io_ticks as f64 / uptime_ms * 100.0;
-        let aqu = d.time_in_queue as f64 / uptime_ms;
-        assert!((1.0..1.3).contains(&busy), "busy {busy}");
-        assert!((1.8..2.1).contains(&aqu), "aqu-sz {aqu}");
-        assert!(aqu / (busy / 100.0) > 100.0, "in flight while busy");
+        // NOT a lifetime derivation: diskstats prints the service-time
+        // counters truncated to 32 bits, and this fixture's own `nvme0n1`
+        // has already wrapped — its four service-time accumulators sum to
+        // more than 2**32 ms, so `time_in_queue` is that sum mod 2**32 and
+        // any "mean in flight since boot" computed from it is an artifact
+        // (D64 amendment 1, which retracted exactly that arithmetic from the
+        // decision entry). What the fixture can honestly pin is the *wrap*:
+        // the identity below is what proves the truncation, and it is the
+        // reason every disk number gridwatch draws comes from an interval.
+        let sum = u128::from(d.read_ms) + u128::from(d.write_ms);
+        assert!(
+            sum > u128::from(u32::MAX),
+            "this fixture is the wrapped case; it stops being evidence if the \
+             service-time sum ({sum}) no longer exceeds 2**32"
+        );
+        assert!(
+            u128::from(d.time_in_queue) < u128::from(u32::MAX),
+            "time_in_queue is printed truncated to 32 bits"
+        );
         // The partitions are on the same file, so `partitions = true` costs
         // no extra read.
         assert!(m.contains_key("nvme0n1p2"));
@@ -216,6 +239,41 @@ mod tests {
         // And every loop device's rates are **zero**: their counters are
         // cumulative mount-time reads from boot, not live traffic (D64).
         assert!(m["loop0"].reads > 0, "a lifetime counter, not a rate");
+    }
+
+    /// A service-time counter that went backwards means the interval cannot
+    /// say what an I/O cost — a 32-bit wrap, or a device re-created on the
+    /// same name. It must publish nothing, never `Some(0.0)`, which would
+    /// read as "instant" (D64 amendment 1). Torch's `write_ms` was three days
+    /// from wrapping when this was written, so it is not hypothetical.
+    #[test]
+    fn a_wrapped_service_time_counter_cannot_say_and_says_nothing() {
+        let prev = Counters {
+            reads: 10,
+            writes: 10,
+            read_ms: u64::from(u32::MAX) - 5,
+            write_ms: u64::from(u32::MAX) - 5,
+            ..Default::default()
+        };
+        // Both wrapped past 2**32 and restarted low.
+        let now = Counters {
+            reads: 20,
+            writes: 20,
+            read_ms: 7,
+            write_ms: 7,
+            ..prev
+        };
+        let r = now.rates(&prev, Duration::from_secs(1));
+        assert_eq!(r.read_await_ms, None, "a wrap is not an instant read");
+        assert_eq!(r.write_await_ms, None, "a wrap is not an instant write");
+        // And the ordinary case still reports.
+        let fine = Counters {
+            reads: 20,
+            read_ms: prev.read_ms + 40,
+            ..prev
+        };
+        let r = fine.rates(&prev, Duration::from_secs(1));
+        assert_eq!(r.read_await_ms, Some(4.0), "40 ms over 10 completions");
     }
 
     /// A pre-4.18 kernel: eleven stats, no discard group. The device must
