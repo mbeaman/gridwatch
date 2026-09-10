@@ -69,6 +69,30 @@ The first P19 "before" run, taken on this tree straight after a release build, r
 
 ---
 
+### The review, and the pattern in what it found
+
+Two lenses. The code held on nearly every point; what did not hold was an **instrument**, a **number**, and a **habit**.
+
+**The assertion this arc offered as proof of its own rule could not fail.** `assert_tables_end_at_their_content` compared `table_widths(cols, rows, w)` against `table_natural_widths(cols, rows)` — and `table_widths` computes its cap by calling that same function with those same arguments. Both sides moved together. It could only break if someone deleted the `min`, and the two failures the decision names most (measuring the visible page instead of every row, a byte metric instead of display columns) would have sailed through it. It measures from a rendered buffer now, against the rule rather than the arithmetic: *draw the same table twice as wide and its ink must not move right*. Removing the cap makes it fail; the version it replaced did not.
+
+**A number this arc reported about itself was wrong, and the true one is stronger.** The record said the sensors tile's column coverage at 250×70 was "0.285 before and 0.285 after" — evidence that the metric was blind. It is 0.285 before and **0.870** after; the arc's own table said so two paragraphs above the prose contradicting it, and the reviewer caught the file arguing with itself. The point survives at the other size and lands harder: at **480×135 it is 1.000 before and 1.000 after**. A metric scoring a tile *perfectly* while a temperature sits ninety cells from its sensor is a better argument for three ordered questions than one scoring it 0.285.
+
+**And the habit: a rule was applied to the instances the brief listed rather than to every instance.** Four times.
+
+- The arc fixed four scroll viewports and wrote down the lesson "grep for X rather than trusting the brief's list". There was a **fifth**, in the file it had just rewritten.
+- It made the header bar stop at the table's content and left the **selected row's** bar running to the rect edge.
+- It gave the sensors table a bar column at the `table` tier; `full` sits above `table` and drew neither the bars nor the chart, so `z` on a wide terminal made the tile **strictly poorer than the one it zoomed** — twenty rows of a hundred and thirty-one. No snapshot could see it, because at every size in the matrix that tile picks `chart` and the file called `sensors_zoom` never rendered `full`.
+- It made net's interface band content-sized and left the **sensors** table band on `Fill` — sixty-one blank rows at 480×135, in the other tile it had just rebuilt.
+
+And one where the grep itself was aimed one way: §1 says the free-text column is elastic and last, §2 grepped every table for *elastic before fixed*, and net's `process` column is *fixed where elastic belongs* — cutting `firefox-bin (50558)` mid-pid at every width from 250 to 800 columns with up to 550 empty beside it.
+
+**What that suggests for the next arc.** A rule that ships with a list of the places it applies will be applied to the list. The instrument has to enumerate, not the brief — which is what `assert_tables_end_at_their_content` and `assert_every_drawing_grows` do now over the whole registry, and what nothing does for tiers, bands or viewports.
+
+### Owed after this arc
+
+The net chart's **zero line is the one gridline its ink erases** — 49 of 248 cells at 250×70, 7 of 248 in the demo, and at a 4–7-row band the user sees no line at all. D65's acceptance said it must read as a zero line and it does not; the fix is a rendering-order or role question, so it is backlogged rather than rushed. Also backlogged: `net` has no snapshot at all and no chart has a *cell* snapshot, so this arc's global renderer change is pinned in cells for no chart; the per-drawing oracle asserts *reach* for every drawing but doubling for two of ten variant/axis pairs, which is honest but narrower than the record admitted; and a chart series is silently unlabelled when its label would collide.
+
+
 ## 2026-09-09 — arc 14: what the drives are doing
 
 **Models:** Opus 5 for the whole arc (D64, the ARCHITECTURE edits and the brief were written by an Opus session the day before, because Fable was rate-limited). **Shipped:** arc 14, 14a in four commits and 14b in three. **Nothing tagged. No review yet** — that is the next session's, and the ROADMAP box for it is still open.
