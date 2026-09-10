@@ -203,7 +203,7 @@ pub static METAS: &[KeyMeta] = &[
         unit: Unit::None,
         kind: DatumKind::Record,
         source: SOURCE,
-        doc: "what the device is per {dev}: model, size, rotational/removable, kind, the controller it hangs off (the temperature join key), its partitions, scheduler and nr_requests — published on change",
+        doc: "what the device is per {dev}: model, size, rotational/removable, kind, the controller it hangs off (the temperature join key), its partitions, scheduler and nr_requests — published on first sight of a device name and not again — `scheduler`, `nr_requests`, `size_b` and the partition list can all change under a live name, and this key will not notice (arc 14 review; a rewalk timer is what D64 §5 rejected, so closing it is a design call)",
         decode: Some(decode_info),
         labels: LabelSet::Dynamic,
     },
