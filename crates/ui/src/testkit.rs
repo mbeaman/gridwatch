@@ -332,6 +332,13 @@ impl Growth {
 /// legitimately constant (D62 §4).
 const GROWTH_RATIO: f64 = 1.5;
 
+/// The smallest extent `assert_every_drawing_grows` will double. Below eight
+/// cells a drawing's own quantisation swamps the measurement: a bar at a tenth
+/// of full scale is one cell tall in a three-row band and still one cell tall
+/// in a six-row band, because a cell is the unit of ink. The rule is about the
+/// room a drawing is given, and a three-row band is not room.
+const AXIS_MIN: u16 = 8;
+
 fn non_blank(buf: &Buffer) -> usize {
     let area = *buf.area();
     (0..area.width)
@@ -399,6 +406,332 @@ pub fn assert_grows_with_area(
                 doubled.w,
                 doubled.h
             );
+        }
+    }
+}
+
+/// The view a component builds at a size with the tier pinned as a `view`
+/// preference — `view_of` at an explicit tier, so a sweep can walk every
+/// tier's tree instead of only the richest that fits.
+fn view_at(
+    c: &mut dyn Component,
+    store: &Store,
+    th: &Theme,
+    size: Size,
+    zoomed: bool,
+    tier_name: &str,
+) -> (usize, crate::view::View) {
+    let inner = Rect {
+        x: 0,
+        y: 0,
+        width: size.w,
+        height: size.h,
+    };
+    let (tier, fallback) = pick_tier(c.tiers(), size, zoomed, Some(tier_name));
+    tick(c, store, tier);
+    let cx = crate::component::RenderCx {
+        inner,
+        tier,
+        view_fallback: fallback,
+        focused: false,
+        captured: false,
+        zoomed,
+        dense: false,
+        store,
+        theme: th,
+        now: store.latest(),
+        wall: std::time::SystemTime::UNIX_EPOCH,
+        tz_offset_s: 0,
+        frame: 0,
+    };
+    (tier, c.view(&cx))
+}
+
+/// What can be asked of a drawing leaf, as a property of the **renderer**
+/// rather than of any caller. D65 §10 asks for every exemption to carry a
+/// reason; these are the reasons, and because they are the same for every
+/// component they live here once instead of at seven call sites.
+#[derive(Clone, Copy)]
+struct Oracle {
+    /// Its ink must span the rect it was given, edge to edge.
+    reach: bool,
+    /// Doubling its width must draw `GROWTH_RATIO` times the cells.
+    double_w: bool,
+    /// Doubling its height must.
+    double_h: bool,
+}
+
+/// - `Sparkline` answers everything: one sample per column, held across empty
+///   ones (D62 §1), and eighths up the rows. A series shorter than the rect
+///   draws only the rightmost columns, which is the wide-terminal defect
+///   itself, so the doubling test is the one that catches it.
+/// - `Gauge`: span and width. Its bar is the rect minus its label and its
+///   text, and the unfilled part is drawn in the empty glyph, so a wider rect
+///   really is more ink. It draws on `area.y` alone, so there is no height.
+/// - `Segmented`: span only. htop's meter draws its *unfilled* part as blank
+///   space, so a wider rect adds nothing to a meter that is nearly empty —
+///   `SWP` measures 16 cells at 30 columns and 16 at 60. What it must still do
+///   is put its closing bracket at the right edge.
+/// - `Chart`: reach only. A braille line's ink is one cell per column plus its
+///   vertical excursion, and doubling the columns *halves* the excursion per
+///   column — the audio scope measures 1153 → 1727 cells (1.50×) across a
+///   doubled width, on the boundary by arithmetic rather than by design. The
+///   height is worse and it is on purpose: a taller band buys y-resolution
+///   rather than ink (D62 amendment 5, D65 §4), which is why the band now
+///   carries gridlines instead of being asked for more ink. What a chart must
+///   still do is reach the far edge, which is exactly the defect D62 found.
+/// - `Bars`: nothing, and this is the one whole exemption. The renderer draws
+///   `values.len()` bars whatever the width, so the count is the component's:
+///   `audio`'s `mini` tier fixes it at ten by design (§8, "8–10 thin bars")
+///   and its `spectrum` tier leaves a gap column per bar, so neither reach nor
+///   a doubling means anything here. The count coming from the rect is what
+///   `assert_grows_with_area` checks per tier, where the component's `view`
+///   re-runs.
+///
+/// `None` for everything that is not a drawing: text leaves are question (ii)
+/// of §4.6's three, `View::Custom` paints itself, and `View::Empty` is blank
+/// on purpose.
+fn drawing_oracle(v: &crate::view::View) -> Option<Oracle> {
+    use crate::view::View as V;
+    let o = |reach, double_w, double_h| {
+        Some(Oracle {
+            reach,
+            double_w,
+            double_h,
+        })
+    };
+    match v {
+        V::Sparkline { .. } => o(true, false, true),
+        V::Gauge { .. } => o(true, true, false),
+        V::Segmented { .. } => o(true, false, false),
+        V::Chart { .. } => o(true, false, false),
+        V::Bars { .. } => None,
+        _ => None,
+    }
+}
+
+/// The first and last columns of `buf` that carry ink.
+fn lit_span(buf: &Buffer) -> Option<(u16, u16)> {
+    let area = *buf.area();
+    let lit = |x: u16| {
+        (0..area.height).any(|y| {
+            buf.cell((area.x + x, area.y + y))
+                .is_some_and(|c| !c.symbol().trim().is_empty())
+        })
+    };
+    let first = (0..area.width).find(|x| lit(*x))?;
+    let last = (0..area.width).rev().find(|x| lit(*x))?;
+    Some((first, last))
+}
+
+/// D65 §10, the per-drawing oracle: `assert_grows_with_area` counts a whole
+/// tier's cells, so a capped drawing that is a small share of that tier's ink
+/// hides inside it — it passed `pins` and `gpu` while both were still broken.
+/// This walks `layout::leaves` for **every** tier at its own minimum and at
+/// two and four times it, and for each drawing leaf whose rect grows with the
+/// tile (no `Len` pinning that axis) renders the leaf alone at its rect and
+/// at double, requiring `GROWTH_RATIO`.
+///
+/// The qualification is the whole point: unqualified it fails on `Len`
+/// children and gets weakened until it means nothing, which is the road
+/// `assert_grows_with_area` walked to five exclusions in one arc.
+pub fn assert_every_drawing_grows(mk: &dyn Fn() -> Box<dyn Component>, data: &Store, th: &Theme) {
+    let probe = mk();
+    let tiers: Vec<(String, Size, bool)> = probe
+        .tiers()
+        .iter()
+        .map(|t| (t.name.to_string(), t.min, t.zoom_only))
+        .collect();
+    drop(probe);
+    for (name, min, zoom_only) in &tiers {
+        for scale in [1u16, 2, 4] {
+            let size = Size::new(min.w * scale, min.h * scale);
+            let mut c = mk();
+            let (tier, view) = view_at(c.as_mut(), data, th, size, *zoom_only, name.as_str());
+            if tiers[tier].0 != *name {
+                continue;
+            }
+            let inner = Rect {
+                x: 0,
+                y: 0,
+                width: size.w,
+                height: size.h,
+            };
+            for leaf in crate::layout::leaves(&view, inner) {
+                let Some(oracle) = drawing_oracle(leaf.view) else {
+                    continue;
+                };
+                let render = |w: u16, h: u16| -> Buffer {
+                    let r = Rect {
+                        x: 0,
+                        y: 0,
+                        width: w,
+                        height: h,
+                    };
+                    let mut buf = Buffer::empty(r);
+                    th.renderer().render(leaf.view, r, th, &mut buf);
+                    buf
+                };
+                let draw = |w: u16, h: u16| -> usize { non_blank(&render(w, h)) };
+                let (w, h) = (leaf.area.width, leaf.area.height);
+                let base_buf = render(w, h);
+                let base = non_blank(&base_buf);
+                if base == 0 {
+                    continue;
+                }
+                // Span: the wide-terminal defect itself — a drawing whose ink
+                // stops part-way across a band it was given the whole of, at
+                // either end. A sparkline with fewer samples than columns is
+                // drawn right-anchored, so the *left* edge is the one that
+                // catches it; a chart whose buckets stop short shows at the
+                // right. Both are D62's report.
+                if oracle.reach && leaf.fill_w && w >= AXIS_MIN {
+                    let slack = (w / 16).max(2);
+                    let (first, last) = lit_span(&base_buf).unwrap_or((w, 0));
+                    assert!(
+                        first <= slack && last + slack >= w,
+                        "tier `{name}` at {}x{}: the {:?} leaf is {w} columns wide and its ink \
+                         runs from column {first} to {last} — a drawing takes the rect's size \
+                         (D62 §1, ARCHITECTURE §4.6)",
+                        size.w,
+                        size.h,
+                        leaf.view
+                    );
+                }
+                for (axis, on, dw, dh) in [
+                    (
+                        "width",
+                        oracle.double_w && leaf.fill_w && w >= AXIS_MIN,
+                        w.saturating_mul(2),
+                        h,
+                    ),
+                    (
+                        "height",
+                        oracle.double_h && leaf.fill_h && h >= AXIS_MIN,
+                        w,
+                        h.saturating_mul(2),
+                    ),
+                ] {
+                    if !on {
+                        continue;
+                    }
+                    let grown = draw(dw, dh);
+                    assert!(
+                        grown as f64 >= base as f64 * GROWTH_RATIO,
+                        "tier `{name}` at {}x{}: the {:?} leaf at {w}x{h} draws {base} cells and \
+                         {grown} at {dw}x{dh} — a drawing in a band that grows with the tile \
+                         must draw at least {GROWTH_RATIO}x when its {axis} doubles (D65 §10, \
+                         ARCHITECTURE §4.6)",
+                        size.w,
+                        size.h,
+                        leaf.view
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// D65 §9 question (ii): **every table ends where its content ends.** Run at
+/// four times each tier's minimum, where a stretch is unmistakable, and it
+/// would have caught the `sensors` table in arc 5b — at 250×70 its value sat
+/// eighty-seven cells from the sensor it belonged to, at *every* size and not
+/// only a wide one.
+///
+/// Two rules, because a column's width comes from two different places:
+///
+/// 1. **An elastic column is checked exactly.** It grows to the widest cell it
+///    holds — measured over every row and never the visible page — and stops.
+///    No allowance: a stretch is a failure. This is the renderer's cap (D65
+///    §3) asserted from the outside, over the registry rather than over the
+///    six tables that were known to stretch.
+/// 2. **A fixed column is checked for the damage it does**, not against the
+///    fixture. Every declared column must be drawn, and the row must fit the
+///    rect. D65 §5 asked for "the natural width plus one pad per column" over
+///    the whole table, and that formula does not survive contact with this
+///    tree: a fixed width is a *declaration* sized for the widest value the
+///    column can ever hold, and the demo store is never that case — `disk`'s
+///    nine columns declare fifteen cells more than the fixture fills,
+///    `winamp`'s `artist` ten, `net`'s `state` five (`no carrier` against a
+///    fixture whose interfaces are all `up`). A rule tight enough to catch
+///    `Fixed(999)` that way would be calibrated on the synths, which is the
+///    fixture-shaped floor D65 §10's own trap 1 warns against. What a
+///    `Fixed(999)` actually *does* is objective and fixture-independent: it
+///    pushes the columns after it off the right edge, where the renderer skips
+///    them — the same defect D57 amendment 19 fixed for elastic columns, when
+///    the net table drew its remote address under a `local` header.
+pub fn assert_tables_end_at_their_content(
+    mk: &dyn Fn() -> Box<dyn Component>,
+    data: &Store,
+    th: &Theme,
+) {
+    let probe = mk();
+    let tiers: Vec<(String, Size, bool)> = probe
+        .tiers()
+        .iter()
+        .map(|t| (t.name.to_string(), t.min, t.zoom_only))
+        .collect();
+    drop(probe);
+    for (name, min, zoom_only) in &tiers {
+        let size = Size::new(min.w * 4, min.h * 4);
+        let mut c = mk();
+        let (tier, view) = view_at(c.as_mut(), data, th, size, *zoom_only, name.as_str());
+        if tiers[tier].0 != *name {
+            continue;
+        }
+        let inner = Rect {
+            x: 0,
+            y: 0,
+            width: size.w,
+            height: size.h,
+        };
+        for leaf in crate::layout::leaves(&view, inner) {
+            let crate::view::View::Table { columns, rows, .. } = leaf.view else {
+                continue;
+            };
+            if columns.is_empty() || rows.is_empty() {
+                continue;
+            }
+            let widths = crate::renderer::table_widths(columns, rows, leaf.area.width);
+            let natural = crate::renderer::table_natural_widths(columns, rows);
+            let titles: Vec<&str> = columns.iter().map(|c| c.title.as_ref()).collect();
+            for ((c, drawn), want) in columns.iter().zip(&widths).zip(&natural) {
+                if c.width == crate::view::ColWidth::Elastic {
+                    assert!(
+                        drawn <= want,
+                        "tier `{name}` at {}x{}: the elastic `{}` column is drawn {drawn} cells \
+                         wide where its widest cell and its own title want {want} — a table ends \
+                         where its content ends (D65 §1, ARCHITECTURE §4.6). Widths {widths:?} \
+                         against naturals {natural:?} for {titles:?}",
+                        size.w,
+                        size.h,
+                        c.title
+                    );
+                }
+            }
+            let total: u16 = widths.iter().sum::<u16>() + columns.len().saturating_sub(1) as u16;
+            assert!(
+                total <= leaf.area.width,
+                "tier `{name}` at {}x{}: a table's columns need {total} cells in a {}-cell rect, \
+                 so the last of them is drawn off the right edge and silently skipped — a column \
+                 that is declared is a column a reader can see (D65 §1). Widths {widths:?} for \
+                 {titles:?}",
+                size.w,
+                size.h,
+                leaf.area.width
+            );
+            for ((c, drawn), want) in columns.iter().zip(&widths).zip(&natural) {
+                assert!(
+                    *drawn > 0 || *want == 0,
+                    "tier `{name}` at {}x{}: the `{}` column is drawn at zero width in a {}-cell \
+                     rect while it holds {want} cells of content — something beside it took the \
+                     room (D65 §1). Widths {widths:?} for {titles:?}",
+                    size.w,
+                    size.h,
+                    c.title,
+                    leaf.area.width
+                );
+            }
         }
     }
 }
