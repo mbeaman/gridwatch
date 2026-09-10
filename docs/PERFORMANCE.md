@@ -161,7 +161,7 @@ $ cargo bench -p gridwatch-app
 | `store/resample/60` · `/120` · `/240` | a ten-minute window into a chart's buckets | **0.93 µs** · 0.69 · 0.61 |
 | `render/frame/250x70 configured` | the **whole** Overview solved, ticked, viewed, rendered and diffed with nothing cached | **513 µs** |
 | `render/frame/120x40 dense` | the same page in dense mode | **267 µs** |
-| `render/frame/480x135 wide` | the same page on the wide terminal D62 was reported from — 3.7x the cells of 250x70 | **1.02 ms** (2026-09-06, after arc 12; 250x70 re-read 527 µs in the same run) |
+| `render/frame/480x135 wide` | the same page on the wide terminal D62 was reported from — 3.7x the cells of 250x70 | **1.02 ms** (2026-09-06, after arc 12; 250x70 re-read 527 µs in the same run) · **1.09 ms** (2026-09-09, after arc 15; see below) |
 | `theme/load retrowave` | parse + build a theme, WCAG gate included — what every `t` press pays | **26.5 µs** |
 
 What they say about the ceilings above: P19 allows **8 ms p95** for a frame, and a *completely uncached* Overview costs 0.51 ms — which is why the render cache buys what it does, and why the live p50 is 0.04 ms (arc 8a's row: most frames are a blit). `Store::apply` at 2.5 µs means the data path is not the cost of anything; at the Overview's ~40 batches a second it is 0.1 ms of CPU per second. And `resample` costing *less* at more buckets is not a mistake in the table — the work is per point, and the per-bucket aggregation gets cheaper as the buckets get smaller.
@@ -174,6 +174,19 @@ grow with the rect. The 250x70 bench read **527 µs** in the same run against
 the 513 µs recorded on 2026-09-02; the 2.7 % difference is not attributed —
 two runs four days apart on a shared machine, with the arc-12 drawings now
 filling columns they used to leave blank, and nothing here separates the two.
+
+**Arc 15 (2026-09-09) — P19 re-taken uncached at both sizes, as an A/B on one machine in one sitting.** The new drawing work is the chart gridlines (at most three `set_string` runs of `width` cells per chart), one `set_stringn` per series label, one `View::Gauge` row per shown sensor, and a gpu chart band that is now the full tile width instead of 24 cells narrower. The control is the **same benchmark on `75aa940`**, the commit before the arc, built and run in a scratch worktree minutes before the after-run:
+
+| `cargo bench -p gridwatch-app` | before (`75aa940`) | after arc 15 | change |
+|---|---|---|---|
+| `render/frame/250x70 configured` | **521.9 µs** | **549.5 µs** | +5.3 % |
+| `render/frame/480x135 wide` | **1.0400 ms** | **1.0876 ms** | +4.6 % |
+
+Five per cent for the whole arc, and an uncached 480×135 frame is **1.09 ms against P19's 8 ms p95** — 13 % of the ceiling, with the render cache meaning most live frames are a blit (0.04 ms p50, arc 8a). **Nothing here is superlinear**: the same +5 % at both sizes is what a per-chart constant plus a per-row constant looks like.
+
+**Why the A/B and not the recorded 1.02 ms.** A first "before" run, taken on this tree straight after a release build, read **753.8 µs / 1.4596 ms** — 43 % over the arc-12 numbers, for reasons that have nothing to do with the code. Comparing the after-run to *that* would have claimed a 26 % **improvement** from an arc that only adds drawing. Two runs minutes apart on a quiet machine are the comparison; two runs days apart are not. (Arc 12 recorded the same hazard from the other side: its 250x70 re-read 527 µs against the 513 µs of four days earlier and declined to attribute the difference.)
+
+**P2, P4, P5, P13, P15 and P17 are unchanged and asserted so, not re-measured**: arc 15 touches no source, no cadence and no `Detail` — `grep -n 'Detail::' crates/components/src/{net,gpu,sensors}` is identical to the arc-14 tree, and the only new work is inside `view` and the renderer.
 
 Re-take them on a machine change and put the new column here rather than overwriting: the point is the comparison.
 

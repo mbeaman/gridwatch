@@ -6,6 +6,51 @@
 
 ---
 
+## 2026-09-09 — arc 15: what a tile draws with the room
+
+**Models:** Opus 5 for the whole arc (D65, the ARCHITECTURE edits and the brief were written by an Opus session the same day, because Fable was rate-limited). **Shipped:** arc 15, 15a in five commits and 15b in six. **Nothing tagged. No review yet** — that is the next session's, along with arc 14's, and both ROADMAP boxes are still open.
+
+### What changed for Matt
+
+**The tile that was worst was not the one anybody was looking at.** The whole arc came out of "it appears broken if the console resolution is too wide", and the sharpest defect in it was on the *reference* 250×70 screen and had been since arc 5b: the SENSORS tile put a reading's number **eighty-seven cells** from the sensor it belonged to. Its one elastic column sat *before* the fixed ones, so all the spare width went between a row's identity and its value. That table now ends where its content ends, and there are warn/crit bars in the room it gives back — the bars §8 has promised since arc 5b. The tile went from 0.204 to 0.716 of its cells at 250×70.
+
+**One function in the renderer fixed six tables.** An elastic column grows to the widest cell it holds — over *every* row, never the visible page, because a column that changes width as you scroll is worse than one that stretches — and stops. `sensors`' `sensor`, `net`'s `iface`/`local`/`remote`, `audio`'s sink picker and `winamp`'s playlist were all fixed without touching a component, and the four tables that already obeyed the rule are byte-identical below their content width.
+
+**Charts have an axis at last.** `PARITY.md` row 68 has said "fixed 0–100 % axis with 25/50/75/100 ticks — in" since arc 2b. The row claimed the axis and shipped only its *range*: nothing drew a tick. The renderer draws them now, from `Bounds.y`, under the series so ink always wins the cell. And `Series.label`, which has travelled in every `View::Chart` since arc 2b and was **read by nothing**, is printed at each series' newest point — a name on its line instead of a legend sixteen rows above the ink.
+
+**The network tile draws something for the first time.** Its `table` tier was an interface table, a probe strip and a footer, in a band a workstation's three interfaces could never fill. The band is content-sized now and the rows it gives back are the mirrored rx/tx chart the arc-7 spec named and D62 deleted rather than built. The renderer's midpoint gridline *is* its zero line, which is the whole reason 15a had to land before 15b. Its connection table also had a real bug: it computed its scroll viewport from the tile's inner height while being drawn in a band roughly half that, so a cursor past the fold scrolled to a page that did not contain it.
+
+**And the GPU's spec pane stopped eating rows it could not use.** A 24-wide column across the whole band was thirty blank rows at 480×135 and, worse, silently cut `driver` and `vbios` at the reference size, where the band is shorter than the list. It is a wrapped strip under the chart now: every row prints, and the chart has the full width.
+
+### The two numbers that went the wrong way, and why that is the point
+
+D65 §9 says the cell fraction is a collapse guard and never a proof. This arc proved it twice.
+
+**The sensors tile's *column* coverage at 250×70 is 0.285 before the fix and 0.285 after.** The same number of columns carried ink; they were simply eighty-seven cells apart. The instrument that was supposed to find wide-terminal emptiness was blind to the worst instance of it.
+
+**The gpu tile's row coverage fell**, 0.554 → 0.415, in the same change that raised its cells 0.131 → 0.183: sixteen rows of spec down the right-hand edge became two rows under a chart that gained 24 columns. Its row floor comes down with a sentence saying why. A floor that is re-fitted upward every arc measures nothing; one that moves *down* with a written reason is at least honest.
+
+### Two things the decision got wrong, and one it got wrong in our favour
+
+**D65 §5's table rule does not survive contact with the tree it was written against.** "Every `View::Table` leaf's summed drawn width must not exceed its natural width plus one pad per column" fails on `disk` at four times its tier minimum: nine columns declaring fifteen cells more than the demo fixture fills. A fixed width is a *declaration* sized for the widest value a column can ever hold — `net`'s `state` is `Fixed(10)` for `no carrier` against a fixture whose interfaces are all `up`, `winamp`'s `artist` 18 for an eight-character name — and no per-column slack that passes those also catches a `Fixed(999)`; it would just be calibrated on the synths. So the assertion is two rules: an **elastic** column is checked exactly against its content (no allowance, a stretch is a failure) and a **fixed** one is checked for the damage a `Fixed(999)` actually does — pushing the columns after it off the right edge, where the renderer skips them, which is the same defect D57 amendment 19 fixed for elastic columns.
+
+**D65 §10's per-leaf doubling test is not satisfiable for every drawing kind, because freezing the view freezes the component's data.** Rendering a leaf alone at double its rect does not re-run `view`, so a `Sparkline` with one sample per column draws the same samples right-anchored and scores 1.0×; `Bars` draws `values.len()` bars whatever the width, and `audio`'s `mini` fixes that at ten by design; `Segmented` draws its unfilled part as blank space, so htop's nearly-empty `SWP` measures 16 cells at 30 columns and 16 at 60; and the audio scope's braille chart measures **1.4978×** across a doubled width, because doubling the columns halves the vertical excursion per column. Each of those is a property of the *renderer*, not of a caller, so the oracle asks two questions instead of one — does the ink **span** the rect it was given (which is D62's actual defect, and which every drawing must answer), and does doubling an axis it can genuinely use double its cells — with every exemption named once in `testkit::drawing_oracle` rather than at seven call sites. That is a deviation from the decision and it is deliberate: the alternative was one assertion weakened until it meant nothing, which is the road `assert_grows_with_area` walked to five exclusions in a single arc.
+
+**Trap 5 was wrong in our favour.** The brief predicted the mirrored chart would fail the growth sweep's height axis as `gpu` `charts` does. It does not — 1.54× — because that band absorbs every row the tier's constant text leaves. Both axes are asserted. Both are close to the bar (width 1.50×) and the comment says so, because the tier is mostly content-sized text plus one chart and only the chart grows.
+
+### The measurement that would have been a lie
+
+The first P19 "before" run, taken on this tree straight after a release build, read 753.8 µs / 1.4596 ms — 43 % over the arc-12 numbers, for reasons that have nothing to do with any code. The after-run read 549 µs / 1.088 ms, and comparing the two would have let this arc claim a **26 % speed-up** from a change that only adds drawing. The honest number came from checking out `75aa940` in a scratch worktree and benching it minutes before: **521.9 → 549.5 µs and 1.0400 → 1.0876 ms, +5 %.** Arc 14 lost two hours to a stale release binary and wrote down "any measurement of a component must first prove the component drew"; the sibling rule is that a before-number taken at a different time is not a before-number.
+
+### What is owed to Matt after this session
+
+- **The arc-end adversarial review**, with D65 §9's lens: render every component tier at 480×135 and 250×70 and answer the three questions in order. Arc 14's review is still owed too.
+- **A pty case driving the connection cursor past the fold.** `demo::NetSynth` publishes five connections and no tier that shows connections can have a band shorter than five rows, so the fold is unreachable in a real terminal with the shipped fixture. The unit test drives it with sixty. Fixing the synths is its own backlog item because it churns every net snapshot.
+- **`MATT_TERMINAL`** in `crates/cli/tests/smoke.rs` is still `None`: nobody has measured his real Ptyxis size, and a guess would pin nothing.
+- **`v0.15.0`**, and every tag from `v0.1.0`.
+
+---
+
 ## 2026-09-09 — arc 14: what the drives are doing
 
 **Models:** Opus 5 for the whole arc (D64, the ARCHITECTURE edits and the brief were written by an Opus session the day before, because Fable was rate-limited). **Shipped:** arc 14, 14a in four commits and 14b in three. **Nothing tagged. No review yet** — that is the next session's, and the ROADMAP box for it is still open.

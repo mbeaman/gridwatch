@@ -7,7 +7,7 @@ tier: procs
 view:
   stack:
     children:
-      - - Len(20)
+      - - Len(25)
         - stack:
             children:
               - - Len(1)
@@ -228,50 +228,48 @@ view:
               - - Fill(1)
                 - stack:
                     children:
-                      - - Fill(1)
-                        - stack:
-                            children:
-                              - - Len(1)
-                                - text:
-                                    - - bold: false
-                                        role: TextMuted
-                                        s: "1:util "
-                                      - bold: false
-                                        role: Text
-                                        s: 14%
-                                      - bold: false
-                                        role: TextGhost
-                                        s: "  "
-                                      - bold: false
-                                        role: TextMuted
-                                        s: "2:vram "
-                                      - bold: false
-                                        role: Text
-                                        s: 42%
-                                      - bold: false
-                                        role: TextGhost
-                                        s: "  "
-                                      - bold: false
-                                        role: TextMuted
-                                        s: "4:power "
-                                      - bold: false
-                                        role: Text
-                                        s: 65%
-                                      - bold: false
-                                        role: TextGhost
-                                        s: "  1m ⟶"
-                              - - Fill(1)
-                                - chart:
-                                    - label: util
-                                      points: 39
-                                    - label: vram
-                                      points: 20
-                                    - label: power
-                                      points: 39
-                            dir: V
                       - - Len(1)
-                        - empty
-                      - - Len(24)
+                        - text:
+                            - - bold: false
+                                role: TextMuted
+                                s: "1:util "
+                              - bold: false
+                                role: Text
+                                s: 14%
+                              - bold: false
+                                role: TextGhost
+                                s: "  "
+                              - bold: false
+                                role: TextMuted
+                                s: "2:vram "
+                              - bold: false
+                                role: Text
+                                s: 42%
+                              - bold: false
+                                role: TextGhost
+                                s: "  "
+                              - bold: false
+                                role: TextMuted
+                                s: "4:power "
+                              - bold: false
+                                role: Text
+                                s: 65%
+                              - bold: false
+                                role: TextGhost
+                                s: "  1m ⟶"
+                      - - Fill(1)
+                        - chart:
+                            - label: util
+                              points: 39
+                            - label: vram
+                              points: 20
+                            - label: power
+                              points: 39
+                    dir: V
+              - - Len(4)
+                - stack:
+                    children:
+                      - - Len(25)
                         - kv:
                             - k: arch
                               sev: ~
@@ -285,6 +283,8 @@ view:
                             - k: TMU/ROP
                               sev: ~
                               v: 680/176
+                      - - Len(25)
+                        - kv:
                             - k: RT/tensor
                               sev: ~
                               v: 170/680
@@ -297,6 +297,8 @@ view:
                             - k: memory
                               sev: ~
                               v: 28 Gbps
+                      - - Len(25)
+                        - kv:
                             - k: bandwidth
                               sev: ~
                               v: 1792 GB/s
@@ -309,6 +311,8 @@ view:
                             - k: transistors
                               sev: ~
                               v: 92.2 B
+                      - - Len(25)
+                        - kv:
                             - k: launch
                               sev: ~
                               v: 2025-01-30
@@ -323,7 +327,7 @@ view:
                               v: 98.02.2E.80.05
                     dir: H
             dir: V
-      - - Len(11)
+      - - Len(6)
         - table:
             columns:
               - PID

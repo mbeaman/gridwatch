@@ -11,82 +11,170 @@ view:
         - stack:
             children:
               - - Fill(1)
-                - table:
-                    columns:
-                      - chip
-                      - sensor
-                      - value
-                      - limit
-                      - of lim
-                    rows:
-                      - - spd5118
-                        - temp1
-                        - 40.9°C
-                        - 55°
-                        - " 74 %"
-                      - - "spd5118#2"
-                        - temp1
-                        - 40.6°C
-                        - 55°
-                        - " 74 %"
-                      - - nvme
-                        - Composite
-                        - 50.1°C
-                        - 82°
-                        - " 61 %"
-                      - - "nvme#2"
-                        - Composite
-                        - 46.8°C
-                        - 84°
-                        - " 56 %"
-                      - - k10temp
-                        - Tctl
-                        - 52.9°C
-                        - ~95°
-                        - " 56 %"
-                      - - k10temp
-                        - Tccd1
-                        - 50.2°C
-                        - ~95°
-                        - " 53 %"
-                      - - nvme
-                        - Sensor 2
-                        - 52.8°C
-                        - ~100°
-                        - " 53 %"
-                      - - nvme
-                        - Sensor 1
-                        - 51.4°C
-                        - ~100°
-                        - " 51 %"
-                      - - mt7925_phy0
-                        - temp1
-                        - 50.6°C
-                        - ~100°
-                        - " 51 %"
-                      - - k10temp
-                        - Tccd2
-                        - 48.0°C
-                        - ~95°
-                        - " 51 %"
-                      - - "r8169_0_c00:00"
-                        - temp1
-                        - 55.2°C
-                        - 110°
-                        - " 50 %"
-                      - - "nvme#3"
-                        - Composite
-                        - 37.2°C
-                        - 75°
-                        - " 50 %"
-                      - - "r8169_0_b00:00"
-                        - temp1
-                        - 58.2°C
-                        - 120°
-                        - " 49 %"
-                    scroll: 0
-                    selected: ~
-                    sort: ~
+                - stack:
+                    children:
+                      - - Len(48)
+                        - table:
+                            columns:
+                              - chip
+                              - sensor
+                              - value
+                              - limit
+                              - of lim
+                            rows:
+                              - - spd5118
+                                - temp1
+                                - 40.9°C
+                                - 55°
+                                - " 74 %"
+                              - - "spd5118#2"
+                                - temp1
+                                - 40.6°C
+                                - 55°
+                                - " 74 %"
+                              - - nvme
+                                - Composite
+                                - 50.1°C
+                                - 82°
+                                - " 61 %"
+                              - - "nvme#2"
+                                - Composite
+                                - 46.8°C
+                                - 84°
+                                - " 56 %"
+                              - - k10temp
+                                - Tctl
+                                - 52.9°C
+                                - ~95°
+                                - " 56 %"
+                              - - k10temp
+                                - Tccd1
+                                - 50.2°C
+                                - ~95°
+                                - " 53 %"
+                              - - nvme
+                                - Sensor 2
+                                - 52.8°C
+                                - ~100°
+                                - " 53 %"
+                              - - nvme
+                                - Sensor 1
+                                - 51.4°C
+                                - ~100°
+                                - " 51 %"
+                              - - mt7925_phy0
+                                - temp1
+                                - 50.6°C
+                                - ~100°
+                                - " 51 %"
+                              - - k10temp
+                                - Tccd2
+                                - 48.0°C
+                                - ~95°
+                                - " 51 %"
+                              - - "r8169_0_c00:00"
+                                - temp1
+                                - 55.2°C
+                                - 110°
+                                - " 50 %"
+                              - - "nvme#3"
+                                - Composite
+                                - 37.2°C
+                                - 75°
+                                - " 50 %"
+                              - - "r8169_0_b00:00"
+                                - temp1
+                                - 58.2°C
+                                - 120°
+                                - " 49 %"
+                            scroll: 0
+                            selected: ~
+                            sort: ~
+                      - - Fill(1)
+                        - stack:
+                            children:
+                              - - Len(1)
+                                - empty
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 74 %"
+                                    value: 0.7431818246841431
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 74 %"
+                                    value: 0.7386363744735718
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 61 %"
+                                    value: 0.6124007105827332
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 56 %"
+                                    value: 0.5575432181358337
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 56 %"
+                                    value: 0.5565789341926575
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 53 %"
+                                    value: 0.5289473533630371
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 53 %"
+                                    value: 0.5274999737739563
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 51 %"
+                                    value: 0.5137500166893005
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 51 %"
+                                    value: 0.5062500238418579
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 51 %"
+                                    value: 0.5052631497383118
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 50 %"
+                                    value: 0.5022727251052856
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 50 %"
+                                    value: 0.4976619780063629
+                              - - Len(1)
+                                - gauge:
+                                    gradient: Temp
+                                    label: ""
+                                    text: " 49 %"
+                                    value: 0.4854166805744171
+                            dir: V
+                    dir: H
               - - Len(1)
                 - text:
                     - - bold: false

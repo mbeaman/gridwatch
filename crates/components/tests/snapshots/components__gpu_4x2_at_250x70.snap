@@ -7,7 +7,7 @@ tier: procs
 view:
   stack:
     children:
-      - - Len(12)
+      - - Len(14)
         - stack:
             children:
               - - Len(1)
@@ -225,7 +225,7 @@ view:
                               points: 39
                     dir: V
             dir: V
-      - - Len(8)
+      - - Len(6)
         - table:
             columns:
               - PID
