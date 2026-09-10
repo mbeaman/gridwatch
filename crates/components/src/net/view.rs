@@ -4,13 +4,16 @@
 //! (+ the connection table) and the zoom-only `full` (+ the route, the
 //! per-interface detail and the probe statistics).
 
+use std::borrow::Cow;
 use std::time::Duration;
 
 use gridwatch_store::keys::net::{self, Link, LinkKind};
 use gridwatch_store::{Agg, SourceState};
 use gridwatch_ui::component::RenderCx;
 use gridwatch_ui::theme::{GradientId, Role};
-use gridwatch_ui::view::{ColWidth, Column, Constraint, Dir, Line, Span, View};
+use gridwatch_ui::view::{
+    Bounds, ColWidth, Column, Constraint, Dir, Line, MarkerHint, Series, Span, View,
+};
 
 use super::{Iface, Net, TIER_CONNS, TIER_RATES, TIER_SPARKS, TIER_TABLE};
 
@@ -311,8 +314,11 @@ fn iface_table(n: &Net, cx: &RenderCx<'_>, body: usize) -> View {
     }
 }
 
-/// The connection table, scrolled by the cursor.
-fn conn_table(n: &Net, cx: &RenderCx<'_>) -> View {
+/// The connection table, scrolled by the cursor. `body` is the rows the band
+/// it is placed in actually has — it used to be the *tile's* inner height,
+/// which at the `conns` tier is nearly twice the band, so a cursor sixteen
+/// rows below the fold stayed off screen (§4.6, D65 §5).
+fn conn_table(n: &Net, cx: &RenderCx<'_>, body: usize) -> View {
     let Some(c) = n.model().conns.as_ref() else {
         return View::Text(vec![vec![Span::new(
             Role::TextMuted,
@@ -351,7 +357,7 @@ fn conn_table(n: &Net, cx: &RenderCx<'_>) -> View {
             ]
         })
         .collect();
-    let body = usize::from(cx.inner.height).saturating_sub(2).max(1);
+    let body = body.max(1);
     let cursor = n.scroll().min(rows.len().saturating_sub(1));
     let top = cursor
         .saturating_sub(body.saturating_sub(1))
@@ -391,6 +397,101 @@ fn conn_table(n: &Net, cx: &RenderCx<'_>) -> View {
     }
 }
 
+/// The window the mirrored chart covers, at most — ten minutes, the same
+/// window the gpu and sensors charts use. The window actually drawn is the
+/// run's age capped at this (D62 amendment 1): with a fixed span a run younger
+/// than the cap has no samples for the oldest buckets and the line starts
+/// part-way across the rect.
+const CHART_SPAN: Duration = Duration::from_secs(600);
+
+/// At most this many interfaces are charted: the busiest, by peak over the
+/// window. A workstation has nine interfaces and eight of them are flat.
+const CHART_IFACES: usize = 4;
+
+/// One interface's two lines, and the peak that ranks it.
+struct Charted {
+    peak: f64,
+    name: String,
+    rx: Vec<(f64, f64)>,
+    tx: Vec<(f64, f64)>,
+}
+
+/// The mirrored rx/tx chart the arc-7 spec named and D62 amendment 5 deleted
+/// rather than built (D65 §5): one line pair per shown interface, rx above a
+/// zero line and tx below it, over the run's age capped at `CHART_SPAN`.
+///
+/// **The zero line is the renderer's midpoint gridline** — `bounds.y` is
+/// symmetric about zero, so the rule the renderer draws at the middle of the
+/// range is exactly the axis these lines are mirrored about. That is why 15a
+/// had to land first.
+///
+/// Interfaces that carried nothing over the window are left out rather than
+/// drawn flat: eight idle lines on the zero row is eight names stacked on one
+/// cell, and a legend nobody can read is worse than a shorter one.
+fn mirror_chart(n: &Net, cx: &RenderCx<'_>, width: u16) -> View {
+    let buckets = usize::from(width.max(2));
+    let span = Duration::from_nanos(cx.now.0)
+        .min(CHART_SPAN)
+        .max(Duration::from_secs(1));
+    let mut buf: Vec<Option<f64>> = Vec::new();
+    let mut per_iface: Vec<Charted> = Vec::new();
+    for i in &n.model().ifaces {
+        let name: std::sync::Arc<str> = std::sync::Arc::from(i.name.as_str());
+        let mut peak = 0.0f64;
+        let take = |key: &gridwatch_store::Key<f64>, sign: f64, buf: &mut Vec<Option<f64>>| {
+            cx.store
+                .resample(&key.named(&name), span, buckets, Agg::Max, buf);
+            buf.iter()
+                .enumerate()
+                .filter_map(|(x, v)| v.map(|v| (x as f64, sign * v.max(0.0))))
+                .collect::<Vec<_>>()
+        };
+        let rx = take(&net::RX_BPS, 1.0, &mut buf);
+        let tx = take(&net::TX_BPS, -1.0, &mut buf);
+        for (_, v) in rx.iter().chain(&tx) {
+            peak = peak.max(v.abs());
+        }
+        if peak > 0.0 {
+            per_iface.push(Charted {
+                peak,
+                name: i.name.clone(),
+                rx,
+                tx,
+            });
+        }
+    }
+    if per_iface.is_empty() {
+        return View::Text(vec![vec![Span::new(
+            Role::TextGhost,
+            "rx/tx: nothing has moved in this window",
+        )]]);
+    }
+    per_iface.sort_by(|a, b| b.peak.total_cmp(&a.peak));
+    per_iface.truncate(CHART_IFACES);
+    let m = per_iface.iter().fold(0.0f64, |a, p| a.max(p.peak));
+    let mut series = Vec::with_capacity(per_iface.len() * 2);
+    for c in per_iface {
+        series.push(Series {
+            label: Cow::Owned(format!("↓{}", c.name)),
+            gradient: GradientId::NetRx,
+            data: c.rx,
+        });
+        series.push(Series {
+            label: Cow::Owned(format!("↑{}", c.name)),
+            gradient: GradientId::NetTx,
+            data: c.tx,
+        });
+    }
+    View::Chart {
+        series,
+        bounds: Bounds {
+            x: (0.0, (buckets.saturating_sub(1)).max(1) as f64),
+            y: (-m, m),
+        },
+        marker: MarkerHint::Braille,
+    }
+}
+
 /// The footer: what the filter hides, and how to see it.
 fn footer(n: &Net) -> Line {
     let mut line: Line = vec![Span::new(
@@ -404,22 +505,67 @@ fn footer(n: &Net) -> Line {
     line
 }
 
+/// The shortest band worth charting: four rows, which is where the renderer
+/// starts drawing the midpoint gridline (D65 §4) — and that line **is** this
+/// chart's zero. A three-row mirrored chart is two lines with nothing to say
+/// which side of zero they are on, so the tier draws the connections instead.
+const CHART_MIN_ROWS: u16 = 4;
+
 fn table_tier(n: &Net, cx: &RenderCx<'_>, with_conns: bool) -> View {
-    // The iface table takes two fifths of the body at `table`, a fifth
-    // once the connection table is under it; minus the header row.
-    let body = usize::from(cx.inner.height);
-    let share = if with_conns { body / 5 } else { body * 2 / 5 };
-    let mut children = vec![(
-        Constraint::Fill(2),
-        iface_table(n, cx, share.saturating_sub(1)),
-    )];
-    if let Some(p) = probe_line(n) {
-        children.push((Constraint::Len(1), View::Text(vec![p])));
+    let body = cx.inner.height;
+    // **The interface band is the rows it has**, capped at two fifths of the
+    // body — not `Fill` (§4.6, D65 §5). A workstation has three interfaces by
+    // default and nine with `a`, and can never use sixteen rows; `Fill`
+    // belongs to whichever child can use every cell it is given, which here
+    // is the chart.
+    let iface_rows = u16::try_from(n.model().ifaces.len() + 1).unwrap_or(u16::MAX);
+    let iface_h = iface_rows.min((body * 2 / 5).max(2));
+    let probe = probe_line(n);
+    // The constraints first, then the split they produce, so **each table's
+    // scroll viewport is the band it was actually given** rather than the
+    // tile's inner height. The renderer computes the same split from the same
+    // function, so the two cannot disagree.
+    let build = |with_chart: bool| -> Vec<Constraint> {
+        let mut cs: Vec<Constraint> = vec![Constraint::Len(iface_h)];
+        if probe.is_some() {
+            cs.push(Constraint::Len(1));
+        }
+        if with_chart {
+            cs.push(Constraint::Fill(1));
+        }
+        if with_conns {
+            cs.push(Constraint::Fill(3));
+        }
+        cs.push(Constraint::Len(1));
+        cs
+    };
+    // Whether the chart fits is decided by the band it would actually get,
+    // not by a threshold on the tile: at the `conns` tier it shares the
+    // remainder with the connection table one part to three.
+    let chart_at = usize::from(probe.is_some()) + 1;
+    let cs = build(true);
+    let with_chart = gridwatch_ui::layout::split(&cs, body)[chart_at] >= CHART_MIN_ROWS;
+    let cs = if with_chart { cs } else { build(false) };
+    let bands = gridwatch_ui::layout::split(&cs, body);
+    let mut children: Vec<(Constraint, View)> = Vec::with_capacity(cs.len());
+    let mut at = 0usize;
+    let push = |v: View, children: &mut Vec<(Constraint, View)>, at: &mut usize| {
+        children.push((cs[*at], v));
+        *at += 1;
+    };
+    let iface_body = usize::from(bands[0].saturating_sub(1));
+    push(iface_table(n, cx, iface_body), &mut children, &mut at);
+    if let Some(p) = probe {
+        push(View::Text(vec![p]), &mut children, &mut at);
+    }
+    if with_chart {
+        push(mirror_chart(n, cx, cx.inner.width), &mut children, &mut at);
     }
     if with_conns {
-        children.push((Constraint::Fill(3), conn_table(n, cx)));
+        let conn_body = usize::from(bands[at].saturating_sub(1));
+        push(conn_table(n, cx, conn_body), &mut children, &mut at);
     }
-    children.push((Constraint::Len(1), View::Text(vec![footer(n)])));
+    push(View::Text(vec![footer(n)]), &mut children, &mut at);
     View::Stack {
         dir: Dir::V,
         children,
@@ -538,7 +684,10 @@ fn full(n: &Net, cx: &RenderCx<'_>) -> View {
                 Constraint::Len(u16::try_from(probe_rows.len()).unwrap_or(0)),
                 View::Text(probe_rows),
             ),
-            (Constraint::Fill(1), conn_table(n, cx)),
+            (
+                Constraint::Fill(1),
+                conn_table(n, cx, usize::from(cx.inner.height) / 3),
+            ),
             (Constraint::Len(1), View::Text(vec![footer(n)])),
         ],
     }
