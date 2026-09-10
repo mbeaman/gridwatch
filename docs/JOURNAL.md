@@ -26,7 +26,7 @@
 
 D65 §9 says the cell fraction is a collapse guard and never a proof. This arc proved it twice.
 
-**The sensors tile's *column* coverage at 250×70 is 0.285 before the fix and 0.285 after.** The same number of columns carried ink; they were simply eighty-seven cells apart. The instrument that was supposed to find wide-terminal emptiness was blind to the worst instance of it.
+**The sensors tile's *column* coverage at 480×135 is 1.000 before the fix and 1.000 after.** Every column carried ink either way — they were simply eighty-seven cells apart, with a temperature at column 104 and the sensor it belongs to at column 17. The instrument that was supposed to find wide-terminal emptiness reported a perfect score on the worst instance of it. *(This entry first made the same point with the 250×70 numbers and got them wrong: there the column coverage did move, 0.285 → 0.870. The arc's review caught it against the arc's own recorded table, and the corrected claim is the stronger one — a metric reading 1.000 while the tile is broken is worse than one reading 0.285.)*
 
 **The gpu tile's row coverage fell**, 0.554 → 0.415, in the same change that raised its cells 0.131 → 0.183: sixteen rows of spec down the right-hand edge became two rows under a chart that gained 24 columns. Its row floor comes down with a sentence saying why. A floor that is re-fitted upward every arc measures nothing; one that moves *down* with a written reason is at least honest.
 
