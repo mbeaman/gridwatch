@@ -400,7 +400,7 @@ source reports `Unavailable` and costs 0.1 wake-ups/s instead of 2).
 |---|---|---|---|
 | **P23** (new) | pass ≤ 1 ms, ≤ 0.2 % of a core at 1 s | **0.28–0.35 ms** steady state (`disk.scan_ms`, release, torch's 64-line/4 205-byte file) → **0.032 %** of one core at 1 s. The **first** pass is **6.5–7.0 ms**: it classifies all 64 diskstats names through sysfs, once, and never again — a device is classified on first sight and forgotten when it leaves diskstats, so a second pass 200 ms later costs the steady-state figure. Ceiling for comparison: the Python upper bound in the brief was 69.5 µs to read *and* parse, so the Rust pass is dominated by neither | ✓ |
 | P5 | ≤ 40 wake-ups/s | **34.0 /s** live at 250×70 with the shipped Overview, the disk tile visible and a **silent** sink — the row's own condition. `gw-sensors` 13.5 · render 4.0 · `gw-watch` 4.0 · `gw-gpu` 3.2 · `gw-mpris` 2.2 · **`gw-audio` 2.0** · `gw-cpu` 2.0 · `gw-net-probe` 1.5 · `gw-net` 1.0 · **`gw-disk` 0.50** · `gw-pins` 0.1. The whole disk tile costs half a wake-up a second | ✓ |
-| P1 / P2 | ≤ 2 % silent · ≤ 6 % with the visualizer | **2.57 %** of one core. The shipped Overview carries the `viz` tile, so the audio DSP is live at 30 fps and this is **P2's** row, not P1's | ✓ against P2 |
+| P1 / P2 | ≤ 2 % silent · ≤ 6 % with the visualizer | **2.57 %** of one core — but **which ceiling applies is unresolved**, so this row is not signed off. It was justified as P2's on the grounds that "the shipped Overview carries the `viz` tile, so the audio DSP is live at 30 fps", and the P5 note below retracts exactly that claim: what raises the DSP is *sound*, not visibility. Under the silent sink this section declares, the applicable ceiling is **P1's ≤ 2 %** and 2.57 % would be over it. The likeliest history is that this number came from the same sound-playing pass that produced the retracted 69.6 /s and was never re-taken | **owed** — re-take under a confirmed-silent sink |
 | P6 | ≤ 25 kB/s | **10.6 kB/s** (Δ`wchar` over 60 s, the stats log's own 13 kB subtracted; the recorded typescript agrees at ≈ 12 kB/s including startup) | ✓ — but the HUD cross-check disagrees, below |
 | P8 | ≈ 2 frames/s on the Overview, every frame caused | **2.10 /s**; 126 data-caused redraws, 0 animated, 0 heartbeat over the window | ✓ |
 | P19 | p95 ≤ 8 ms, mean ≤ 3 ms | p50 **1.63 ms**, p95 **2.04 ms** | ✓ |
@@ -415,9 +415,7 @@ source reports `Unavailable` and costs 0.1 wake-ups/s instead of 2).
 
 *Method, so this is reproducible: release binary under a `script` pty at 250×70, `XDG_CONFIG_HOME` pointing at the shipped default plus `[sources.pins] source = "exporter"` (an agent must not open `/dev/i2c-*`), Σ Δ`voluntary_ctxt_switches` over `/proc/<pid>/task/*/status` across a 10 s window starting 10 s after launch. Resolve the pid with `pgrep -x gridwatch` — `pgrep -f` matches the `script` wrapper, which is how an earlier pass in this project reported a wrapper's RSS as the program's.*
 
-Neither is arc 14's to fix, and neither is fixed here. The row is recorded as
-**over** with the disk source's contribution isolated, so the next session
-starts from a number rather than from a suspicion.
+Neither is arc 14's to fix, and neither is fixed here.
 
 **The P6 HUD cross-check disagrees by 2×** — Δ`wchar` 10.6 kB/s against the
 stats log's own `bytes` counter at 4.9 kB/s over the same window, where P6
