@@ -106,6 +106,23 @@ fn columns_drop_in_gridwatch_order() {
     assert_eq!(ids(&tiny), ["pid", "gpu", "gpu_mem", "command"]);
 }
 
+/// `columns` is the user's order and `Command` is the one elastic column, so
+/// it is moved to the end rather than appended only when absent — an elastic
+/// column that is not last takes the spare before the numbers beside it
+/// (§4.6, D65 §1/§2).
+#[test]
+fn command_is_last_whatever_order_the_user_wrote() {
+    let ids = |cols: &[Col]| cols.iter().map(|c| c.id()).collect::<Vec<_>>();
+    let reordered: Vec<Col> = ["command", "pid", "gpu", "gpu_mem", "cpu"]
+        .iter()
+        .map(|c| Col::from_id(c).unwrap())
+        .collect();
+    assert_eq!(
+        ids(&fit_columns(&reordered, 120, 12, 8, 1)),
+        ["pid", "gpu", "gpu_mem", "cpu", "command"]
+    );
+}
+
 fn procs_store(rows: Vec<GpuProcRow>, table: Option<ProcTable>, at: u64) -> Store {
     let mut store = Store::default();
     store.apply(&Msg::Batch(Batch {

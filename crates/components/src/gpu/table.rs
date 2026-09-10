@@ -251,6 +251,11 @@ pub fn default_dir(col: Col) -> bool {
 /// Which columns survive at `width`: the enabled set in nvtop's order, `DEV`
 /// only with several devices, minus the drop order's head until `Command`
 /// keeps `command_min` cells.
+///
+/// `enabled` is the **user's** `columns` order, so `Command` is moved to the
+/// end unconditionally rather than only appended when absent: it is the one
+/// elastic column, and §4.6's text rule (D65 §1) puts the free-text column
+/// last with everything a reader lines a row up against to its left.
 pub fn fit_columns(
     enabled: &[Col],
     width: u16,
@@ -261,11 +266,9 @@ pub fn fit_columns(
     let mut cols: Vec<Col> = enabled
         .iter()
         .copied()
-        .filter(|c| *c != Col::Dev || devices > 1)
+        .filter(|c| *c != Col::Command && (*c != Col::Dev || devices > 1))
         .collect();
-    if !cols.contains(&Col::Command) {
-        cols.push(Col::Command);
-    }
+    cols.push(Col::Command);
     let fixed = |cols: &[Col]| -> u16 {
         cols.iter().map(|c| c.width(user_w)).sum::<u16>() + cols.len().saturating_sub(1) as u16
     };

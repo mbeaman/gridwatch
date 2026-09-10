@@ -204,6 +204,13 @@ pub fn default_dir(col: Col) -> bool {
 
 /// Which columns survive at `width`: the enabled set in htop's order, minus
 /// the drop order's head until `Command` keeps `command_min` cells.
+///
+/// `enabled` is the **user's** `columns` order, so `columns = ["Command",
+/// "PID"]` used to put the one elastic column first and leave the drop order
+/// drawing into a column that had already taken the spare (§4.6, D65 §1/§2:
+/// the elastic column is last and holds the tier's free text). `Command` is
+/// therefore moved to the end unconditionally, not merely appended when it is
+/// absent.
 pub fn fit_columns(
     enabled: &[Col],
     width: u16,
@@ -211,10 +218,12 @@ pub fn fit_columns(
     pid_digits: u8,
     cpu_w: u16,
 ) -> Vec<Col> {
-    let mut cols: Vec<Col> = enabled.to_vec();
-    if !cols.contains(&Col::Command) {
-        cols.push(Col::Command);
-    }
+    let mut cols: Vec<Col> = enabled
+        .iter()
+        .copied()
+        .filter(|c| *c != Col::Command)
+        .collect();
+    cols.push(Col::Command);
     let fixed = |cols: &[Col]| -> u16 {
         cols.iter().map(|c| c.width(pid_digits, cpu_w)).sum::<u16>()
             + cols.len().saturating_sub(1) as u16

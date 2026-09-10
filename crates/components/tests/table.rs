@@ -140,6 +140,34 @@ fn columns_drop_in_gridwatch_order() {
     assert_eq!(names(&fit_columns(&default, 10, 20, 7, 4)), ["Command"]);
 }
 
+/// `columns` is the **user's** order, so it can put the one elastic column
+/// first — and an elastic column that is not last takes the spare before the
+/// columns a reader lines a row up against (§4.6, D65 §1/§2). `Command` moves
+/// to the end whatever order it arrives in.
+#[test]
+fn command_is_last_whatever_order_the_user_wrote() {
+    let names = |cols: &[Col]| cols.iter().map(|c| c.title()).collect::<Vec<_>>();
+    let reordered: Vec<Col> = ["command", "pid", "res", "state", "cpu", "mem"]
+        .iter()
+        .map(|c| Col::from_id(c).unwrap())
+        .collect();
+    assert_eq!(
+        names(&fit_columns(&reordered, 80, 20, 7, 4)),
+        ["PID", "RES", "S", "CPU%", "MEM%", "Command"]
+    );
+    // In the middle, too — and the drop order still runs on the rest.
+    let middle: Vec<Col> = [
+        "pid", "command", "res", "shr", "state", "cpu", "mem", "time",
+    ]
+    .iter()
+    .map(|c| Col::from_id(c).unwrap())
+    .collect();
+    assert_eq!(
+        names(&fit_columns(&middle, 56, 20, 7, 6)),
+        ["PID", "RES", "S", "CPU%", "MEM%", "Command"]
+    );
+}
+
 fn rendered(store: &Store, size: Size, zoomed: bool) -> String {
     let mut h: Box<dyn Component> = Box::new(Htop::default());
     let (_, buf) = render_component(h.as_mut(), store, &theme("modern"), size, zoomed);
