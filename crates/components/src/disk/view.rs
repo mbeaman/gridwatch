@@ -84,7 +84,13 @@ impl Col {
 
     fn spec(self) -> Column {
         let (w, right) = match self {
-            Col::Device => (ColWidth::Fixed(9), false),
+            // 11, not 9: the cell is a status dot plus a space before the
+            // name, and a partition name is two characters longer than its
+            // drive's (`nvme0n1p1` against `nvme0n1`). At 9 every partition
+            // clipped back to exactly its parent's name and the MODEL column
+            // repeated the parent's model, so `partitions = true` drew twelve
+            // rows with three distinct names (arc 14 review).
+            Col::Device => (ColWidth::Fixed(11), false),
             Col::Read | Col::Write => (ColWidth::Fixed(7), true),
             Col::Busy => (ColWidth::Fixed(5), true),
             Col::Temp => (ColWidth::Fixed(4), true),
