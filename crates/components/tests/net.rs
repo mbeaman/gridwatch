@@ -467,3 +467,52 @@ fn the_interface_band_is_the_rows_it_has() {
         ifaces + 1
     );
 }
+
+/// The zoom-only `full` tier is the connection browser, so its `Fill` band is
+/// most of the body while the panes above it are fixed — and it was the one
+/// connection table arc 15 left computing its viewport from a guessed fraction
+/// of the tile's height. D65 §5 says **both** viewports come from the band the
+/// table was given; this is the second one.
+#[test]
+fn the_full_tier_fills_its_connection_band() {
+    let th = theme("modern");
+    let store = store_with_conns(60);
+    let mut c = tile();
+    let caps = gridwatch_store::CapSet::default();
+    let size = Size::new(248, 66);
+    tick(&mut c, &store, 4);
+    let (tier, _) = render_component(&mut c, &store, &th, size, true);
+    assert_eq!(c.tiers()[tier].name, "full");
+    // At the *end* of the list, where an undersized viewport shows: a body of
+    // 22 against a 53-row band scrolls to row 38 of 60, the renderer draws 52
+    // rows from there, and thirty of them are blank.
+    let cx = InputCx {
+        store: &store,
+        inner: Rect {
+            x: 0,
+            y: 0,
+            width: size.w,
+            height: size.h,
+        },
+        caps: &caps,
+        readonly: false,
+        zoomed: true,
+        tier: 4,
+    };
+    for _ in 0..59 {
+        c.on_key(
+            KeyEvent {
+                code: KeyCode::Down,
+                mods: Mods::NONE,
+            },
+            &cx,
+        );
+    }
+    let (_, buf) = render_component(&mut c, &store, &th, size, true);
+    let text = plain_text(&buf);
+    let drawn = text.lines().filter(|l| l.contains("10.0.0.1:")).count();
+    assert!(
+        drawn >= 40,
+        "the connection band drew {drawn} of the 60 rows it has room for:\n{text}"
+    );
+}

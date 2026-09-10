@@ -668,27 +668,33 @@ fn full(n: &Net, cx: &RenderCx<'_>) -> View {
     }
     let ifaces = u16::try_from(n.model().ifaces.len() + 1).unwrap_or(u16::MAX);
     let detail = detail_lines(n);
+    // **Both** viewports come from the band each table was given (§4.6, D65
+    // §5), and this is the tier where it matters most: `full` is the zoomed
+    // connection browser, so its `Fill` band is most of the body while the
+    // panes above it are fixed. A guessed fraction of the tile's height told
+    // the table it had a third of the rows it does, and the scroll it derived
+    // then left thirty blank rows under the last page.
+    let cs = [
+        Constraint::Len(ifaces.min(cx.inner.height)),
+        Constraint::Len(3),
+        Constraint::Len(u16::try_from(detail.len()).unwrap_or(0)),
+        Constraint::Len(u16::try_from(probe_rows.len()).unwrap_or(0)),
+        Constraint::Fill(1),
+        Constraint::Len(1),
+    ];
+    let bands = gridwatch_ui::layout::split(&cs, cx.inner.height);
     View::Stack {
         dir: Dir::V,
         children: vec![
+            (cs[0], iface_table(n, cx, n.model().ifaces.len())),
+            (cs[1], View::Text(route_lines(n))),
+            (cs[2], View::Text(detail)),
+            (cs[3], View::Text(probe_rows)),
             (
-                Constraint::Len(ifaces.min(cx.inner.height)),
-                iface_table(n, cx, n.model().ifaces.len()),
+                cs[4],
+                conn_table(n, cx, usize::from(bands[4].saturating_sub(1))),
             ),
-            (Constraint::Len(3), View::Text(route_lines(n))),
-            (
-                Constraint::Len(u16::try_from(detail.len()).unwrap_or(0)),
-                View::Text(detail),
-            ),
-            (
-                Constraint::Len(u16::try_from(probe_rows.len()).unwrap_or(0)),
-                View::Text(probe_rows),
-            ),
-            (
-                Constraint::Fill(1),
-                conn_table(n, cx, usize::from(cx.inner.height) / 3),
-            ),
-            (Constraint::Len(1), View::Text(vec![footer(n)])),
+            (cs[5], View::Text(vec![footer(n)])),
         ],
     }
 }

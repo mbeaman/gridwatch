@@ -2053,49 +2053,59 @@ fn a_very_wide_terminal_draws_the_bars_and_the_whole_spec_strip() {
     // A sensors bar sits on the row it pictures, so the row reads
     // `… 63 %━━━━━───── 63 %`: the sort key in the `of lim` column, the bar,
     // and the same number again at the far end of it. The typescript is a
-    // cursor-addressed diff stream and has no terminal rows in it, so the
-    // assertion walks the characters rather than the lines.
-    let bars: Vec<(String, String)> = screen
-        .match_indices('%')
-        .filter_map(|(i, _)| {
-            let rest = &screen[i + 1..];
-            let fill: String = rest
-                .chars()
-                .take_while(|c| matches!(c, '━' | '─' | '█' | '░' | '▓'))
-                .collect();
-            if fill.chars().count() < 8 {
-                return None;
-            }
-            let before: String = screen[..i]
-                .chars()
-                .rev()
-                .take_while(|c| c.is_ascii_digit() || *c == ' ')
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
-            let tail = &rest[fill.len()..];
-            let after: String = tail
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == ' ')
-                .collect();
-            // The number at the end of the bar is only that if a `%` closes
-            // it: the stream runs on into the next tile with no row break.
-            tail[after.len()..]
-                .starts_with('%')
-                .then(|| (before.trim().to_string(), after.trim().to_string()))
-        })
-        .collect();
+    // cursor-addressed diff stream and has no terminal rows in it, so this
+    // walks the characters rather than the lines — and it is polled rather
+    // than asserted once, because a *torn* frame (the tile half redrawn when
+    // the file was read) pairs a new percentage with an old one and says
+    // nothing about the layout.
+    let bars = |screen: &str| -> Vec<(String, String)> {
+        screen
+            .match_indices('%')
+            .filter_map(|(i, _)| {
+                let rest = &screen[i + 1..];
+                let fill: String = rest
+                    .chars()
+                    .take_while(|c| matches!(c, '━' | '─' | '█' | '░' | '▓'))
+                    .collect();
+                if fill.chars().count() < 8 {
+                    return None;
+                }
+                let before: String = screen[..i]
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_digit() || *c == ' ')
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                let tail = &rest[fill.len()..];
+                let after: String = tail
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == ' ')
+                    .collect();
+                // The number at the end of the bar is only that if a `%`
+                // closes it: the stream runs on into the next tile with no
+                // row break.
+                tail[after.len()..]
+                    .starts_with('%')
+                    .then(|| (before.trim().to_string(), after.trim().to_string()))
+            })
+            .collect()
+    };
+    // Counted, not "all": `screen()` is the whole typescript rather than a
+    // screen state, so once the tile redraws it also holds *fragments* of
+    // earlier frames, and a fresh `of lim` cell can sit next to a stale
+    // number at the end of a bar the diff did not rewrite. Four bars each
+    // carrying their own row's percentage is the layout question; the rest of
+    // the stream is history.
+    let seen = s.wait_for(Duration::from_secs(6), |t| {
+        bars(t).iter().filter(|(a, z)| a == z).count() >= 4
+    });
     assert!(
-        bars.len() >= 4,
-        "fewer than four sensor bars in: {screen:?}"
+        seen.is_some(),
+        "fewer than four sensor bars belong to the row they are drawn on: {:?}",
+        bars(&s.screen())
     );
-    for (of_lim, at_the_end) in &bars {
-        assert_eq!(
-            of_lim, at_the_end,
-            "a bar does not belong to the row it is drawn on: {bars:?}"
-        );
-    }
     // And the net tile's mirrored chart, whose zero line is the renderer's
     // midpoint gridline (D65 §5): the rx half names its interface. It needs a
     // second tick — the first frame has one sample and no traffic yet.

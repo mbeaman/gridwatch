@@ -38,6 +38,24 @@ D65 §9 says the cell fraction is a collapse guard and never a proof. This arc p
 
 **Trap 5 was wrong in our favour.** The brief predicted the mirrored chart would fail the growth sweep's height axis as `gpu` `charts` does. It does not — 1.54× — because that band absorbs every row the tier's constant text leaves. Both axes are asserted. Both are close to the bar (width 1.50×) and the comment says so, because the tier is mostly content-sized text plus one chart and only the chart grows.
 
+### The same bug twice more, in the two tiers nobody looks at
+
+The pre-report review found that **both** `full` tiers still guessed their
+viewports after the arc had just finished fixing exactly that on the grid
+tiers. `net`'s zoom-only connection browser — the one tier where the `Fill`
+band is most of the body — was told it had `inner.height / 3` rows: at 248×66
+that is 22 against a 53-row band, so at the end of a sixty-row list it drew
+**22 rows and thirty blank ones**, measured. And `sensors`' `full` passed
+`temps.len()` as its body, which makes the scroll arithmetic collapse to a
+constant zero: the cursor simply walks off the bottom of any rect shorter than
+the reading list, which torch's eight readings hide and forty do not. Both are
+fixed and both have a test that was watched to fail against the old code before
+it was trusted.
+
+The lesson is narrow and worth keeping: **when a rule is applied to "every X",
+grep for X rather than for the ones the brief listed.** D65 §5 says "both
+scroll viewports", the brief named the `conns` tier's two, and there were four.
+
 ### The measurement that would have been a lie
 
 The first P19 "before" run, taken on this tree straight after a release build, read 753.8 µs / 1.4596 ms — 43 % over the arc-12 numbers, for reasons that have nothing to do with any code. The after-run read 549 µs / 1.088 ms, and comparing the two would have let this arc claim a **26 % speed-up** from a change that only adds drawing. The honest number came from checking out `75aa940` in a scratch worktree and benching it minutes before: **521.9 → 549.5 µs and 1.0400 → 1.0876 ms, +5 %.** Arc 14 lost two hours to a stale release binary and wrote down "any measurement of a component must first prove the component drew"; the sibling rule is that a before-number taken at a different time is not a before-number.

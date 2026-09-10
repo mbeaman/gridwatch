@@ -584,18 +584,28 @@ fn full(s: &Sensors, cx: &RenderCx<'_>) -> View {
             "fans / volts / power: no hwmon chip here exports them",
         ));
     }
+    // The band this pane is placed in, so the viewport is the rows the table
+    // is actually given: with `body == rows.len()` the scroll can never leave
+    // zero, and on a rect shorter than the reading list the cursor walks off
+    // the bottom (§4.6, D65 §5).
+    let rows = u16::try_from(m.temps.len().saturating_add(1)).unwrap_or(u16::MAX);
+    let band = rows.min(cx.inner.height);
     let table = if m.temps.is_empty() {
         empty(cx)
     } else {
-        table_view(s, cx, table_rows(&m.temps, true), m.temps.len().max(1))
+        table_view(
+            s,
+            cx,
+            table_rows(&m.temps, true),
+            usize::from(band.saturating_sub(1)).max(1),
+        )
     };
-    let rows = u16::try_from(m.temps.len().saturating_add(1)).unwrap_or(u16::MAX);
     View::Stack {
         dir: Dir::V,
         children: vec![
             // The table takes its rows, not the whole tile: the RAPL, PSI
             // and gpu lines belong under the data (review).
-            (Constraint::Len(rows.min(cx.inner.height)), table),
+            (Constraint::Len(band), table),
             (Constraint::Len(1), View::Text(vec![others])),
             (Constraint::Len(1), View::Text(vec![rapl_line(s)])),
             (Constraint::Len(1), View::Text(vec![psi_line(cx)])),

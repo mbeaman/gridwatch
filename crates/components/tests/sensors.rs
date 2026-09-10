@@ -307,3 +307,67 @@ fn a_narrow_tile_draws_no_bars() {
         assert_eq!(row.matches('%').count(), 1, "a bar at 48 wide:\n{text}");
     }
 }
+
+/// The zoom-only `full` tier placed its table at `Len(readings + 1)` and told
+/// it its body was `readings`, so `scroll` could never leave zero and the
+/// cursor walked off the bottom of any rect shorter than the list. torch's
+/// eight readings hide it; forty do not. (§4.6, D65 §5 — the viewport is the
+/// band the table was given.)
+#[test]
+fn the_full_tier_scrolls_a_long_reading_list() {
+    let th = theme("modern");
+    let readings: Vec<(String, f64, Option<f64>, Option<f64>)> = (0..40)
+        // Coolest last: the table is ranked by closeness to a limit, so
+        // `chip39` is the row furthest below the fold.
+        .map(|i| {
+            (
+                format!("chip{i:02}:t"),
+                79.0 - f64::from(i),
+                Some(100.0),
+                None,
+            )
+        })
+        .collect();
+    let refs: Vec<(&str, f64, Option<f64>, Option<f64>)> = readings
+        .iter()
+        .map(|(k, v, m, c)| (k.as_str(), *v, *m, *c))
+        .collect();
+    let store = store_with(&refs);
+    let caps = gridwatch_store::CapSet::default();
+    let mut c = tile();
+    let size = Size::new(100, 24);
+    tick(&mut c, &store, 4);
+    let (_, buf) = render_component(&mut c, &store, &th, size, true);
+    assert!(
+        !plain_text(&buf).contains("chip39"),
+        "the fixture must not fit"
+    );
+    let cx = InputCx {
+        store: &store,
+        inner: Rect {
+            x: 0,
+            y: 0,
+            width: size.w,
+            height: size.h,
+        },
+        caps: &caps,
+        readonly: false,
+        zoomed: true,
+        tier: 4,
+    };
+    for _ in 0..39 {
+        c.on_key(
+            KeyEvent {
+                code: KeyCode::Down,
+                mods: Mods::NONE,
+            },
+            &cx,
+        );
+    }
+    let (_, buf) = render_component(&mut c, &store, &th, size, true);
+    let text = plain_text(&buf);
+    assert!(
+        text.contains("chip39"),
+        "the selected reading is off screen after 39 downs:\n{text}"
+    );
+}
