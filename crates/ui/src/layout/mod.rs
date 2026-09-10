@@ -4,11 +4,13 @@
 mod edit;
 mod grid;
 mod page;
+mod tree;
 
 pub use edit::{EditError, insert_first_fit, move_by, remove, resize_by, swap};
 // `unit_at`, `unit_rect`, `unit_tracks`, `footprint_cycle` are defined below.
 pub use grid::{BorderMode, GridSpec, thresholds, tracks};
 pub use page::{Page, PlaceTarget, Placement};
+pub use tree::{Leaf, leaves, split, split_rects};
 
 use ratatui_core::layout::Rect;
 

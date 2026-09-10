@@ -205,6 +205,17 @@ impl GlyphSet {
             _ => '░',
         }
     }
+
+    /// The horizontal rule a chart's quarter gridlines are drawn with (D65
+    /// §4): nvtop's 25/50/75 ticks, so the rows between a braille line and
+    /// the floor read as an axis instead of as emptiness. Ghost-styled and
+    /// drawn under the series, so ink always wins the cell.
+    pub fn gridline(&self) -> char {
+        match self.tier {
+            GlyphTier::Ascii => '-',
+            _ => '─',
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -364,6 +364,96 @@ fn sparkline(
     }
 }
 
+/// The cell row a normalised height lands on, mapped exactly the way the
+/// marker plots a point: the braille pass divides its 4-per-cell sub-row by
+/// four, the block pass fills from the floor in eighths, and the dot pass
+/// spreads over `height - 1`. A gridline computed any other way disagrees
+/// with the ink by a row, which is only ever noticed once something rests on
+/// it — the net tile's mirrored chart takes the midpoint line as its zero.
+fn value_row(fy: f64, area: Rect, marker: crate::theme::ChartMarker) -> u16 {
+    use crate::theme::ChartMarker;
+    let h = area.height.max(1);
+    match marker {
+        ChartMarker::Braille => {
+            let h4 = u32::from(h) * 4;
+            let dy = ((1.0 - fy) * f64::from(h4 - 1)).round().max(0.0) as u32;
+            area.y + u16::try_from(dy / 4).unwrap_or(0).min(h - 1)
+        }
+        ChartMarker::Block => {
+            let total8 = (fy * f64::from(h) * 8.0).round().max(0.0) as u32;
+            let row = u16::try_from(total8.saturating_sub(1) / 8).unwrap_or(0);
+            area.y + h - 1 - row.min(h - 1)
+        }
+        ChartMarker::Dot => {
+            let up = (fy * f64::from(h - 1)).round().max(0.0) as u32;
+            area.y + h - 1 - u16::try_from(up).unwrap_or(0).min(h - 1)
+        }
+    }
+}
+
+/// The quarters of `bounds.y` as horizontal rules, height-gated: eight rows
+/// or more get 25/50/75, four get the midpoint alone, and a shorter band gets
+/// none — four rules in a four-row band is a box of dashes, not an axis.
+fn gridlines(area: Rect, marker: crate::theme::ChartMarker, theme: &Theme, buf: &mut Buffer) {
+    let fracs: &[f64] = if area.height >= 8 {
+        &[0.25, 0.5, 0.75]
+    } else if area.height >= 4 {
+        &[0.5]
+    } else {
+        &[]
+    };
+    let style = theme.style(Role::TextGhost);
+    let glyph = theme.glyphs.gridline().to_string();
+    for f in fracs {
+        let y = value_row(*f, area, marker);
+        for x in area.x..area.x + area.width {
+            buf.set_string(x, y, &glyph, style);
+        }
+    }
+}
+
+/// Each series' name at its newest point, in that series' gradient sampled at
+/// that point's height (D65 §4). `Series.label` has travelled in every
+/// `View::Chart` since arc 2b and been read by nothing; a legend at the top
+/// of a tall band whose ink sits at the bottom is not an answer, so the name
+/// goes on the line. "Newest" is the last point the component supplied, which
+/// is the only definition the renderer can have — a reversed chart reverses
+/// its own data. Clipped to the rect, and drawn after the series so the name
+/// is never half-eaten by its own line.
+fn series_labels(
+    series: &[crate::view::Series],
+    area: Rect,
+    marker: crate::theme::ChartMarker,
+    norm: impl Fn(&crate::view::Series) -> Vec<(f64, f64)>,
+    theme: &Theme,
+    buf: &mut Buffer,
+) {
+    let right = area.x + area.width;
+    for s in series {
+        if s.label.is_empty() {
+            continue;
+        }
+        let pts = norm(s);
+        let Some((fx, fy)) = pts.last().copied() else {
+            continue;
+        };
+        let x = area.x + (fx * f64::from(area.width.saturating_sub(1))).round() as u16;
+        let y = value_row(fy, area, marker);
+        let w = s.label.as_ref().width() as u16;
+        let start = if x + 1 + w <= right {
+            x + 1
+        } else {
+            right.saturating_sub(w).max(area.x)
+        };
+        let avail = usize::from(right.saturating_sub(start));
+        if avail == 0 {
+            continue;
+        }
+        let colour = theme.gradient(s.gradient).sample(fy as f32);
+        buf.set_stringn(start, y, s.label.as_ref(), avail, Style::new().fg(colour));
+    }
+}
+
 /// `View::Chart` (§4.6, arc 2b): a real line chart. The theme's `chart_marker`
 /// picks the form — braille dots (2×4 per cell) drawing connected segments,
 /// lower-eighth block columns, or one dot per point; the ascii tier always
@@ -404,6 +494,13 @@ fn chart(
             })
             .collect()
     };
+    // The axis, before any series (D65 §4). `PARITY.md` recorded nvtop's
+    // "fixed 0-100 % axis" as *in* while gridwatch drew only its range; these
+    // are the ticks. Under the series on purpose — the braille mask is
+    // written afterwards, so ink wins a contested cell and a gridline hidden
+    // by the line it belongs to is correct. Unlabelled: `Bounds` carries no
+    // unit, and giving it one is a §4.6 change.
+    gridlines(area, marker, theme, buf);
     match marker {
         ChartMarker::Braille => {
             let w = usize::from(area.width) * 2;
@@ -534,6 +631,67 @@ fn chart(
             }
         }
     }
+    series_labels(series, area, marker, norm, theme, buf);
+}
+
+/// The width each column *wants*: the widest of its cells over **every** row
+/// and its own title (§4.6, D65 §1). The title is in the maximum because the
+/// header is printed into the column's own width — a column capped below its
+/// title would lose the name of what is under it.
+///
+/// Measured over every row and never the visible page: a column that changes
+/// width as you scroll is worse than one that stretches (D65 trap 7).
+pub fn table_natural_widths(columns: &[crate::view::Column], rows: &[Vec<Line>]) -> Vec<u16> {
+    columns
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let widest = rows
+                .iter()
+                .filter_map(|r| r.get(i))
+                .map(|cell| cell.iter().map(|s| s.text.as_ref().width()).sum::<usize>())
+                .max()
+                .unwrap_or(0);
+            u16::try_from(widest.max(c.title.as_ref().width())).unwrap_or(u16::MAX)
+        })
+        .collect()
+}
+
+/// The width each column is actually **drawn** at inside `width`: the fixed
+/// widths as declared, then the spare shared between every elastic column
+/// (D57 amendment 19) and each capped at its natural width (D65 §3). The
+/// leftover is neither redistributed nor drawn, so a table ends where its
+/// content ends. Below the content width the cap never binds and the result
+/// is byte-identical to the share alone.
+pub fn table_widths(columns: &[crate::view::Column], rows: &[Vec<Line>], width: u16) -> Vec<u16> {
+    let mut widths: Vec<u16> = columns
+        .iter()
+        .map(|c| match c.width {
+            ColWidth::Fixed(w) => w,
+            ColWidth::Elastic => 0,
+        })
+        .collect();
+    let fixed: u16 = widths.iter().sum::<u16>() + columns.len().saturating_sub(1) as u16;
+    let spare = width.saturating_sub(fixed);
+    let elastic: Vec<usize> = columns
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.width == ColWidth::Elastic)
+        .map(|(i, _)| i)
+        .collect();
+    if !elastic.is_empty() {
+        let each = spare / elastic.len() as u16;
+        for &i in &elastic {
+            widths[i] = each;
+        }
+        // The remainder goes to the last, so the row still fills the rect.
+        widths[*elastic.last().expect("non-empty")] += spare % elastic.len() as u16;
+        let natural = table_natural_widths(columns, rows);
+        for &i in &elastic {
+            widths[i] = widths[i].min(natural[i]);
+        }
+    }
+    widths
 }
 
 #[allow(clippy::too_many_arguments)] // internal helper mirroring View::Table's fields
@@ -555,31 +713,11 @@ fn table(
     // it all to the last left an earlier elastic at zero, which this
     // function then skipped entirely — the net tile's connection table
     // drew its remote address under a `local` header and nobody could see
-    // the local one (arc 7a review, D57 amendment 19). A table with one
-    // elastic renders byte-identically to before.
-    let mut widths: Vec<u16> = columns
-        .iter()
-        .map(|c| match c.width {
-            ColWidth::Fixed(w) => w,
-            ColWidth::Elastic => 0,
-        })
-        .collect();
-    let fixed: u16 = widths.iter().sum::<u16>() + columns.len().saturating_sub(1) as u16;
-    let spare = area.width.saturating_sub(fixed);
-    let elastic: Vec<usize> = columns
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| c.width == ColWidth::Elastic)
-        .map(|(i, _)| i)
-        .collect();
-    if !elastic.is_empty() {
-        let each = spare / elastic.len() as u16;
-        for &i in &elastic {
-            widths[i] = each;
-        }
-        // The remainder goes to the last, so the row still fills the rect.
-        widths[*elastic.last().expect("non-empty")] += spare % elastic.len() as u16;
-    }
+    // the local one (arc 7a review, D57 amendment 19). Each elastic column
+    // is then capped at the widest cell it holds (D65 §3), so a table ends
+    // where its content ends instead of pushing its numbers eighty-seven
+    // cells away from the row they belong to.
+    let widths = table_widths(columns, rows, area.width);
     // Header.
     let header_style = match theme.widgets.table_header {
         HeaderStyle::Reverse => theme.style(Role::Text).add_modifier(Modifier::REVERSED),
@@ -678,57 +816,18 @@ fn big_number(t: &str, role: Role, area: Rect, theme: &Theme, buf: &mut Buffer) 
 }
 
 fn stack(dir: Dir, children: &[(Constraint, View)], area: Rect, theme: &Theme, buf: &mut Buffer) {
-    let total = if dir == Dir::V {
-        area.height
-    } else {
-        area.width
-    };
-    // First pass: fixed sizes; Fill shares the remainder by weight.
-    let mut sizes = vec![0u16; children.len()];
-    let mut used = 0u16;
-    let mut fill_weight = 0u16;
-    for (i, (c, _)) in children.iter().enumerate() {
-        match c {
-            Constraint::Len(l) | Constraint::Min(l) => {
-                sizes[i] = (*l).min(total.saturating_sub(used));
-                used += sizes[i];
-            }
-            Constraint::Fill(w) => fill_weight += *w.max(&1),
-        }
-    }
-    let mut remaining = total.saturating_sub(used);
-    for (i, (c, _)) in children.iter().enumerate() {
-        if let Constraint::Fill(w) = c {
-            let share = (remaining * w.max(&1))
-                .checked_div(fill_weight)
-                .unwrap_or(0);
-            sizes[i] = share;
-            fill_weight -= w.max(&1);
-            remaining -= share;
-        }
-    }
-    let mut offset = 0u16;
-    for ((_, view), size) in children.iter().zip(sizes) {
-        if size == 0 {
+    // The arithmetic lives in `layout::split_rects`, which is also what
+    // `layout::leaves` walks (D65 §10): one implementation, so the per-leaf
+    // growth oracle cannot measure a rect the renderer never drew into.
+    let constraints: Vec<Constraint> = children.iter().map(|(c, _)| *c).collect();
+    for ((_, view), sub) in children
+        .iter()
+        .zip(crate::layout::split_rects(dir, &constraints, area))
+    {
+        if sub.width == 0 || sub.height == 0 {
             continue;
         }
-        let sub = if dir == Dir::V {
-            Rect {
-                x: area.x,
-                y: area.y + offset,
-                width: area.width,
-                height: size,
-            }
-        } else {
-            Rect {
-                x: area.x + offset,
-                y: area.y,
-                width: size,
-                height: area.height,
-            }
-        };
         DEFAULT_RENDERER.render(view, sub, theme, buf);
-        offset += size;
     }
 }
 
@@ -801,6 +900,270 @@ mod tests {
         assert_eq!(
             draw(&[Some(1.0), Some(1.0), Some(0.5), Some(0.25)], 2, 4),
             vec![2, 1]
+        );
+    }
+}
+
+#[cfg(test)]
+mod table_and_chart_tests {
+    use super::*;
+    use crate::theme::{ColorMode, load_builtin};
+    use crate::view::{Bounds, Column, MarkerHint, Series, Span};
+
+    fn th() -> Theme {
+        load_builtin("modern", ColorMode::TrueColor).expect("built-in theme loads")
+    }
+
+    fn col(title: &'static str, width: ColWidth) -> Column {
+        Column {
+            title: title.into(),
+            width,
+            right: false,
+        }
+    }
+
+    fn cell(t: &'static str) -> Line {
+        vec![Span::new(Role::Text, t)]
+    }
+
+    fn widths(columns: &[Column], rows: &[Vec<Line>], w: u16) -> Vec<u16> {
+        table_widths(columns, rows, w)
+    }
+
+    // ------------------------------------------------ the elastic cap (D65 §3)
+
+    /// A single elastic column stops at the widest cell it holds; the leftover
+    /// is neither redistributed nor drawn, so the table ends at its content.
+    #[test]
+    fn one_elastic_column_ends_at_its_content() {
+        let cols = [
+            col("pid", ColWidth::Fixed(5)),
+            col("cmd", ColWidth::Elastic),
+        ];
+        let rows = vec![
+            vec![cell("1"), cell("bash")],
+            vec![cell("2"), cell("nvtop")],
+        ];
+        assert_eq!(widths(&cols, &rows, 100), vec![5, 5]);
+    }
+
+    /// The invariant that keeps every compliant table byte-identical to `main`:
+    /// below the content width the share is smaller than the cap, so the cap
+    /// never binds and the arithmetic is D57 amendment 19's, untouched.
+    #[test]
+    fn a_table_narrower_than_its_content_is_unchanged() {
+        let cols = [
+            col("pid", ColWidth::Fixed(5)),
+            col("cmd", ColWidth::Elastic),
+        ];
+        let rows = vec![vec![
+            cell("1"),
+            cell("/usr/lib/firefox/firefox -contentproc"),
+        ]];
+        // 20 cells: 5 fixed + 1 separator leaves 14 for the elastic.
+        assert_eq!(widths(&cols, &rows, 20), vec![5, 14]);
+    }
+
+    /// Two elastic columns: each is capped at its own content, and the room
+    /// the short one gives back is *not* handed to the long one — the leftover
+    /// is left empty (D65 §1, "what is still spare is left empty").
+    #[test]
+    fn two_elastic_columns_are_capped_independently() {
+        let cols = [
+            col("local", ColWidth::Elastic),
+            col("remote", ColWidth::Elastic),
+        ];
+        let rows = vec![vec![cell("10.0.0.2:22"), cell("1.1.1.1:443")]];
+        assert_eq!(widths(&cols, &rows, 200), vec![11, 11]);
+    }
+
+    /// One short, one long: the long one still gets no more than its share.
+    #[test]
+    fn a_short_elastic_column_does_not_feed_a_long_one() {
+        let cols = [col("a", ColWidth::Elastic), col("b", ColWidth::Elastic)];
+        let rows = vec![vec![cell("xy"), cell(LONG)]];
+        const LONG: &str = "0123456789012345678901234567890123456789";
+        // 41 cells of rect: one separator, 20 each; `a` caps at 2, `b` keeps 20.
+        assert_eq!(widths(&cols, &rows, 41), vec![2, 20]);
+    }
+
+    /// The header is printed into the column's own width, so a column whose
+    /// cells are shorter than its title keeps the title's width — capping to
+    /// the cells alone would truncate the name of what is under it.
+    #[test]
+    fn a_column_never_caps_below_its_own_title() {
+        let cols = [col("interface", ColWidth::Elastic)];
+        let rows = vec![vec![cell("lo")]];
+        assert_eq!(widths(&cols, &rows, 80), vec![9]);
+        let mut buf = Buffer::empty(Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 2,
+        });
+        let area = *buf.area();
+        table(&cols, &rows, None, None, 0, area, &th(), &mut buf);
+        let head: String = (0..9)
+            .map(|x| buf.cell((x, 0)).expect("a cell").symbol().to_string())
+            .collect();
+        assert_eq!(head, "interface");
+    }
+
+    /// Measured over **every** row, never the visible page: a column that
+    /// changes width as you scroll is worse than one that stretches (D65 trap
+    /// 7). The widest cell here is on a row the rect cannot show.
+    #[test]
+    fn the_cap_measures_rows_below_the_fold() {
+        let cols = [col("cmd", ColWidth::Elastic)];
+        let rows: Vec<Vec<Line>> = (0..40)
+            .map(|i| vec![cell(if i == 39 { "a-very-long-command" } else { "sh" })])
+            .collect();
+        assert_eq!(widths(&cols, &rows, 80), vec![19]);
+    }
+
+    // ------------------------------------------------ chart furniture (D65 §4)
+
+    fn chart_buf(w: u16, h: u16, series: Vec<Series>) -> Buffer {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: w,
+            height: h,
+        };
+        let mut buf = Buffer::empty(area);
+        chart(
+            &series,
+            &Bounds {
+                x: (0.0, 9.0),
+                y: (0.0, 100.0),
+            },
+            MarkerHint::Braille,
+            area,
+            &th(),
+            &mut buf,
+        );
+        buf
+    }
+
+    /// Rows made entirely of the gridline glyph.
+    fn ruled_rows(buf: &Buffer) -> Vec<u16> {
+        let area = *buf.area();
+        (0..area.height)
+            .filter(|y| {
+                (0..area.width).all(|x| buf.cell((x, *y)).is_some_and(|c| c.symbol() == "─"))
+            })
+            .collect()
+    }
+
+    /// Eight rows or more: the quarters of `bounds.y`, 25/50/75.
+    #[test]
+    fn a_tall_chart_carries_three_gridlines() {
+        assert_eq!(ruled_rows(&chart_buf(20, 8, vec![])).len(), 3);
+        assert_eq!(ruled_rows(&chart_buf(20, 40, vec![])).len(), 3);
+    }
+
+    /// Four to seven rows: the midpoint alone.
+    #[test]
+    fn a_short_chart_carries_only_its_midpoint() {
+        for h in 4..8 {
+            assert_eq!(
+                ruled_rows(&chart_buf(20, h, vec![])).len(),
+                1,
+                "a {h}-row band should carry one gridline"
+            );
+        }
+    }
+
+    /// Below four rows: none. Four rules in a four-row band is a box of dashes.
+    #[test]
+    fn a_tiny_chart_carries_no_gridlines() {
+        for h in 1..4 {
+            assert!(ruled_rows(&chart_buf(20, h, vec![])).is_empty());
+        }
+    }
+
+    /// The midpoint line sits where a series at the middle of `bounds.y`
+    /// draws, which is what lets the net tile use it as a zero line.
+    #[test]
+    fn the_midpoint_gridline_is_where_a_midpoint_series_draws() {
+        let mid = Series {
+            label: "".into(),
+            gradient: crate::theme::GradientId::Load,
+            data: (0..10).map(|i| (f64::from(i), 50.0)).collect(),
+        };
+        let ruled = ruled_rows(&chart_buf(20, 8, vec![]));
+        let buf = chart_buf(20, 8, vec![mid]);
+        let area = *buf.area();
+        let inked: Vec<u16> = (0..area.height)
+            .filter(|y| {
+                (0..area.width).any(|x| {
+                    buf.cell((x, *y))
+                        .is_some_and(|c| !c.symbol().trim().is_empty())
+                })
+            })
+            .collect();
+        assert!(
+            inked.contains(&ruled[1]),
+            "the series at the midpoint draws on rows {inked:?}, the midpoint rule is {}",
+            ruled[1]
+        );
+    }
+
+    /// Ink wins a contested cell: the mask is written after the rules, so a
+    /// gridline under a line disappears where the line covers it.
+    #[test]
+    fn a_series_covers_the_gridline_it_crosses() {
+        let flat = Series {
+            label: "".into(),
+            gradient: crate::theme::GradientId::Load,
+            data: (0..10).map(|i| (f64::from(i), 50.0)).collect(),
+        };
+        let buf = chart_buf(20, 8, vec![flat]);
+        let row = ruled_rows(&chart_buf(20, 8, vec![]))[1];
+        let still_ruled = (0..20).all(|x| buf.cell((x, row)).is_some_and(|c| c.symbol() == "─"));
+        assert!(!still_ruled, "the series did not cover its gridline");
+    }
+
+    /// `Series.label` at the series' newest point — carried since arc 2b and
+    /// read by nothing until D65.
+    #[test]
+    fn each_series_is_named_at_its_newest_point() {
+        let s = Series {
+            label: "util".into(),
+            gradient: crate::theme::GradientId::Load,
+            data: (0..10)
+                .map(|i| (f64::from(i), 10.0 * f64::from(i)))
+                .collect(),
+        };
+        let buf = chart_buf(40, 10, vec![s]);
+        let text: String = (0..10)
+            .flat_map(|y| (0..40).map(move |x| (x, y)))
+            .map(|(x, y)| buf.cell((x, y)).expect("a cell").symbol().to_string())
+            .collect();
+        assert!(text.contains("util"), "the series name is not drawn");
+    }
+
+    /// A label that would run past the right edge is pulled back inside it.
+    #[test]
+    fn a_label_at_the_right_edge_is_clipped_inside_the_rect() {
+        let s = Series {
+            label: "a-very-long-series-name".into(),
+            gradient: crate::theme::GradientId::Load,
+            data: (0..10).map(|i| (f64::from(i), 50.0)).collect(),
+        };
+        let buf = chart_buf(30, 8, vec![s]);
+        let area = *buf.area();
+        assert_eq!(area.width, 30);
+        let row: String = (0..30)
+            .map(|x| {
+                buf.cell((x, 4))
+                    .map(|c| c.symbol().to_string())
+                    .unwrap_or_default()
+            })
+            .collect();
+        assert!(
+            row.contains("a-very-long-series-nam") || row.contains("a-very-long-series-name"),
+            "the label was not clipped into the rect: {row:?}"
         );
     }
 }
