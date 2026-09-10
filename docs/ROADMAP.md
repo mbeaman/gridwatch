@@ -217,7 +217,10 @@ the brief and are recorded rather than smoothed over:
    dropped `disk.discard_bps` on a real 4.18–5.4 kernel that has it, and the
    brief's "17-field pre-5.5" fixture is a shape no kernel emits. The core
    needs 14 fields, `discard_bps` needs the whole discard group, and a longer
-   tail is ignored.
+   tail is ignored. **`ARCHITECTURE.md` §8's degrade sentence carried the
+   brief's claim and has been corrected to the three shapes** — a factual
+   correction about kernel history, not a seam change, and one D64 may want
+   to amend.
 2. **`sources/Cargo.toml`'s `default` list does not gain `disk`.** That list
    is `["cpu", "gpu", "pins"]` and has never carried `net` or `sensors`
    either; the three that matter (`components`, `app`, `cli`) all gained it,
