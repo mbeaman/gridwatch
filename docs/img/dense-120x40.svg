@@ -288,7 +288,7 @@
 <text x="720" y="188" fill="#f53d8a" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠭⠭⠭⠭</text>
 <text x="752" y="188" fill="#f24291" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠭</text>
 <text x="760" y="188" fill="#f53d8a" textLength="104" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭</text>
-<text x="864" y="188" fill="#f83783" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠭⠭⠭⠭⠭⠭⠭⠭⠭⠭</text>
+<text x="864" y="188" fill="#f83783" textLength="88" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠭⠭⠭⠭⠭⠭power</text>
 <text x="952" y="188" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="204" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="8" y="204" fill="#8a7fb0" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">PSI cpu </text>
@@ -314,7 +314,7 @@
 <text x="824" y="204" fill="#86c0ff" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤</text>
 <text x="832" y="204" fill="#7fc6ff" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤</text>
 <text x="840" y="204" fill="#86c0ff" textLength="64" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠤⠤⠤⠤⠤⠤⠤</text>
-<text x="904" y="204" fill="#8dbaff" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠒⠢⠤⠒</text>
+<text x="904" y="204" fill="#8dbaff" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠒util</text>
 <text x="952" y="204" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="220" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="8" y="220" fill="#0b0324" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    PID</text>
@@ -553,6 +553,7 @@
 <text x="616" y="396" fill="#b76cff" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
 <text x="632" y="396" fill="#b574ff" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█</text>
 <text x="640" y="396" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
+<text x="648" y="396" fill="#3d2a63" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─</text>
 <text x="656" y="396" fill="#f65483" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
 <text x="664" y="396" fill="#fd3177" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣠</text>
 <text x="672" y="396" fill="#ff3974" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣴</text>
@@ -574,6 +575,7 @@
 <text x="816" y="396" fill="#ff2f74" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣷</text>
 <text x="824" y="396" fill="#f94a7f" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣄</text>
 <text x="832" y="396" fill="#f45c88" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
+<text x="840" y="396" fill="#3d2a63" textLength="112" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────</text>
 <text x="952" y="396" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="412" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="320" y="412" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
@@ -639,9 +641,7 @@
 <text x="856" y="412" fill="#e186a1" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣄</text>
 <text x="864" y="412" fill="#de8ca6" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣄</text>
 <text x="872" y="412" fill="#da92aa" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡀</text>
-<text x="928" y="412" fill="#e186a1" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
-<text x="936" y="412" fill="#e5809d" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣠</text>
-<text x="944" y="412" fill="#eb7395" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣴</text>
+<text x="912" y="412" fill="#ff5274" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">scope</text>
 <text x="952" y="412" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="0" y="428" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
 <text x="320" y="428" fill="#7a3fb5" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">║</text>
@@ -691,6 +691,7 @@
 <text x="696" y="428" fill="#ff7272" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠟</text>
 <text x="704" y="428" fill="#ff7772" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠋</text>
 <text x="712" y="428" fill="#ff7d71" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠉</text>
+<text x="720" y="428" fill="#3d2a63" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────</text>
 <text x="768" y="428" fill="#ff7d71" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈</text>
 <text x="776" y="428" fill="#ff7772" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠙</text>
 <text x="784" y="428" fill="#ff7272" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠙</text>
@@ -732,6 +733,7 @@
 <text x="648" y="444" fill="#f65483" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿</text>
 <text x="664" y="444" fill="#fd3177" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠿</text>
 <text x="672" y="444" fill="#ff3974" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠋</text>
+<text x="680" y="444" fill="#3d2a63" textLength="128" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────</text>
 <text x="808" y="444" fill="#ff4274" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠈</text>
 <text x="816" y="444" fill="#ff2f74" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠙</text>
 <text x="824" y="444" fill="#f94a7f" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⢻</text>
