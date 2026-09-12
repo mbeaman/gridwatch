@@ -8,7 +8,7 @@
 
 ## 2026-09-11 → 12 — the zero line, and five reviews the docs said were owed
 
-**Models:** Opus 5. **Shipped:** one renderer fix (`48fc924`, 09-11) and this reconciliation (09-12). *The 09-11 half of this entry is reconstructed from the commit and its diff, because that session ended before writing one — the first time that has happened in fifteen arcs. The `Stop` hook that exists to prevent exactly this has been in place since 09-07 (`6011293`) and did not fire, so that session did not end, it stopped; the hook caught the gap on this session's first stop instead, which is the fallback working.*
+**Models:** Opus 5. **Shipped:** one renderer fix (`48fc924`, 09-11) and this reconciliation (09-12). *The 09-11 half of this entry is reconstructed from the commit and its diff, because no entry was written for it — the first time that has happened in fifteen arcs. Why is not knowable from here: the `Stop` hook that exists to catch this has been in place since 09-07 (`6011293`), and it both may not have fired and may have been answered with the "does not warrant one" the hook text permits. What is observable is that the entry was missing and the hook caught it on this session's first stop.*
 
 ### What changed for Matt
 
@@ -28,9 +28,11 @@ Worth far more than the fix. The session opened by reading `PLAN.md` and `ROADMA
 | 14 | "Owed on it: the **arc-end adversarial review**" | Ran 2026-09-09 (`f6734e3 … 09e3e47`) — D64 amendments 1 and 2, three code fixes, P5 and P1 re-taken |
 | 15 | "Owed on it: the **arc-end adversarial review**" | Ran 2026-09-09 (`15980dd … 086cce4`), journaled at length below |
 
-Arc 13's box stays open, but for **P17's hour-long run** alone, which needs a person — not for a review that happened.
+Arc 13's box stays open, but what holds it open is **P17's hour-long run**, which needs a person — not a review that happened.
 
-They are stale for one structural reason rather than five careless ones: **a review session amends `DECISIONS.md`, `PERFORMANCE.md`, `CHANGELOG.md` and the code — and nothing sends it back to close the box that commissioned it.** The line reading "the arc-end adversarial review" is the last deliverable of the arc's own ROADMAP entry, written by the *build* session; the review is by definition a *different* session, and it has no reason to be editing the previous one's paperwork. So the debt looks unpaid for as long as anyone keeps reading. Every box is ticked now and every status paragraph says what actually happened, with the review's findings recorded beside the arc that commissioned it.
+The likeliest reason is structural rather than five careless ones: **a review session amends `DECISIONS.md`, `PERFORMANCE.md`, `CHANGELOG.md` and the code — and nothing sends it back to close the box that commissioned it.** The line reading "the arc-end adversarial review" is the last deliverable of the arc's own ROADMAP entry, written by the *build* session; the review is by definition a *different* session, and it has no standing reason to edit the previous one's paperwork. So the debt looks unpaid for as long as anyone keeps reading.
+
+**The table above contains its own counterexample, and it is worth not smoothing over.** Arc 12's boxes were closed correctly by the *same* session that reviewed arc 11 and left arc 11's open — same evening, same six lenses, one closed and one not. So this is not a structure that makes closing impossible; it is a step that is easy to skip and was skipped four times out of five. The remedy is the same either way, and it is cheap: a review closes the box that asked for it. Every box is ticked now and every status paragraph says what actually happened, with the findings recorded beside the arc that commissioned them.
 
 Left alone, this session would have spent itself re-reviewing arc 14 — which is exactly what it offered Matt as option 2 before checking.
 
