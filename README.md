@@ -33,7 +33,8 @@ gridwatch depends on astral-watch by git revision, and crates.io forbids git
 dependencies.)*
 
 Press `?` for every key, `hjkl` to move between tiles, `z` to zoom one to full
-screen, `t` to cycle themes, and `q` to quit.
+screen, `t` to cycle themes, and `q` to quit — `Esc` first if you have handed
+the keys to a tile with `Enter`, since a tile that holds them keeps `q` too.
 
 **Some tiles need hardware you may not have.** The GPU tile reads NVIDIA's NVML
 library, the audio visualizer needs PipeWire's `pw-record`, and the pins tile
