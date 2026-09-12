@@ -394,7 +394,13 @@ fn value_row(fy: f64, area: Rect, marker: crate::theme::ChartMarker) -> u16 {
 /// The quarters of `bounds.y` as horizontal rules, height-gated: eight rows
 /// or more get 25/50/75, four get the midpoint alone, and a shorter band gets
 /// none — four rules in a four-row band is a box of dashes, not an axis.
-fn gridlines(area: Rect, marker: crate::theme::ChartMarker, theme: &Theme, buf: &mut Buffer) {
+fn gridlines(
+    area: Rect,
+    marker: crate::theme::ChartMarker,
+    bounds: &crate::view::Bounds,
+    theme: &Theme,
+    buf: &mut Buffer,
+) {
     let fracs: &[f64] = if area.height >= 8 {
         &[0.25, 0.5, 0.75]
     } else if area.height >= 4 {
@@ -405,10 +411,51 @@ fn gridlines(area: Rect, marker: crate::theme::ChartMarker, theme: &Theme, buf: 
     let style = theme.style(Role::TextGhost);
     let glyph = theme.glyphs.gridline().to_string();
     for f in fracs {
+        if baseline_frac(bounds).is_some_and(|b| (b - *f).abs() < 1e-9) {
+            continue; // drawn after the series instead — see `baseline`
+        }
         let y = value_row(*f, area, marker);
         for x in area.x..area.x + area.width {
             buf.set_string(x, y, &glyph, style);
         }
+    }
+}
+
+/// Where zero falls in `bounds.y`, when it falls strictly inside — a mirrored
+/// chart's baseline (net's rx above and tx below). `None` for the ordinary
+/// 0–100 chart, whose zero is the band's own bottom edge.
+fn baseline_frac(bounds: &crate::view::Bounds) -> Option<f64> {
+    let (lo, hi) = bounds.y;
+    (lo < 0.0 && hi > 0.0).then(|| (0.0 - lo) / (hi - lo))
+}
+
+/// The baseline, drawn **over** the series rather than under it — the one rule
+/// this exception exists for. A mirrored chart's quiet side sits exactly on
+/// zero (torch's tx, most of the time), so the braille mask written afterwards
+/// replaced the only line carrying meaning while the two decorative quarter
+/// rules stayed whole: measured 49 of 248 cells live and 7 of 248 in the demo,
+/// and at a 4–7 row band, where the midpoint is the only rule, no horizontal
+/// line at all (arc 15 user-path review). A series lying on the baseline says
+/// "zero" and so does the baseline, so covering it loses nothing and buys an
+/// axis a reader can find.
+fn baseline(
+    area: Rect,
+    marker: crate::theme::ChartMarker,
+    bounds: &crate::view::Bounds,
+    theme: &Theme,
+    buf: &mut Buffer,
+) {
+    let Some(f) = baseline_frac(bounds) else {
+        return;
+    };
+    if area.height < 4 {
+        return;
+    }
+    let style = theme.style(Role::TextGhost);
+    let glyph = theme.glyphs.gridline().to_string();
+    let y = value_row(f, area, marker);
+    for x in area.x..area.x + area.width {
+        buf.set_string(x, y, &glyph, style);
     }
 }
 
@@ -521,7 +568,7 @@ fn chart(
     // written afterwards, so ink wins a contested cell and a gridline hidden
     // by the line it belongs to is correct. Unlabelled: `Bounds` carries no
     // unit, and giving it one is a §4.6 change.
-    gridlines(area, marker, theme, buf);
+    gridlines(area, marker, bounds, theme, buf);
     match marker {
         ChartMarker::Braille => {
             let w = usize::from(area.width) * 2;
@@ -652,6 +699,7 @@ fn chart(
             }
         }
     }
+    baseline(area, marker, bounds, theme, buf);
     series_labels(series, area, marker, norm, theme, buf);
 }
 
@@ -1149,6 +1197,49 @@ mod table_and_chart_tests {
         let row = ruled_rows(&chart_buf(20, 8, vec![]))[1];
         let still_ruled = (0..20).all(|x| buf.cell((x, row)).is_some_and(|c| c.symbol() == "─"));
         assert!(!still_ruled, "the series did not cover its gridline");
+    }
+
+    /// A mirrored chart's **baseline** is the exception to "ink wins": it is
+    /// drawn over the series, because the quiet side of a mirrored pair sits
+    /// exactly on zero (torch's tx, most of the time) and the braille mask
+    /// would otherwise replace the one rule carrying meaning while the two
+    /// decorative quarter rules stayed whole — measured 49 of 248 cells live
+    /// and 7 of 248 in the demo (arc 15 user-path review).
+    #[test]
+    fn a_mirrored_chart_keeps_its_baseline_under_a_series_lying_on_zero() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 24,
+            height: 9,
+        };
+        let flat_zero = Series {
+            label: "".into(),
+            gradient: crate::theme::GradientId::Load,
+            data: (0..10).map(|i| (f64::from(i), 0.0)).collect(),
+        };
+        let mut buf = Buffer::empty(area);
+        chart(
+            &[flat_zero],
+            &Bounds {
+                x: (0.0, 9.0),
+                y: (-100.0, 100.0),
+            },
+            MarkerHint::Braille,
+            area,
+            &th(),
+            &mut buf,
+        );
+        let ruled: Vec<u16> = (0..area.height)
+            .filter(|y| {
+                (0..area.width).all(|x| buf.cell((x, *y)).is_some_and(|c| c.symbol() == "\u{2500}"))
+            })
+            .collect();
+        assert!(
+            ruled.len() >= 3,
+            "a nine-row mirrored chart wants three whole rules, and the zero one is the \
+             point of the exception — got {ruled:?}"
+        );
     }
 
     /// `Series.label` at the series' newest point — carried since arc 2b and
