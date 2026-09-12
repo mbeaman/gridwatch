@@ -6,9 +6,49 @@
 
 ---
 
+## 2026-09-11 → 12 — the zero line, and five reviews the docs said were owed
+
+**Models:** Opus 5. **Shipped:** one renderer fix (`48fc924`, 09-11) and this reconciliation (09-12). *The 09-11 half of this entry is reconstructed from the commit and its diff, because that session ended before writing one — the first time that has happened in fifteen arcs. The `Stop` hook that exists to prevent exactly this has been in place since 09-07 (`6011293`) and did not fire, so that session did not end, it stopped; the hook caught the gap on this session's first stop instead, which is the fallback working.*
+
+### What changed for Matt
+
+**The net tile's mirrored chart has a zero line you can see.** Arc 15 built the chart and borrowed the renderer's midpoint gridline as its zero — and then wrote the braille series mask over it. The quiet side of a mirrored pair sits *exactly* on zero (torch's tx, most of the time), so the one rule carrying meaning was the only one the ink erased, while the two decorative quarter rules stayed whole: **49 of 248 cells** at 250×70 live, 7 of 248 in the demo, and at a 4–7-row band — where the height gate draws the midpoint alone — no horizontal line at all.
+
+The fix is a single named exception to the renderer's "ink wins a contested cell" rule. The **baseline** — the row where zero falls when zero is strictly inside `Bounds.y` — is drawn *after* the series; the quarter rules stay under it. The argument for why that costs nothing is the whole reason the exception is allowed: a series lying on the baseline says "zero", and so does the baseline. It lives in the renderer, so every mirrored chart gets it, and `Bounds.y` alone decides — an ordinary 0–100 chart has no baseline, because its zero is the band's own bottom edge.
+
+### The thing that would have cost a whole session
+
+Worth far more than the fix. The session opened by reading `PLAN.md` and `ROADMAP.md`, as `CLAUDE.md` says to, and both said arc 14's and arc 15's adversarial reviews were still owed. Checking before acting turned up something larger: **`PLAN.md` said the arc-end adversarial review was owed for every arc since 11 — all five — and all five had run.**
+
+| Arc | What `PLAN.md` said | What happened |
+|---|---|---|
+| 11 | "Owed to the Fable session: the arc-end adversarial review" | Ran 2026-09-07 — D61's review amendments, six lenses shared with arc 12 |
+| 12 | "the review and `v0.12.0` are the Fable session's" | Same session, same six lenses |
+| 13 | "the arc-end adversarial review, the push" | Ran 2026-09-07 — D63's review amendments, three lenses |
+| 14 | "Owed on it: the **arc-end adversarial review**" | Ran 2026-09-09 (`f6734e3 … 09e3e47`) — D64 amendments 1 and 2, three code fixes, P5 and P1 re-taken |
+| 15 | "Owed on it: the **arc-end adversarial review**" | Ran 2026-09-09 (`15980dd … 086cce4`), journaled at length below |
+
+Arc 13's box stays open, but for **P17's hour-long run** alone, which needs a person — not for a review that happened.
+
+They are stale for one structural reason rather than five careless ones: **a review session amends `DECISIONS.md`, `PERFORMANCE.md`, `CHANGELOG.md` and the code — and nothing sends it back to close the box that commissioned it.** The line reading "the arc-end adversarial review" is the last deliverable of the arc's own ROADMAP entry, written by the *build* session; the review is by definition a *different* session, and it has no reason to be editing the previous one's paperwork. So the debt looks unpaid for as long as anyone keeps reading. Every box is ticked now and every status paragraph says what actually happened, with the review's findings recorded beside the arc that commissioned it.
+
+Left alone, this session would have spent itself re-reviewing arc 14 — which is exactly what it offered Matt as option 2 before checking.
+
+The smaller version of the same shape: `CHANGELOG.md`'s arc-15 block still said "**The zero line is the renderer's midpoint gridline**", which `48fc924` had made false two days earlier. A fix that changes how a shipped claim reads has to go back and change the claim.
+
+### Verified rather than assumed
+
+The commit's test asserts that a nine-row mirrored chart keeps three whole rules, and its comment claims it fails when the exception is removed. Reconstructing rather than having watched it, I checked instead of repeating it: comment out the `baseline(…)` call and the case reports `[2, 6]` — the two decorative quarter rules intact, the zero row gone. The claim holds and the test is a real pin. *(Done by copying the file aside and back, not with git — the practice item `BACKLOG.md` has carried since two sessions in one day lost uncommitted work to `checkout --` and `stash`.)*
+
+### What is owed to Matt
+
+Nothing new. The list is unchanged: every tag from `v0.1.0` to `v0.15.0`, and the whole owed-to-a-human section at the top of `PLAN.md`. The three `P2`/`P3` items arc 15's review filed — `net` has no snapshot, no chart has a *cell* snapshot, and the seven demo synths model only the happy path — are still open and are the strongest candidate for arc 16, because all three are the same defect: a suite that cannot see a tile cannot catch a bug in it.
+
+---
+
 ## 2026-09-09 — arc 15: what a tile draws with the room
 
-**Models:** Opus 5 for the whole arc (D65, the ARCHITECTURE edits and the brief were written by an Opus session the same day, because Fable was rate-limited). **Shipped:** arc 15, 15a in five commits and 15b in six. **Nothing tagged. No review yet** — that is the next session's, along with arc 14's, and both ROADMAP boxes are still open.
+**Models:** Opus 5 for the whole arc (D65, the ARCHITECTURE edits and the brief were written by an Opus session the same day, because Fable was rate-limited). **Shipped:** arc 15, 15a in five commits and 15b in six. **Nothing tagged. No review yet** — that is the next session's, along with arc 14's, and both ROADMAP boxes are still open. *(Both ran later the same day; this sentence was never corrected and is left standing as written, with the review's own section appended below.)*
 
 ### What changed for Matt
 
@@ -62,7 +102,7 @@ The first P19 "before" run, taken on this tree straight after a release build, r
 
 ### What is owed to Matt after this session
 
-- **The arc-end adversarial review**, with D65 §9's lens: render every component tier at 480×135 and 250×70 and answer the three questions in order. Arc 14's review is still owed too.
+- ~~**The arc-end adversarial review**, with D65 §9's lens: render every component tier at 480×135 and 250×70 and answer the three questions in order. Arc 14's review is still owed too.~~ *(Both ran on 2026-09-09 — arc 15's is the section immediately below, arc 14's is `f6734e3 … 09e3e47`.)*
 - **A pty case driving the connection cursor past the fold.** `demo::NetSynth` publishes five connections and no tier that shows connections can have a band shorter than five rows, so the fold is unreachable in a real terminal with the shipped fixture. The unit test drives it with sixty. Fixing the synths is its own backlog item because it churns every net snapshot.
 - **`MATT_TERMINAL`** in `crates/cli/tests/smoke.rs` is still `None`: nobody has measured his real Ptyxis size, and a guess would pin nothing.
 - **`v0.15.0`**, and every tag from `v0.1.0`.
@@ -90,7 +130,7 @@ And one where the grep itself was aimed one way: §1 says the free-text column i
 
 ### Owed after this arc
 
-The net chart's **zero line is the one gridline its ink erases** — 49 of 248 cells at 250×70, 7 of 248 in the demo, and at a 4–7-row band the user sees no line at all. D65's acceptance said it must read as a zero line and it does not; the fix is a rendering-order or role question, so it is backlogged rather than rushed. Also backlogged: `net` has no snapshot at all and no chart has a *cell* snapshot, so this arc's global renderer change is pinned in cells for no chart; the per-drawing oracle asserts *reach* for every drawing but doubling for two of ten variant/axis pairs, which is honest but narrower than the record admitted; and a chart series is silently unlabelled when its label would collide.
+The net chart's **zero line is the one gridline its ink erases** — 49 of 248 cells at 250×70, 7 of 248 in the demo, and at a 4–7-row band the user sees no line at all. D65's acceptance said it must read as a zero line and it does not; the fix is a rendering-order or role question, so it is backlogged rather than rushed. *(Fixed 2026-09-11 in `48fc924`: the baseline is drawn over the series, the quarter rules under it — see the entry at the top of this file.)* Also backlogged: `net` has no snapshot at all and no chart has a *cell* snapshot, so this arc's global renderer change is pinned in cells for no chart; the per-drawing oracle asserts *reach* for every drawing but doubling for two of ten variant/axis pairs, which is honest but narrower than the record admitted; and a chart series is silently unlabelled when its label would collide.
 
 
 ## 2026-09-09 — arc 14: what the drives are doing
@@ -134,7 +174,7 @@ C.36 presses `1`–`4` to change the charted series and asserts the legend chang
 
 ### Owed to Matt after this session
 
-- **The arc-end adversarial review**, with the lens D64 asks for: grep the component for `std::fs` and for `Detail::`.
+- ~~**The arc-end adversarial review**, with the lens D64 asks for: grep the component for `std::fs` and for `Detail::`.~~ *(Ran the same day, 2026-09-09 — `f6734e3 … 09e3e47`: D64 amendments 1 and 2, three code fixes, P5 and P1 re-taken. This line was never struck; see the 09-11 → 12 entry.)*
 - **The write-side `iostat` cross-check under real load**, and the loaded tile-versus-`iostat` comparison — the read side ran once, bounded, and an agent does not write half a gigabyte to his boot drive.
 - **Where `disk` belongs in the shipped `layout.toml`.** The Overview is full; every candidate slot displaces a tile a test or the performance protocol depends on. Acceptance used a sandbox layout.
 - **P5 with the pins source on `auto`** (it opens `/dev/i2c-*`, so the run above pinned it to `exporter`), and every row beside the game.
