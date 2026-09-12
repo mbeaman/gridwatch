@@ -6,7 +6,7 @@
 
 ---
 
-## 2026-09-11 → 12 — the zero line, and five reviews the docs said were owed
+## 2026-09-11 → 12 — the zero line, five reviews the docs said were owed, and a README that did not know about a tile
 
 **Models:** Opus 5. **Shipped:** one renderer fix (`48fc924`, 09-11) and this reconciliation (09-12). *The 09-11 half of this entry is reconstructed from the commit and its diff, because no entry was written for it — the first time that has happened in fifteen arcs. Why is not knowable from here: the `Stop` hook that exists to catch this has been in place since 09-07 (`6011293`), and it both may not have fired and may have been answered with the "does not warrant one" the hook text permits. What is observable is that the entry was missing and the hook caught it on this session's first stop.*
 
@@ -41,6 +41,45 @@ The smaller version of the same shape: `CHANGELOG.md`'s arc-15 block still said 
 ### Verified rather than assumed
 
 The commit's test asserts that a nine-row mirrored chart keeps three whole rules, and its comment claims it fails when the exception is removed. Reconstructing rather than having watched it, I checked instead of repeating it: comment out the `baseline(…)` call and the case reports `[2, 6]` — the two decorative quarter rules intact, the zero row gone. The claim holds and the test is a real pin. *(Done by copying the file aside and back, not with git — the practice item `BACKLOG.md` has carried since two sessions in one day lost uncommitted work to `checkout --` and `stash`.)*
+
+### The README, and the pattern the whole session turned out to be about
+
+Matt asked whether the README was up to date and detailed enough for someone
+minimally technical. Two different answers.
+
+**Up to date: no, in exactly the shape of the reviews finding above.** The
+halves CI regenerates — the SVG gallery, the 131×37 text frame, `KEYS.md`,
+`COMPONENTS.md`, all drift-checked by `scripts/shots.sh --check` — were
+current. The halves a human writes were six arcs stale. The sharpest proof is
+one grep: **`disk` appeared exactly once in the file, inside the auto-generated
+screenshot**, where the SOURCES tile reads `disk ok`. The hand-written tile list
+eighty lines below it did not know the disk tile existed. Also `v0.9.0` for arc
+15, "nine arcs" for fifteen, "ten tiles" for eleven, and "`ROADMAP.md` has what
+is left" pointing at a roadmap that is complete.
+
+**Detailed enough for a newcomer: no, and it never was.** It is written for a
+peer systems programmer and is good at that. Someone else cannot get past the
+first command: `cargo install --git …` with nothing saying you need a Rust
+toolchain, no MSRV, no rustup link — and no statement anywhere that the GPU tile
+needs NVML, audio needs `pw-record` and pins needs the astral-watch hardware, so
+an AMD-card reader meets a dead tile with no explanation. That last one wanted
+no new prose: `gridwatch doctor` already prints every capability with a reason
+*and* a fix, and the gap was that nothing framed it as the thing to run when a
+tile is blank. A "Start here" section now does, above the existing opening, so
+the voice that already works for its audience is untouched.
+
+**And here is the through-line of the whole session.** Three things went wrong
+today and all three are the same thing: `PLAN.md` claiming five reviews were
+owed, `CHANGELOG.md` claiming the zero line *is* the midpoint gridline after the
+fix made that false, and the README not knowing about a tile its own screenshot
+shows. **Every automated check in this project covers code or generated docs.
+Nothing checks hand-written prose against the tree.** `scripts/shots.sh
+--check` would have caught the README if the tile list were generated — and the
+tile list *could* be, from the same `component list` that writes
+`COMPONENTS.md`. That is the cheap, narrow version of a fix and it is worth a
+backlog item rather than an improvisation: **generate the README's tile roster,
+and let CI fail when a component exists that the README does not name.** It
+would have caught this the day arc 14 shipped.
 
 ### What is owed to Matt
 
