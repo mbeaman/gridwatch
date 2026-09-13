@@ -6,7 +6,7 @@
 
 ---
 
-## 2026-09-11 → 12 — the zero line, five reviews the docs said were owed, and a README that did not know about a tile
+## 2026-09-11 → 13 — the zero line, five reviews the docs said were owed, a README that did not know about a tile, and a wiki
 
 **Models:** Opus 5. **Shipped:** one renderer fix (`48fc924`, 09-11) and this reconciliation (09-12). *The 09-11 half of this entry is reconstructed from the commit and its diff, because no entry was written for it — the first time that has happened in fifteen arcs. Why is not knowable from here: the `Stop` hook that exists to catch this has been in place since 09-07 (`6011293`), and it both may not have fired and may have been answered with the "does not warrant one" the hook text permits. What is observable is that the entry was missing and the hook caught it on this session's first stop.*
 
@@ -81,9 +81,65 @@ backlog item rather than an improvisation: **generate the README's tile roster,
 and let CI fail when a component exists that the README does not name.** It
 would have caught this the day arc 14 shipped.
 
+### The wiki, and the tile nobody can reach
+
+Matt asked for a wiki with screenshots. `wiki/` now holds twelve pages: Home,
+Installing, a Tiles index with **all eleven tiles pictured**, Configuring, and
+full pages for CPU, GPU and Disks — the two everyone opens and the one nobody
+can reach. Themes, Keys, Plugins and Troubleshooting are honest stubs that link
+the existing reference rather than empty headings.
+
+**The screenshots are generated, and that was the load-bearing decision.**
+`scripts/wiki-shots.sh` places each tile alone on a 12x6 grid in a sandbox
+config and shoots it at 160x44 — the smallest frame that stays out of dense
+mode, so every picture is the tier a reader actually gets rather than a degraded
+one. Two runs are byte-identical, and it is wired into the same CI drift gate as
+`shots.sh`. Writing a wiki with hand-pasted screenshots on the same day as
+diagnosing that hand-written prose is the only thing here without an oracle
+would have been absurd.
+
+The division of labour is written down in `wiki/README.md` so the next person
+does not merge the two corpora: **a wiki page never restates a generated file.**
+`COMPONENTS.md` owns the tier ladders, `KEYS.md` the metric catalogue,
+`KEYBINDINGS.md` every key. A page links to those and spends its own words on
+what a number *means* — why `BUSY` is not `%util`, what `Q` is beside it, what
+PSI measures that the CPU meter does not, why VRAM and MEMCTL are independent.
+That is the half no file in `docs/` holds.
+
+**The finding: the `disk` tile ships and nothing places it.** `config default`
+declares seven components and `disk` is not among them; the default layout
+places none. A fresh install has never shown arc 14's tile, and would not
+without hand-editing both config files. D64 recorded that its placement is
+Matt's call because the Overview is full — so this is a pending decision rather
+than a bug — but it has been pending for three days while a whole vertical sits
+unreachable, and nothing said so anywhere a user would look. It is now a `P2`
+with three options priced, and `wiki/Configuring.md` documents the hand-edit in
+the meantime.
+
+**Two things that checking caught, both in prose written from memory.** The
+`[[rules]]` example had `metric`/`for`/`clear_for` where the real schema is
+`key`/`for_s`/`clear_s` and requires a `name`; and `config check` takes no
+`--config`. Both were drafted confidently and both were wrong, on the day the
+session's own subject was prose that no test can see. The wiki also gets a link
+checker run over it — every relative link and heading anchor resolves, which
+caught one live link in `wiki/README.md` that was meant to be an example of a
+link.
+
+**Not reachable and marked as such:** every tile's zoom-only `full` tier, because
+`shot` renders one frame and reaching `full` needs a keypress. Those tiers are
+described in prose with a note saying the picture cannot show them. A recorded
+journal with `--record-input` could probably reach them; not attempted.
+
 ### What is owed to Matt
 
-Nothing new. The list is unchanged: every tag from `v0.1.0` to `v0.15.0`, and the whole owed-to-a-human section at the top of `PLAN.md`. The three `P2`/`P3` items arc 15's review filed — `net` has no snapshot, no chart has a *cell* snapshot, and the seven demo synths model only the happy path — are still open and are the strongest candidate for arc 16, because all three are the same defect: a suite that cannot see a tile cannot catch a bug in it.
+**Publishing the wiki to `github.com/mbeaman/gridwatch/wiki` is his call** — it
+is outward-facing on a public repo and has not been done. `wiki/README.md`
+records the two mechanical changes it needs: links lose their `.md`, and images
+must be committed into the wiki repo, because a GitHub wiki page cannot render
+an SVG from `raw.githubusercontent.com` (it is served as `text/plain` and the
+image proxy will not draw it).
+
+Otherwise nothing new. The list is unchanged: every tag from `v0.1.0` to `v0.15.0`, and the whole owed-to-a-human section at the top of `PLAN.md`. The three `P2`/`P3` items arc 15's review filed — `net` has no snapshot, no chart has a *cell* snapshot, and the seven demo synths model only the happy path — are still open and are the strongest candidate for arc 16, because all three are the same defect: a suite that cannot see a tile cannot catch a bug in it.
 
 ---
 
