@@ -173,14 +173,19 @@ normally; the wiki repo simply is not there. So the script exits with the three
 lines that fix it rather than a git error. One click in the browser, once, and
 the script does everything else.
 
+**And then it ran.** Matt created the dummy page; `scripts/wiki-publish.sh`
+overwrote it with eleven pages, a generated sidebar and eighteen images, and a
+fresh clone of the published wiki verifies that **every internal link, heading
+anchor and image resolves** — the check worth having, because the conversion
+rewrites all three kinds of reference on the way out and a broken one only shows
+up in a browser.
+
+The live wiki is at `github.com/mbeaman/gridwatch/wiki`. Republishing is one
+command from a clean tree.
+
 ### What is owed to Matt
 
-**One click to create the wiki's first page** — `github.com/mbeaman/gridwatch/wiki`
-→ *Create the first page* → save anything. Then `scripts/wiki-publish.sh`
-overwrites it with all eleven pages, the images and a generated sidebar. This is
-the only thing in the session that a person has to do and a script cannot.
-
-Otherwise nothing new. The list is unchanged: every tag from `v0.1.0` to `v0.15.0`, and the whole owed-to-a-human section at the top of `PLAN.md`. The three `P2`/`P3` items arc 15's review filed — `net` has no snapshot, no chart has a *cell* snapshot, and the seven demo synths model only the happy path — are still open and are the strongest candidate for arc 16, because all three are the same defect: a suite that cannot see a tile cannot catch a bug in it.
+Nothing new from this session. The list is unchanged: every tag from `v0.1.0` to `v0.15.0`, and the whole owed-to-a-human section at the top of `PLAN.md`. The three `P2`/`P3` items arc 15's review filed — `net` has no snapshot, no chart has a *cell* snapshot, and the seven demo synths model only the happy path — are still open and are the strongest candidate for arc 16, because all three are the same defect: a suite that cannot see a tile cannot catch a bug in it.
 
 ---
 

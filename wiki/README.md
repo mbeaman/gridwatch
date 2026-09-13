@@ -63,8 +63,13 @@ repository**, and three things have to change on the way out:
 it is not published. A `_Sidebar.md` is generated, and says on it that the wiki
 is a copy: anyone who edits a page there loses it on the next publish.
 
-**Before the first publish, somebody has to create one page in the browser.**
-GitHub does not create `<repo>.wiki.git` until a page exists, and there is no
-API for it — so the script stops with that instruction rather than a git error.
-Open the repo's Wiki tab, click *Create the first page*, save anything; the
-script overwrites it.
+**First published 2026-09-12**, and live at
+[github.com/mbeaman/gridwatch/wiki](https://github.com/mbeaman/gridwatch/wiki).
+
+That first publish needed one manual step, recorded here because it will be
+needed again for any new repo: **GitHub does not create `<repo>.wiki.git` until
+a page exists, and there is no API for it.** Not the REST API, not GraphQL, not
+`gh` — and pushing at the wiki remote before then returns `Repository not
+found`, which looks like a permissions problem and is not. Somebody has to open
+the repo's Wiki tab and save one page in the browser. The script detects this
+and prints the instruction rather than a git error.
