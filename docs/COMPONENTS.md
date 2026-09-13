@@ -157,7 +157,7 @@ interface rates and link state, the default route and DNS, latency probes and th
 | `rates` | 8×3 | Meters | the default interface's rate pair, a link dot | `↓` |
 | `sparks` | 20×5 | Meters | rx and tx sparklines, the speed or SSID | `↓` |
 | `table` | 48×10 | Meters | every shown interface, drops and errors, the probe strip | `iface` |
-| `conns` | 70×16 | Table | the connection table | `conns` |
+| `conns` | 70×16 | Table | the connection table | `proto` |
 | `full` (zoom) | 100×24 | Table | the route and DNS, per-interface detail, the probe statistics | `route` |
 
 Keys once captured with `Enter`:

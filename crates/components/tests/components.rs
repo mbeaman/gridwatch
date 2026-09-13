@@ -28,10 +28,6 @@ fn pins() -> Box<dyn Component> {
     Box::new(gridwatch_components::pins::Pins::default())
 }
 
-fn alerts() -> Box<dyn Component> {
-    Box::new(gridwatch_components::alerts::Alerts::default())
-}
-
 fn audio() -> Box<dyn Component> {
     Box::new(gridwatch_components::audio::Audio::default())
 }
@@ -54,9 +50,7 @@ fn disk() -> Box<dyn Component> {
 
 #[test]
 fn tiers_are_well_formed() {
-    for mk in [
-        clock, sources, htop, gpu, pins, alerts, audio, sensors, winamp, net, disk,
-    ] {
+    for (_, mk) in every_registered_component() {
         let c = mk();
         assert_tiers_well_formed(c.tiers());
         assert_min_tier_fits(c.tiers(), Size::new(8, 3));
@@ -69,82 +63,88 @@ fn tiers_are_well_formed() {
 fn renders_everywhere() {
     let store = demo_store(42, 40);
     let empty = gridwatch_store::Store::default();
+    // Over the registry, not a list: this swept ten kinds and `net` was not
+    // one of them, so the eleventh component was in neither this sweep nor
+    // the snapshot below (arc 16, D67 §1).
     for th in ["modern", "retrowave", "mono"].map(theme) {
-        assert_renders_everywhere(&|| clock(), &store, &empty, &th);
-        assert_renders_everywhere(&|| sources(), &store, &empty, &th);
-        assert_renders_everywhere(&|| htop(), &store, &empty, &th);
-        assert_renders_everywhere(&|| gpu(), &store, &empty, &th);
-        assert_renders_everywhere(&|| pins(), &store, &empty, &th);
-        assert_renders_everywhere(&|| alerts(), &store, &empty, &th);
-        assert_renders_everywhere(&|| audio(), &store, &empty, &th);
-        assert_renders_everywhere(&|| sensors(), &store, &empty, &th);
-        assert_renders_everywhere(&|| winamp(), &store, &empty, &th);
-        assert_renders_everywhere(&|| disk(), &store, &empty, &th);
+        for (_, mk) in every_registered_component() {
+            assert_renders_everywhere(&|| mk(), &store, &empty, &th);
+        }
     }
 }
 
+/// How many ticks of the demo timeline each kind is snapshotted at, and why.
+///
+/// **`demo_store` is one shared timeline** (`ui/src/testkit.rs`): every synth
+/// ticks together and the only parameter is the count, one tick being 1.5 s.
+/// So this is the single knob, and it has to be per kind — hand every
+/// component the same count and `audio` snapshots its own silence, `pins` and
+/// `alerts` snapshot a log with no overload in it, and `htop`'s sparkline is
+/// three samples in one bucket. Those snapshots would then be accepted as
+/// correct and pin emptiness forever (D67 §5).
+///
+/// There is deliberately **no default**: a new component must choose, because
+/// a generous fallback would make every future tile pass while showing
+/// nothing (D67 §5, trap 2).
+fn snapshot_ticks(kind: &str) -> usize {
+    match kind {
+        // 4.5 s — past the audio synth's silent opening, so the bars, the
+        // scope and the levels are lit. Nothing here needs history.
+        "audio" | "clock" | "sources" => 3,
+        // 60 s — a minute of history, so a sparkline pins a real line rather
+        // than three samples in one bucket; the pins synth's scripted
+        // overload has both raised and resolved, so the `pins` and `alerts`
+        // logs pin both lines; and the disk synth's removable has left.
+        "htop" | "gpu" | "pins" | "alerts" | "sensors" | "winamp" | "disk" | "net" => 40,
+        other => panic!(
+            "arc 16 (D67 §5): `{other}` has no snapshot tick count. `demo_store` is one \
+             timeline and the count decides whether your tile has anything to draw, so \
+             choose it deliberately rather than inheriting a default: 3 ticks is 4.5 s, \
+             40 is 60 s."
+        ),
+    }
+}
+
+/// Each kind's tick count must actually reach the event it was chosen for —
+/// asserted against the synths' own constants, so lowering a count or moving
+/// an event fails here rather than quietly snapshotting an unlit tile.
+#[test]
+fn the_snapshot_tick_counts_reach_the_events_they_exist_for() {
+    let secs = |kind: &str| snapshot_ticks(kind) as f64 * 1.5;
+    assert!(
+        secs("audio") > gridwatch_store::demo::AUDIO_SILENT_UNTIL_S,
+        "the audio snapshot is taken during the synth's silence"
+    );
+    for kind in ["pins", "alerts"] {
+        assert!(
+            secs(kind) > gridwatch_store::demo::OVERLOAD_RESOLVE_S,
+            "`{kind}` is snapshotted before the scripted overload resolves, so its log \
+             pins one line instead of two"
+        );
+    }
+    assert!(
+        secs("disk") > gridwatch_store::demo::DISK_REMOVABLE_LEAVES_S,
+        "the disk snapshot never sees the removable leave"
+    );
+}
+
+/// One view snapshot per registered component at every real grid size.
+///
+/// **Over the registry, not a list.** This was ten hand-written blocks and
+/// `net` was not one of them — which is how arc 15 rewrote `net/view.rs` by
+/// 213 lines with zero snapshot churn (D67 §1).
 #[test]
 fn view_snapshots_at_real_grid_sizes() {
-    let store = demo_store(42, 3);
-    let history = demo_store(42, 40);
     let th = theme("modern");
-    for (name, size) in real_grid_sizes() {
-        let mut c = clock();
-        insta::assert_yaml_snapshot!(
-            format!("clock_{name}"),
-            view_snapshot(c.as_mut(), &store, &th, size)
-        );
-        let mut s = sources();
-        insta::assert_yaml_snapshot!(
-            format!("sources_{name}"),
-            view_snapshot(s.as_mut(), &store, &th, size)
-        );
-        // A minute of history, so the snapshot pins a real sparkline rather
-        // than three samples in one bucket.
-        let mut h = htop();
-        insta::assert_yaml_snapshot!(
-            format!("htop_{name}"),
-            view_snapshot(h.as_mut(), &history, &th, size)
-        );
-        let mut g = gpu();
-        insta::assert_yaml_snapshot!(
-            format!("gpu_{name}"),
-            view_snapshot(g.as_mut(), &history, &th, size)
-        );
-        // Forty ticks reach 60 s: the scripted overload has raised (21.5 s)
-        // and resolved (50 s), so the pins and alerts snapshots pin both log lines.
-        let mut p = pins();
-        insta::assert_yaml_snapshot!(
-            format!("pins_{name}"),
-            view_snapshot(p.as_mut(), &history, &th, size)
-        );
-        let mut a = alerts();
-        insta::assert_yaml_snapshot!(
-            format!("alerts_{name}"),
-            view_snapshot(a.as_mut(), &history, &th, size)
-        );
-        // Three ticks reach 4.5 s: past the synth's 1.5 s of silence, so the
-        // bars, the scope and the levels are lit.
-        let mut au = audio();
-        insta::assert_yaml_snapshot!(
-            format!("audio_{name}"),
-            view_snapshot(au.as_mut(), &store, &th, size)
-        );
-        let mut se = sensors();
-        insta::assert_yaml_snapshot!(
-            format!("sensors_{name}"),
-            view_snapshot(se.as_mut(), &history, &th, size)
-        );
-        let mut wa = winamp();
-        insta::assert_yaml_snapshot!(
-            format!("winamp_{name}"),
-            view_snapshot(wa.as_mut(), &history, &th, size)
-        );
-        let mut di = disk();
-        insta::assert_yaml_snapshot!(
-            format!("disk_{name}"),
-            view_snapshot(di.as_mut(), &history, &th, size)
-        );
+    for (kind, mk) in every_registered_component() {
+        let store = demo_store(42, snapshot_ticks(kind));
+        for (name, size) in real_grid_sizes() {
+            let mut c = mk();
+            insta::assert_yaml_snapshot!(
+                format!("{kind}_{name}"),
+                view_snapshot(c.as_mut(), &store, &th, size)
+            );
+        }
     }
 }
 
@@ -491,12 +491,70 @@ fn options_reject_typos_and_the_table_floor_is_five() {
     assert_eq!(o.sort, "cpu");
 }
 
+/// **The two documents that name tiles must name all of them** (D67 §3).
+///
+/// This is a *check*, not a generator. `BACKLOG.md` phrased it as "generate
+/// the README's tile roster", and building that would delete the per-tile
+/// prose explaining what each tile is *for* — the half no generated file holds
+/// and the whole value of both documents. So the prose stays hand-written and
+/// the omission is caught instead.
+///
+/// It would have failed on the day arc 14 shipped: the README named ten tiles
+/// and never mentioned `disk`, while its own auto-generated screenshot showed
+/// `disk ok` in the SOURCES tile. Nothing noticed for three days.
+#[test]
+fn every_registered_kind_is_named_in_the_readme_and_the_wiki() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for doc in ["README.md", "wiki/Tiles.md"] {
+        let path = root.join(doc);
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        let missing: Vec<&str> = every_registered_component()
+            .iter()
+            .map(|(kind, _)| *kind)
+            .filter(|kind| !text.contains(&format!("`{kind}`")))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{doc} does not name {missing:?}. Every registered component must appear \
+             there as `kind` in backticks — a tile nobody can read about is not \
+             shipped, and the screenshots in that file already show it (D67 §3). \
+             Add a section; do not delete this test."
+        );
+    }
+}
+
+/// Does this serialised view tree contain a chart anywhere? Walking the JSON
+/// rather than the `View` keeps this out of the contract: `view_snapshot`
+/// already produces it, and nothing new is exposed for a test's benefit.
+fn draws_a_chart(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Object(m) => m.contains_key("chart") || m.values().any(draws_a_chart),
+        serde_json::Value::Array(a) => a.iter().any(draws_a_chart),
+        _ => false,
+    }
+}
+
+/// Styled cell dumps at the reference theme (§12.2).
+///
+/// **This said "one per component at one representative size" and covered
+/// three of eleven** — clock, sources and htop — so arc 15's global renderer
+/// change, the quarter gridlines and series labels now drawn in every
+/// `View::Chart`, was pinned in actual cells for **no chart at all** (D67 §2).
+/// A `View::Chart` node in a view snapshot says "a chart with these series";
+/// only a cell dump says which cells got ink, which is the whole question for
+/// a braille drawing.
+///
+/// The charting tiles are **found, not remembered**: every registered
+/// component is rendered at the 6x3 reference rect and the ones whose tree
+/// contains a chart are snapshotted. A new charting tile joins by being
+/// registered, and a tier that quietly stops charting fails the count.
 #[test]
 fn rendered_cells_snapshot_modern_only() {
-    // Styled dumps at the reference theme only (§12.2): one per component at
-    // one representative size; themes are covered by the role swatches.
-    let store = demo_store(42, 3);
     let th = theme("modern");
+    // The three that were here before arc 16, at the sizes they used, so
+    // their snapshots stay byte-identical.
+    let store = demo_store(42, 3);
     let (_, buf) = render_component(clock().as_mut(), &store, &th, Size::new(38, 8), false);
     insta::assert_snapshot!("clock_cells_2x1", gridwatch_ui::dump::cells(&buf));
     let (_, buf) = render_component(sources().as_mut(), &store, &th, Size::new(80, 20), false);
@@ -507,6 +565,42 @@ fn rendered_cells_snapshot_modern_only() {
     insta::assert_snapshot!("htop_cells_6x3", gridwatch_ui::dump::cells(&buf));
     let (_, buf) = render_component(htop().as_mut(), &history, &th, Size::new(59, 18), false);
     insta::assert_snapshot!("htop_cells_6x3_dense", gridwatch_ui::dump::cells(&buf));
+
+    // Every charting tile, in cells. Two passes, because a chart is not
+    // always in the tier a 6x3 rect selects: `pins`' braille trend lives in
+    // its zoom-only pane and `audio`'s scope sits below `spectrum` in the
+    // ladder, so a grid-only sweep finds four of the six and calls it done.
+    let mut charted: Vec<String> = Vec::new();
+    for (zoomed, size, suffix) in [
+        (false, Size::new(122, 31), "chart"),
+        (true, Size::new(200, 50), "chart_zoom"),
+    ] {
+        for (kind, mk) in every_registered_component() {
+            let store = demo_store(42, snapshot_ticks(kind));
+            let mut probe = mk();
+            let (_, _) = render_component(probe.as_mut(), &store, &th, size, zoomed);
+            let mut c = mk();
+            let (_, buf) = render_component(c.as_mut(), &store, &th, size, zoomed);
+            // `view_snapshot` cannot be told to zoom, so the tree is read from
+            // the cells: a chart is the only thing here that draws braille.
+            let dump = gridwatch_ui::dump::cells(&buf);
+            let charts = if zoomed {
+                dump.chars().any(|c| ('\u{2800}'..='\u{28ff}').contains(&c))
+            } else {
+                draws_a_chart(&view_snapshot(mk().as_mut(), &store, &th, size))
+            };
+            if !charts {
+                continue;
+            }
+            insta::assert_snapshot!(format!("{kind}_cells_{suffix}"), dump);
+            charted.push(format!("{kind}/{suffix}"));
+        }
+    }
+    assert!(
+        charted.len() >= 6,
+        "six components draw a chart somewhere (gpu, disk, net, sensors, pins, audio); \
+         found {charted:?} — a tier that quietly stopped charting is what this counts for"
+    );
 }
 
 /// §13 caps `view` construction at 0.3 ms per visible tile, and the render

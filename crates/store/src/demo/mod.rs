@@ -11,9 +11,13 @@ mod procs;
 mod sensors;
 mod synth;
 
-pub use audio::{AudioSynth, audio_demo, audio_info, audio_sink, band_of};
+pub use audio::{
+    AudioSynth, SILENT_UNTIL_S as AUDIO_SILENT_UNTIL_S, audio_demo, audio_info, audio_sink, band_of,
+};
 pub use disk::{
-    DEVICES as DISK_DEVICES, DiskSynth, disk_demo, disk_info, disk_info_exemplar, disk_infos,
+    DEVICES as DISK_DEVICES, DiskSynth, PARTITION as DISK_PARTITION, REMOVABLE as DISK_REMOVABLE,
+    REMOVABLE_LEAVES_S as DISK_REMOVABLE_LEAVES_S, disk_demo, disk_info, disk_info_exemplar,
+    disk_infos,
 };
 pub use gpu::{GpuSynth, gpu_demo, gpu_info, gpu_procs};
 pub use media::{ART_PX, BUS as MEDIA_BUS, MediaSynth, art_for, media_demo, media_info};

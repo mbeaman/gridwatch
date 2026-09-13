@@ -1,0 +1,238 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(c.as_mut(), &store, &th, size)"
+---
+size: 80x20
+tier: conns
+view:
+  stack:
+    children:
+      - - Len(4)
+        - table:
+            columns:
+              - iface
+              - state
+              - rx
+              - tx
+              - drop
+              - err
+            rows:
+              - - ● eno1
+                - up
+                - 9.3M
+                - 632k
+                - "0"
+                - "0"
+              - - ● wlp7s0
+                - up
+                - 40k
+                - 9.0k
+                - "0"
+                - "0"
+              - - ○ eno2
+                - down
+                - 0B
+                - 0B
+                - "0"
+                - "0"
+            scroll: 0
+            selected: ~
+            sort: ~
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "gateway "
+              - bold: false
+                role: Text
+                s: 1.6 ms
+              - bold: false
+                role: TextMuted
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: "1.1.1.1 "
+              - bold: false
+                role: Text
+                s: 14.5 ms
+      - - Fill(3)
+        - table:
+            columns:
+              - proto
+              - local
+              - remote
+              - state
+              - process
+            rows:
+              - - tcp
+                - "192.168.100.154:52344"
+                - "140.82.112.4:443"
+                - ESTAB
+                - firefox (4242)
+              - - tcp
+                - "0.0.0.0:22"
+                - "0.0.0.0:0"
+                - LISTEN
+                - uid 1000
+              - - tcp
+                - "192.168.100.154:44120"
+                - "162.159.130.234:443"
+                - ESTAB
+                - steam (9001)
+              - - udp
+                - "192.168.100.154:68"
+                - "0.0.0.0:0"
+                - ""
+                - uid 1000
+              - - tcp
+                - "192.168.100.154:52352"
+                - "140.82.114.26:443"
+                - ESTAB
+                - firefox (4242)
+              - - tcp
+                - "127.0.0.1:6600"
+                - "0.0.0.0:0"
+                - LISTEN
+                - mpd (7000)
+              - - tcp
+                - "192.168.100.154:48802"
+                - "140.82.113.25:22"
+                - TIME_WAIT
+                - uid 1000
+              - - tcp
+                - "192.168.100.154:39004"
+                - "13.107.42.14:443"
+                - ESTAB
+                - code (5150)
+              - - tcp6
+                - "[::1]:6600"
+                - "[::1]:39422"
+                - ESTAB
+                - mpd (7000)
+              - - tcp
+                - "192.168.100.154:52360"
+                - "151.101.1.140:443"
+                - ESTAB
+                - firefox (4242)
+              - - udp
+                - "0.0.0.0:5353"
+                - "0.0.0.0:0"
+                - ""
+                - avahi-daemon (1122)
+              - - tcp
+                - "192.168.100.154:44126"
+                - "155.133.248.53:27020"
+                - ESTAB
+                - steam (9001)
+              - - tcp
+                - "0.0.0.0:5355"
+                - "0.0.0.0:0"
+                - LISTEN
+                - uid 1000
+              - - tcp
+                - "192.168.100.154:60122"
+                - "192.168.100.30:22"
+                - ESTAB
+                - ssh (8810)
+              - - tcp
+                - "192.168.100.154:52368"
+                - "34.107.221.82:443"
+                - ESTAB
+                - firefox (4242)
+              - - udp
+                - "127.0.0.1:53"
+                - "0.0.0.0:0"
+                - ""
+                - systemd-resolve (1240)
+              - - tcp6
+                - "[::]:22"
+                - "[::]:0"
+                - LISTEN
+                - uid 1000
+              - - tcp
+                - "127.0.0.1:631"
+                - "0.0.0.0:0"
+                - LISTEN
+                - cupsd (1430)
+              - - tcp
+                - "192.168.100.154:48806"
+                - "140.82.113.25:22"
+                - CLOSE_WAIT
+                - uid 1000
+              - - tcp
+                - "192.168.100.154:52376"
+                - "142.250.187.206:443"
+                - ESTAB
+                - firefox (4242)
+              - - tcp
+                - "192.168.100.154:33518"
+                - "192.168.100.12:5432"
+                - ESTAB
+                - psql (6120)
+              - - udp
+                - "192.168.100.154:51820"
+                - "203.0.113.7:51820"
+                - ""
+                - uid 1000
+              - - tcp
+                - "127.0.0.1:9942"
+                - "0.0.0.0:0"
+                - LISTEN
+                - astral-watch (3311)
+              - - tcp
+                - "192.168.100.154:52384"
+                - "104.18.32.47:443"
+                - ESTAB
+                - firefox (4242)
+              - - tcp
+                - "192.168.100.154:44132"
+                - "155.133.246.68:27018"
+                - ESTAB
+                - steam (9001)
+              - - tcp6
+                - "[::1]:631"
+                - "[::]:0"
+                - LISTEN
+                - cupsd (1430)
+              - - udp
+                - "0.0.0.0:27036"
+                - "0.0.0.0:0"
+                - ""
+                - steam (9001)
+              - - tcp
+                - "192.168.100.154:52392"
+                - "104.18.33.47:443"
+                - ESTAB
+                - firefox (4242)
+              - - tcp
+                - "0.0.0.0:3000"
+                - "0.0.0.0:0"
+                - LISTEN
+                - code (5150)
+              - - tcp6
+                - "[2001:db8::154]:41022"
+                - "[2606:4700::47]:443"
+                - ESTAB
+                - firefox (4242)
+              - - tcp
+                - "192.168.100.154:52400"
+                - "140.82.112.21:443"
+                - SYN_SENT
+                - uid 1000
+              - - tcp6
+                - "[2001:db8::154]:41026"
+                - "[2606:4700::48]:443"
+                - ESTAB
+                - firefox (4242)
+            scroll: 0
+            selected: ~
+            sort: ~
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: sort traffic · a all · s sort
+              - bold: false
+                role: TextGhost
+                s: "  (3 hidden)"
+    dir: V

@@ -1,0 +1,34 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(c.as_mut(), &store, &th, size)"
+---
+size: 17x8
+tier: rates
+view:
+  stack:
+    children:
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: Ok
+                s: ●
+              - bold: false
+                role: TextMuted
+                s: " eno1"
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: AccentPrimary
+                s: "↓ "
+              - bold: true
+                role: Text
+                s: 9.3M
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: AccentSecondary
+                s: "↑ "
+              - bold: true
+                role: Text
+                s: 632k
+    dir: V

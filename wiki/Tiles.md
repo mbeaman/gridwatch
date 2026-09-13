@@ -1,6 +1,7 @@
 # The tiles
 
-Eleven of them. Every tile renders from an 8x3 chip up to the whole screen, and
+Eleven of them, each headed by the `kind` you write in `config.toml` to place
+one. Every tile renders from an 8x3 chip up to the whole screen, and
 picks how much to show from the room it actually has — the pictures below are
 each tile alone on the grid at 160x44, which is roughly what a quarter-screen
 tile looks like on a large monitor.
@@ -14,6 +15,8 @@ tile looks like on a large monitor.
 
 ### CPU — [full page](Tiles-CPU.md)
 
+**`htop`**
+
 [![the CPU tile](../docs/img/wiki/tile-htop.svg)](../docs/img/wiki/tile-htop.svg)
 
 htop 3.4.1, with its formulas rather than an approximation of them: guest time
@@ -25,6 +28,8 @@ ioprio behind a confirm line.
 
 ### GPU — [full page](Tiles-GPU.md)
 
+**`gpu`**
+
 [![the GPU tile](../docs/img/wiki/tile-gpu.svg)](../docs/img/wiki/tile-gpu.svg)
 
 nvtop 3.2.0's header over NVML, plus a 20 ms board-power trace and ten-minute
@@ -32,6 +37,8 @@ charts of utilisation, VRAM, temperature, power, clock and one figure nvtop does
 not have. NVIDIA only.
 
 ### Disks — [full page](Tiles-Disks.md)
+
+**`disk`**
 
 [![the disks tile](../docs/img/wiki/tile-disk.svg)](../docs/img/wiki/tile-disk.svg)
 
@@ -42,6 +49,8 @@ is not pedantry. It has **page `3`** to itself.
 ## The rest
 
 ### 12V-2x6 pins
+
+**`pins`**
 
 [![the pins tile](../docs/img/wiki/tile-pins.svg)](../docs/img/wiki/tile-pins.svg)
 
@@ -55,6 +64,8 @@ would send.
 
 ### Network
 
+**`net`**
+
 [![the network tile](../docs/img/wiki/tile-net.svg)](../docs/img/wiki/tile-net.svg)
 
 Every interface's rates and link state, the default route and resolvers, latency
@@ -65,6 +76,8 @@ transmit below.
 
 ### Sensors
 
+**`sensors`**
+
 [![the sensors tile](../docs/img/wiki/tile-sensors.svg)](../docs/img/wiki/tile-sensors.svg)
 
 Every hwmon chip on the machine, hottest first, against **that chip's own**
@@ -72,6 +85,8 @@ warn and critical thresholds rather than a number someone picked. Package power
 from RAPL where the kernel lets you read it, and the GPU's row joined in.
 
 ### Audio
+
+**`audio`**
 
 [![the audio tile](../docs/img/wiki/tile-audio.svg)](../docs/img/wiki/tile-audio.svg)
 
@@ -82,6 +97,8 @@ seconds after you look away — so an idle visualizer costs nothing.
 
 ### Now playing
 
+**`winamp`**
+
 [![the now playing tile](../docs/img/wiki/tile-winamp.svg)](../docs/img/wiki/tile-winamp.svg)
 
 Whatever is on MPRIS, in classic-skin form: scrolling marquee, big elapsed
@@ -89,6 +106,8 @@ digits, transport row, album art painted as half-blocks, and the spectrum
 borrowed from the audio source. Firefox counts as a player.
 
 ### Alerts
+
+**`alerts`**
 
 [![the alerts tile](../docs/img/wiki/tile-alerts.svg)](../docs/img/wiki/tile-alerts.svg)
 
@@ -98,6 +117,8 @@ a rule can compare one metric against **another metric**, not just a constant.
 
 ### Sources
 
+**`sources`**
+
 [![the sources tile](../docs/img/wiki/tile-sources.svg)](../docs/img/wiki/tile-sources.svg)
 
 The health of everything feeding the dashboard: each source's state, how many
@@ -106,6 +127,8 @@ how often it has restarted. This is the tile you look at when a number stops
 moving.
 
 ### Clock
+
+**`clock`**
 
 [![the clock tile](../docs/img/wiki/tile-clock.svg)](../docs/img/wiki/tile-clock.svg)
 

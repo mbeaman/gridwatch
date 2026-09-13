@@ -1,0 +1,68 @@
+---
+source: crates/components/tests/components.rs
+expression: "view_snapshot(c.as_mut(), &store, &th, size)"
+---
+size: 59x18
+tier: table
+view:
+  stack:
+    children:
+      - - Len(4)
+        - table:
+            columns:
+              - iface
+              - state
+              - rx
+              - tx
+            rows:
+              - - ● eno1
+                - up
+                - 9.3M
+                - 632k
+              - - ● wlp7s0
+                - up
+                - 40k
+                - 9.0k
+              - - ○ eno2
+                - down
+                - 0B
+                - 0B
+            scroll: 0
+            selected: ~
+            sort: ~
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: "gateway "
+              - bold: false
+                role: Text
+                s: 1.6 ms
+              - bold: false
+                role: TextMuted
+                s: " · "
+              - bold: false
+                role: TextMuted
+                s: "1.1.1.1 "
+              - bold: false
+                role: Text
+                s: 14.5 ms
+      - - Fill(1)
+        - chart:
+            - label: ↓eno1
+              points: 39
+            - label: ↑eno1
+              points: 39
+            - label: ↓wlp7s0
+              points: 39
+            - label: ↑wlp7s0
+              points: 39
+      - - Len(1)
+        - text:
+            - - bold: false
+                role: TextMuted
+                s: sort traffic · a all · s sort
+              - bold: false
+                role: TextGhost
+                s: "  (3 hidden)"
+    dir: V
