@@ -30,8 +30,10 @@ A dash means *not available*, never zero. The common causes:
 
 ## There is no disks tile
 
-It ships, but nothing places it. See
-[Configuring → adding the disks tile](Configuring.md#adding-the-disks-tile).
+Press `3` — it has a page of its own. If you are on a version from before
+2026-09-12 it shipped unplaced, and
+[Configuring](Configuring.md#where-the-disks-tile-lives) has the two files to
+edit.
 
 ## A number stopped moving
 

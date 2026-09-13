@@ -146,8 +146,8 @@
 <rect x="0" y="1104" width="2000" height="16" fill="#000000"/>
 <text x="0" y="12" fill="#00ff41" font-weight="bold" textLength="88" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> gridwatch </text>
 <text x="88" y="12" fill="#000000" font-weight="bold" textLength="96" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 1 Overview </text>
-<text x="184" y="12" fill="#1f9a4a" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2 Audio </text>
-<text x="256" y="12" fill="#0a3312" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  matrix · configured</text>
+<text x="184" y="12" fill="#1f9a4a" textLength="144" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2 Audio  3 Disks </text>
+<text x="328" y="12" fill="#0a3312" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  matrix · configured</text>
 <text x="0" y="28" fill="#00ff41" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┏</text>
 <text x="8" y="28" fill="#00ff41" font-weight="bold" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> CPU </text>
 <text x="48" y="28" fill="#00ff41" textLength="952" lengthAdjust="spacingAndGlyphs" xml:space="preserve">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓</text>

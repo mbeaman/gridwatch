@@ -34,3 +34,12 @@ place = [
   { id = "cpu", at = [0, 3], size = [12, 3], view = "meters" },
 ]
 # keep the CPU strip light here (see the placement above)
+
+[[pages]]
+name = "Disks"
+hotkey = "3"
+place = [
+  { id = "drives", at = [0, 0], size = [12, 6] },
+]
+# arc 14 shipped this tile and nothing placed it, so no default install ever
+# showed it (D66). Its own page, because the Overview is full.

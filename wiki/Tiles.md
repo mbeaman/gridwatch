@@ -37,8 +37,7 @@ not have. NVIDIA only.
 
 Read and write rates, IOPS, service times and each drive's temperature. The
 utilisation column says **`BUSY`, not `%util`**, and the page explains why that
-is not pedantry. **This tile is not in the default layout** — see
-[Configuring](Configuring.md#adding-the-disks-tile).
+is not pedantry. It has **page `3`** to itself.
 
 ## The rest
 

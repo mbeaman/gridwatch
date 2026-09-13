@@ -51,6 +51,15 @@ kind = "winamp"
 id = "temps"
 kind = "sensors"
 
+# The disks tile gets a page of its own rather than a slot on the Overview:
+# every Overview slot it could take belongs to a tile a test or the performance
+# protocol depends on, and a third page costs nothing — the `disk` source runs
+# either way, so the only cost is a cadence that rises from 2 s to 1 s while
+# page 3 is the one you are looking at (D66).
+[[components]]
+id = "drives"
+kind = "disk"
+
 # ---------------------------------------------------------------------------
 # Alert rules (§9, arc 7b). Each `[[rules]]` entry watches one metric and
 # raises through the same path a source's own alert takes: the banner, the

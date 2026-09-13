@@ -704,3 +704,54 @@ Also recorded: **`torch-game.jsonl` stays owed** — no game ran during 2b eithe
 **(U4) The gpu `full` tier keeps §6's reservation fix from `procs`.** Twenty-seven blank rows under a seven-row process table at 250×70, where the unzoomed tier gave that room to the chart.
 
 **Recorded, not fixed.** The net chart's **zero line is the one gridline the ink erases** — measured 49 of 248 cells at 250×70 and 7 of 248 in the demo, because tx sits on zero whenever tx ≪ rx, which is this machine's normal state. At a 4–7-row band, where the gate draws the midpoint alone, the user sees no horizontal line at all. The acceptance criterion "the zero line must read as a zero line" is **not met**, and the fix is a rendering-order or a role question rather than a one-liner: `BACKLOG.md`. Also recorded: the sensors gauge runs 744 cells wide at 800×120 and prints its percentage twice per row (legal under §4.6, an observation with numbers); a chart series is silently unlabelled when its label would collide, which the correctness lens raised independently; and the documented spec-strip threshold was 100 where the code uses 107, now corrected.
+
+## D66 — the disks tile gets a page (2026-09-12)
+
+**Matt's call, taken on 2026-09-12.** D64 deferred where `disk` belongs in the
+shipped layout, and the deferral held for three days while **no default install
+showed the tile at all**: `config default` declared seven components and `disk`
+was not one of them, and the default `layout.toml` placed none. Arc 14 built a
+source, a five-tier component, a cross-source temperature join and a parity
+section, and the only way anyone reached it was by hand-editing two files. The
+gap was found writing `wiki/`, because a guide has to say where a tile is and
+there was no answer.
+
+**The decision: a third page, `3 Disks`, holding the tile at 12x6.** The three
+options were priced in `BACKLOG.md`:
+
+1. **A page of its own** — chosen. Costs nothing on the Overview, and nothing in
+   the performance budget either: **the `disk` source already runs** in the
+   shipped default (it is in `default` features and the sources tile has always
+   listed it), so the only change is a cadence rising from 2 s to 1 s while page
+   3 is the page you are looking at. The banner already renders three pages and
+   `dense-120x40.svg` is unchanged, so nothing below the reference size moves.
+2. **Displacing `temps` or `sources` on the Overview** — rejected. Every
+   candidate slot belongs to a tile that a test or the performance protocol
+   depends on, and the audit that would make this safe is the one D64 declined
+   to do. It remains available if the Overview is ever re-cut.
+3. **Leaving it unplaced and saying so in the README** — rejected as the honest
+   version of doing nothing. A tile nobody can see is not shipped.
+
+**What it churns.** Every `docs/img/overview-*.svg` and the README's text frame,
+by one banner line gaining `3 Disks` — regenerated and drift-checked.
+`docs/img/dense-120x40.svg` and the `wiki/` per-tile shots are byte-identical.
+
+**Two assertions this change found, and they are the more interesting half.**
+Both broke, and both broke for the wrong reason — they pinned an *incidental
+count* rather than the rule they existed to check, so the first component or
+page added to a default was always going to fail them:
+
+- `config::tests::partial_config_layers` asserted `cfg.components.len() == 7`.
+  Its actual subject is that a config naming no components inherits the whole
+  default list, so it now asserts `cfg.components == ConfigFile::default().components`
+  — which is stronger (it would catch a *reordered* or *substituted* list, which
+  the length never could) and does not rot.
+- `shell::picker_adds_a_tile_and_save_round_trips_through_the_file` asserted the
+  save message was `"layout.toml saved (2 pages)"`. Its subject is that the
+  message reports what was written, so it now counts `[[pages]]` in the file it
+  just wrote and asserts the message matches.
+
+This is the same defect `docs/JOURNAL.md` recorded for prose on 2026-09-12, one
+layer down: **an assertion against a number that happens to be true today is a
+recording, not a test.** Worth a sweep for `assert_eq!(.*\.len\(\), <int>)`
+across the suite, which is a `BACKLOG.md` item rather than this change's job.

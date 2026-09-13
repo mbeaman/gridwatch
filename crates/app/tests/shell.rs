@@ -1831,8 +1831,12 @@ fn picker_adds_a_tile_and_save_round_trips_through_the_file() {
     assert!(bar.contains("sources @"), "the new tile is focused: {bar}");
     // Save to the temp path: comments survive, the hash reaches the watcher.
     let msg = sh.save_layout_to(&path).unwrap();
-    assert_eq!(msg, "layout.toml saved (2 pages)");
     let written = std::fs::read_to_string(&path).unwrap();
+    // The message reports what was actually written — counted from the file
+    // rather than hard-coded, which went stale the first time the shipped
+    // layout gained a page (D66).
+    let pages = written.matches("[[pages]]").count();
+    assert_eq!(msg, format!("layout.toml saved ({pages} pages)"));
     assert!(written.starts_with("# hand-written"), "{written}");
     assert!(written.contains("kind = \"sources\""), "{written}");
     let (kind, hash) = rx.try_recv().unwrap();

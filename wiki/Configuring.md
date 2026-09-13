@@ -60,14 +60,20 @@ declaration and be placed by kind directly:
 { kind = "clock", at = [10, 5], size = [2, 1] }
 ```
 
-## Adding the disks tile
+## Where the disks tile lives
 
-**The [disks tile](Tiles-Disks.md) ships with gridwatch but is not in the
-default layout**, so a fresh install does not show it. The Overview page is
-full, and every slot it could take belongs to a tile that something else depends
-on, so nothing was displaced to make room — which means adding it is up to you.
+The [disks tile](Tiles-Disks.md) has **page `3`** to itself, and that is the
+whole of the default arrangement for it. It is not on the Overview because the
+Overview is full: every slot it could take belongs to a tile that a test or the
+performance measurement protocol depends on, so rather than displace one it got
+a page. A page costs nothing — the `disk` source runs either way, so the only
+effect is a cadence rising from 2 s to 1 s while you are looking at page 3.
 
-The least disruptive way is a page of its own. Add to `config.toml`:
+*(Before 2026-09-12 it shipped with no placement at all, and no default install
+ever showed it.)*
+
+If you want it somewhere else, this is what the default does, and it is the
+same pattern for any tile. In `config.toml`:
 
 ```toml
 [[components]]
@@ -86,11 +92,12 @@ place = [
 ]
 ```
 
-Press `3` to reach it, or `[` and `]` to cycle pages. If you would rather have it
-on the Overview, `e` enters edit mode, where you can move and resize tiles with
-the keyboard and `w` saves.
+`[` and `]` cycle pages, or press the `hotkey`. To move it onto the Overview
+instead, `e` enters edit mode, where you move and resize tiles with the keyboard
+and `w` saves — and edit mode only ever writes `layout.toml`, so your
+`config.toml` comments are safe.
 
-For a smaller footprint, `4x2` is the recommended size — that gets you the table
+For a smaller footprint, `4x2` is the recommended size: that gets you the table
 with rates, `BUSY`, `Q` and a temperature per drive.
 
 ## Source options

@@ -319,7 +319,8 @@
 <text x="0" y="12" fill="#ff2975" font-weight="bold" textLength="88" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> gridwatch </text>
 <text x="88" y="12" fill="#8a7fb0" textLength="96" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 1 Overview </text>
 <text x="184" y="12" fill="#0b0324" font-weight="bold" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2 Audio </text>
-<text x="256" y="12" fill="#3d2a63" textLength="192" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  retrowave · configured</text>
+<text x="256" y="12" fill="#8a7fb0" textLength="72" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 3 Disks </text>
+<text x="328" y="12" fill="#3d2a63" textLength="192" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  retrowave · configured</text>
 <text x="0" y="28" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┏</text>
 <text x="16" y="28" fill="#f6effe" font-weight="bold" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">N</text>
 <text x="24" y="28" fill="#e8e0ff" font-weight="bold" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">O</text>

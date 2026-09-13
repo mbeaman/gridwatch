@@ -128,6 +128,8 @@ impl Default for ConfigFile {
                 inst("viz", "audio"),
                 inst("amp", "winamp"),
                 inst("temps", "sensors"),
+                // On page 3 rather than the Overview, which is full (D66).
+                inst("drives", "disk"),
             ],
         }
     }
@@ -1002,6 +1004,9 @@ mod tests {
         let cfg: ConfigFile = parse("partial", "schema = 1\ntheme = \"mono\"\n").unwrap();
         assert_eq!(cfg.theme, "mono");
         assert_eq!(cfg.fps, 30);
-        assert_eq!(cfg.components.len(), 7);
+        // A config that names no components inherits the whole default list —
+        // asserted against that list rather than against its length, which is
+        // incidental and went stale the first time a component was added (D66).
+        assert_eq!(cfg.components, ConfigFile::default().components);
     }
 }

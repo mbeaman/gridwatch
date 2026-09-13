@@ -5,9 +5,10 @@
 Per-device read and write rates, IOPS, service times and the drive's own
 temperature, from one `/proc/diskstats` read per tick.
 
-> **This tile is not in the default layout.** gridwatch ships it, but nothing
-> places it, so a fresh install does not show it. See
-> [Configuring → adding the disks tile](Configuring.md#adding-the-disks-tile).
+> **Press `3`.** This tile has a page of its own in the default layout. Until
+> 2026-09-12 it shipped unplaced and no default install ever showed it — see
+> [Configuring → where the disks tile lives](Configuring.md#where-the-disks-tile-lives)
+> if you want it somewhere else.
 
 ## `BUSY` is not `%util`, and that is the point
 
