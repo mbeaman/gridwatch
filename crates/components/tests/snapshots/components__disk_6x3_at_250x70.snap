@@ -7,7 +7,7 @@ tier: chart
 view:
   stack:
     children:
-      - - Len(4)
+      - - Len(6)
         - table:
             columns:
               - DEVICE
@@ -21,14 +21,32 @@ view:
               - MODEL
             rows:
               - - ● nvme0n1
-                - 993M
-                - 202M
+                - 998M
+                - 200M
                 - 56%
                 - 50°
-                - "7575"
-                - "3077"
-                - "20.6"
+                - "7614"
+                - "3052"
+                - "20.8"
                 - Samsung SSD 9100 PRO 4TB
+              - - ● sda
+                - 0B
+                - 40M
+                - 54%
+                - —
+                - "0"
+                - "615"
+                - "1.2"
+                - SanDisk Extreme 55AE
+              - - ● nvme0n1p2
+                - 0B
+                - 4.0M
+                - 4%
+                - 50°
+                - "0"
+                - "121"
+                - "0.2"
+                - —
               - - ● nvme1n1
                 - 78k
                 - 459k
@@ -77,6 +95,10 @@ view:
         - chart:
             - label: nvme0n1
               points: 39
+            - label: sda
+              points: 29
+            - label: nvme0n1p2
+              points: 39
             - label: nvme1n1
               points: 39
             - label: nvme2n1
@@ -95,6 +117,30 @@ view:
               - bold: false
                 role: AccentSecondary
                 s: "  w 5.40 ms"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "sda "
+              - bold: false
+                role: AccentPrimary
+                s: r —
+              - bold: false
+                role: AccentSecondary
+                s: "  w 13.50 ms"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "nvme0n1p2 "
+              - bold: false
+                role: AccentPrimary
+                s: r —
+              - bold: false
+                role: AccentSecondary
+                s: "  w 1.80 ms"
               - bold: false
                 role: TextGhost
                 s: " · "
@@ -123,5 +169,5 @@ view:
         - text:
             - - bold: false
                 role: TextMuted
-                s: 3 devices · sort traffic · s sort
+                s: 5 devices · sort traffic · s sort
     dir: V

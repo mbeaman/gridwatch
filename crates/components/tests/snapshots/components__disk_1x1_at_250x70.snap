@@ -25,7 +25,7 @@ view:
                 s: "rd "
               - bold: true
                 role: Text
-                s: 993M
+                s: 998M
       - - Len(1)
         - text:
             - - bold: false
@@ -33,5 +33,5 @@ view:
                 s: "wr "
               - bold: true
                 role: Text
-                s: 202M
+                s: 245M
     dir: V

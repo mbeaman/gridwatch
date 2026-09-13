@@ -35,7 +35,7 @@ view:
         - 0s
         - "0"
         - "0"
-        - scan 0.30 ms
+        - scan 0.40 ms
       - - gpu
         - starting
         - "3"
@@ -56,7 +56,7 @@ view:
         - 0s
         - "0"
         - "0"
-        - scan 3.0 ms · 87/103 attributed
+        - scan 3.2 ms · 24/32 attributed
       - - pins
         - starting
         - "3"

@@ -101,12 +101,65 @@ fn bridge_link() -> Link {
     }
 }
 
+/// The interfaces a workstation actually has beyond the three interesting
+/// ones: a second NIC nobody plugged in, and two virtual bridges. They exist
+/// so the tile's default filter has something to drop — with three interfaces
+/// and one bridge, a filtered tile and an unfiltered one differ by a single
+/// row, which is not a difference any test can see (arc 16, D67 §4).
+fn quiet_links() -> [Link; 3] {
+    let virt = |iface: &str, mac: &str, addr: &str| Link {
+        iface: iface.into(),
+        up: true,
+        carrier: true,
+        operstate: "up".into(),
+        mtu: 1500,
+        mac: mac.into(),
+        kind: LinkKind::Virtual,
+        speed_mbps: net::SPEED_UNKNOWN as i64,
+        carrier_changes: 0,
+        addrs: vec![addr.into()],
+        wifi: None,
+    };
+    [
+        Link {
+            iface: "eno2".into(),
+            up: false,
+            carrier: false,
+            operstate: "down".into(),
+            mtu: 1500,
+            mac: "a8:a1:59:00:00:04".into(),
+            kind: LinkKind::Ether,
+            // Nothing is plugged in: the driver refuses `speed`, as on a down
+            // radio. A second NIC reading "0 Mb/s" would be a lie.
+            speed_mbps: net::SPEED_UNKNOWN as i64,
+            carrier_changes: 0,
+            addrs: Vec::new(),
+            wifi: None,
+        },
+        virt("docker0", "02:42:1a:00:00:05", "172.17.0.1/16"),
+        virt("virbr0", "52:54:00:00:00:06", "192.168.122.1/24"),
+    ]
+}
+
 /// The connection table the journal test uses as its exemplar.
 pub fn conns_exemplar() -> Conns {
     conns(3.0)
 }
 
 /// The synthetic connection table (the `conns` tier's rows).
+///
+/// **`scanned` and `attributed` are derived, never asserted.** The real source
+/// sets `scanned = rows.len()` (`sources/src/net/mod.rs`) — it reads every
+/// socket and publishes every row, with no cap and no truncation — and
+/// `attributed` is the count that resolved to a pid. So a fixture claiming
+/// `scanned: 103` beside five rows described a source that does not exist, and
+/// the tile's own footer printed it (arc 16, D67 §4). They are computed here
+/// and pinned by `conns_counters_are_what_the_real_source_would_report`.
+///
+/// Thirty-two rows, because the `conns` tier's connection band is at least 23
+/// and the fold has to be reachable: with five rows no cursor could ever leave
+/// the first page, which is why D65 recorded the pty case for it as unwritable
+/// against the shipped fixture.
 pub fn conns(scan_ms: f64) -> Conns {
     let row =
         |proto: Proto, local: &str, remote: &str, state: &str, pid: Option<u32>, process: &str| {
@@ -121,37 +174,246 @@ pub fn conns(scan_ms: f64) -> Conns {
                 process: process.into(),
             }
         };
+    // A plausible desktop, in the order a socket walk actually returns them —
+    // **interleaved, not grouped by process**. `/proc/net/tcp` is ordered by
+    // hash bucket, and a fixture that lists eight firefox rows first puts
+    // every unattributed socket past the fold, where the first page cannot
+    // show that `attributed < scanned` is a thing the tile draws (arc 16).
+    let rows = vec![
+        row(
+            Proto::Tcp,
+            "192.168.100.154:52344",
+            "140.82.112.4:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+        row(Proto::Tcp, "0.0.0.0:22", "0.0.0.0:0", "LISTEN", None, ""),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:44120",
+            "162.159.130.234:443",
+            "ESTAB",
+            Some(9001),
+            "steam",
+        ),
+        row(Proto::Udp, "192.168.100.154:68", "0.0.0.0:0", "", None, ""),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:52352",
+            "140.82.114.26:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+        row(
+            Proto::Tcp,
+            "127.0.0.1:6600",
+            "0.0.0.0:0",
+            "LISTEN",
+            Some(7000),
+            "mpd",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:48802",
+            "140.82.113.25:22",
+            "TIME_WAIT",
+            None,
+            "",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:39004",
+            "13.107.42.14:443",
+            "ESTAB",
+            Some(5150),
+            "code",
+        ),
+        row(
+            Proto::Tcp6,
+            "[::1]:6600",
+            "[::1]:39422",
+            "ESTAB",
+            Some(7000),
+            "mpd",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:52360",
+            "151.101.1.140:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+        row(
+            Proto::Udp,
+            "0.0.0.0:5353",
+            "0.0.0.0:0",
+            "",
+            Some(1122),
+            "avahi-daemon",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:44126",
+            "155.133.248.53:27020",
+            "ESTAB",
+            Some(9001),
+            "steam",
+        ),
+        row(Proto::Tcp, "0.0.0.0:5355", "0.0.0.0:0", "LISTEN", None, ""),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:60122",
+            "192.168.100.30:22",
+            "ESTAB",
+            Some(8810),
+            "ssh",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:52368",
+            "34.107.221.82:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+        row(
+            Proto::Udp,
+            "127.0.0.1:53",
+            "0.0.0.0:0",
+            "",
+            Some(1240),
+            "systemd-resolve",
+        ),
+        row(Proto::Tcp6, "[::]:22", "[::]:0", "LISTEN", None, ""),
+        row(
+            Proto::Tcp,
+            "127.0.0.1:631",
+            "0.0.0.0:0",
+            "LISTEN",
+            Some(1430),
+            "cupsd",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:48806",
+            "140.82.113.25:22",
+            "CLOSE_WAIT",
+            None,
+            "",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:52376",
+            "142.250.187.206:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:33518",
+            "192.168.100.12:5432",
+            "ESTAB",
+            Some(6120),
+            "psql",
+        ),
+        row(
+            Proto::Udp,
+            "192.168.100.154:51820",
+            "203.0.113.7:51820",
+            "",
+            None,
+            "",
+        ),
+        row(
+            Proto::Tcp,
+            "127.0.0.1:9942",
+            "0.0.0.0:0",
+            "LISTEN",
+            Some(3311),
+            "astral-watch",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:52384",
+            "104.18.32.47:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:44132",
+            "155.133.246.68:27018",
+            "ESTAB",
+            Some(9001),
+            "steam",
+        ),
+        row(
+            Proto::Tcp6,
+            "[::1]:631",
+            "[::]:0",
+            "LISTEN",
+            Some(1430),
+            "cupsd",
+        ),
+        row(
+            Proto::Udp,
+            "0.0.0.0:27036",
+            "0.0.0.0:0",
+            "",
+            Some(9001),
+            "steam",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:52392",
+            "104.18.33.47:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+        row(
+            Proto::Tcp,
+            "0.0.0.0:3000",
+            "0.0.0.0:0",
+            "LISTEN",
+            Some(5150),
+            "code",
+        ),
+        row(
+            Proto::Tcp6,
+            "[2001:db8::154]:41022",
+            "[2606:4700::47]:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+        row(
+            Proto::Tcp,
+            "192.168.100.154:52400",
+            "140.82.112.21:443",
+            "SYN_SENT",
+            None,
+            "",
+        ),
+        row(
+            Proto::Tcp6,
+            "[2001:db8::154]:41026",
+            "[2606:4700::48]:443",
+            "ESTAB",
+            Some(4242),
+            "firefox",
+        ),
+    ];
+    let attributed = rows.iter().filter(|r| r.pid.is_some()).count();
     Conns {
-        rows: vec![
-            row(
-                Proto::Tcp,
-                "192.168.100.154:52344",
-                "140.82.112.4:443",
-                "ESTAB",
-                Some(4242),
-                "firefox",
-            ),
-            row(
-                Proto::Tcp,
-                "192.168.100.154:44120",
-                "162.159.130.234:443",
-                "ESTAB",
-                Some(9001),
-                "steam",
-            ),
-            row(Proto::Tcp, "0.0.0.0:22", "0.0.0.0:0", "LISTEN", None, ""),
-            row(Proto::Udp, "192.168.100.154:68", "0.0.0.0:0", "", None, ""),
-            row(
-                Proto::Tcp6,
-                "[::1]:6600",
-                "[::1]:39422",
-                "ESTAB",
-                Some(7000),
-                "mpd",
-            ),
-        ],
-        scanned: 103,
-        attributed: 87,
+        scanned: rows.len(),
+        attributed,
+        rows,
         scan_ms,
     }
 }
@@ -191,6 +453,9 @@ impl NetSynth {
         let (rx, tx) = self.rates(at);
         let up = wifi_up(at);
         // eno1 carries the traffic; the radio carries a trickle while up.
+        // docker0 carries a trickle — a container talking to the host is the
+        // ordinary case, and a virtual interface pinned at exactly zero made
+        // every mirrored chart line sit on the baseline.
         for (iface, rx, tx) in [
             ("eno1", rx, tx),
             (
@@ -199,6 +464,9 @@ impl NetSynth {
                 if up { 9.0e3 } else { 0.0 },
             ),
             ("br-6bb7413a559e", 0.0, 0.0),
+            ("eno2", 0.0, 0.0),
+            ("docker0", 1.2e4 + self.rng.f64() * 2.0e3, 3.1e3),
+            ("virbr0", 0.0, 0.0),
         ] {
             samples.push(Sample {
                 id: named(&net::RX_BPS, iface),
@@ -232,7 +500,10 @@ impl NetSynth {
         if !self.links_sent || links_changed {
             self.links_sent = true;
             self.wifi_was_up = Some(up);
-            for link in [eno1_link(), wifi_link(up), bridge_link()] {
+            let inventory = [eno1_link(), wifi_link(up), bridge_link()]
+                .into_iter()
+                .chain(quiet_links());
+            for link in inventory {
                 samples.push(Sample {
                     id: named(&net::SPEED_MBPS, &link.iface),
                     datum: Datum::Scalar(link.speed_mbps as f64),
@@ -419,7 +690,73 @@ mod tests {
         let table = NetSynth::new(1).tick_at(Ts(1_000_000_000), Detail::Table);
         assert!(table.samples.iter().any(|s| s.id.name == "net.conns"));
         let c = conns(3.0);
-        assert_eq!(c.rows.len(), 5);
         assert!(c.attributed < c.scanned, "not every socket is attributable");
+    }
+
+    /// The counters the real source would report, because it derives both from
+    /// the rows it publishes: `scanned = rows.len()` with no cap or truncation
+    /// (`sources/src/net/mod.rs`), and `attributed` is the count that resolved
+    /// to a pid (`conns::attribute` returns exactly that). The fixture used to
+    /// claim `scanned: 103` beside five rows — a source that does not exist,
+    /// printed verbatim by the sources tile's footer (arc 16, D67 §4).
+    #[test]
+    fn conns_counters_are_what_the_real_source_would_report() {
+        let c = conns(3.0);
+        assert_eq!(c.scanned, c.rows.len(), "scanned is the row count");
+        assert_eq!(
+            c.attributed,
+            c.rows.iter().filter(|r| r.pid.is_some()).count(),
+            "attributed is the rows that resolved to a pid"
+        );
+    }
+
+    /// The fold has to be reachable. The `conns` tier's connection band is at
+    /// least 23 rows, so a fixture with five rows puts every row on the first
+    /// page and no cursor can ever leave it — which is why D65 recorded the
+    /// pty case driving the cursor past the fold as unwritable against the
+    /// shipped fixture (arc 16).
+    #[test]
+    fn the_connection_table_is_longer_than_the_band_that_draws_it() {
+        assert!(
+            conns(3.0).rows.len() > 23,
+            "the fixture must outrun the tallest band that can draw it"
+        );
+    }
+
+    /// The first page has to show an unattributed socket. `attributed <
+    /// scanned` is a number the tile draws, and a fixture that lists every
+    /// browser socket first puts every unattributed one past the fold — where
+    /// the page a reader actually sees cannot demonstrate it (arc 16; it broke
+    /// `net`'s own `the_table_shows_states_rates_and_the_probe_strip`).
+    #[test]
+    fn the_first_page_of_connections_is_not_all_one_process() {
+        let rows = conns(3.0).rows;
+        let first = &rows[..8];
+        assert!(
+            first.iter().any(|r| r.pid.is_none()),
+            "an unattributed socket must be on the first page"
+        );
+        let procs: std::collections::BTreeSet<&str> =
+            first.iter().map(|r| r.process.as_str()).collect();
+        assert!(
+            procs.len() >= 4,
+            "the first page is all the same thing: {procs:?}"
+        );
+    }
+
+    /// A filtered tile and an unfiltered one have to differ by more than one
+    /// row, or no test can tell the filter works (arc 16, D67 §4).
+    #[test]
+    fn there_are_enough_virtual_interfaces_for_the_filter_to_matter() {
+        let all = [eno1_link(), wifi_link(true), bridge_link()]
+            .into_iter()
+            .chain(quiet_links())
+            .collect::<Vec<_>>();
+        let virt = all
+            .iter()
+            .filter(|l| matches!(l.kind, LinkKind::Virtual))
+            .count();
+        assert!(all.len() >= 6, "a workstation has more than three");
+        assert!(virt >= 3, "the default filter must drop more than one row");
     }
 }

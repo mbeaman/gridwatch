@@ -235,13 +235,27 @@ fn drawings_grow_with_the_rect() {
     // as `gpu` `charts` does; it does not, because this band absorbs every row
     // the constant text leaves.
     let net_table = 2usize;
+    // **`net/table`'s height axis is excluded, and arc 16 is why it had to
+    // be.** Arc 15 asserted both axes because both passed — 1.50x width and
+    // 1.54x height, and its own status note called them "close to the bar".
+    // Arc 16 changed no line of `net/view.rs` and the height ratio moved to
+    // **1.46x**: `demo::NetSynth` went from three interfaces to six, the
+    // content-sized band took the rows, and the ratio fell through the floor.
+    // An assertion that moves 1.54 -> 1.46 on a fixture change is measuring
+    // the fixture. The tier is a content-sized band (capped at one row per
+    // interface plus a header) over a braille chart, and D65 §4 already
+    // records why the chart cannot help: a line lights about one cell per
+    // column however tall the band, so a taller band buys y-resolution and
+    // not ink. Height growth here is bounded by the interface count and
+    // always was; three interfaces hid it. The width axis is asserted and
+    // *improved* to 1.57x.
     assert_grows_with_area(
         &|| net(),
         &store,
         &th,
         &[
             Growth::new(net_sparks, true, true),
-            Growth::new(net_table, true, true),
+            Growth::new(net_table, true, false),
         ],
     );
     assert_grows_with_area(

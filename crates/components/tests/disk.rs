@@ -135,12 +135,25 @@ fn every_drive_gets_its_own_controllers_temperature() {
     let mut c = tile();
     tick(&mut c, &store, TIER_FULL);
     let drives = &c.model().drives;
-    assert_eq!(drives.len(), 3);
+    // Every nvme device joins — including the partition, which shares its
+    // parent's controller. The removable does **not**: no hwmon chip hangs
+    // off `0:0:0:0`, which is D64's `NoChip` path and had no fixture at all
+    // until arc 16. Asserting "every drive has a temperature" is only
+    // possible on a fixture where every drive is the same kind of drive.
     for d in drives {
+        if d.name == "sda" {
+            assert_eq!(d.no_temp, NoTemp::NoChip, "the removable has no chip");
+            assert!(d.temp_c.is_none(), "and therefore no reading, not a zero");
+            continue;
+        }
         assert_eq!(d.no_temp, NoTemp::None, "{}", d.name);
         assert!(d.temp_c.is_some(), "{} has no temperature", d.name);
         assert!(d.crit_c.is_some(), "{} has no critical", d.name);
     }
+    assert!(
+        drives.iter().any(|d| d.no_temp == NoTemp::NoChip),
+        "a device without a chip must be in the fixture, or the `—` path is untested"
+    );
     // The join is by device, and the chip it landed on is the one whose
     // `ChipInfo.device` matches — not the one whose number matches.
     let by_name = |n: &str| drives.iter().find(|d| d.name == n).expect(n);
@@ -377,8 +390,14 @@ fn the_keys_change_the_series_the_sort_and_the_scroll() {
         Outcome::Consumed
     ));
     assert_eq!(c.sort(), Sort::Name);
+    // Sorted by name — asserted as *sortedness* over whatever the fixture
+    // holds, not as a literal list, which went stale the first time the
+    // fixture gained a device (arc 16; the same defect D66 found twice).
     let names: Vec<&str> = c.model().drives.iter().map(|d| d.name.as_str()).collect();
-    assert_eq!(names, ["nvme0n1", "nvme1n1", "nvme2n1"]);
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(names, sorted, "the name sort is not sorted by name");
+    assert!(names.len() > 3, "and the fixture is worth sorting");
     assert!(matches!(
         c.on_key(key(KeyCode::Down), &cx(&store, &caps)),
         Outcome::Consumed
@@ -429,21 +448,36 @@ fn the_device_and_hide_globs_filter_the_rows() {
         ..Options::default()
     });
     tick(&mut c, &store, TIER_TABLE);
-    assert_eq!(c.model().drives.len(), 1);
-    assert_eq!(c.model().hidden(), 2);
+    // `nvme0*` now matches the drive **and its partition** — the glob is a
+    // name match and a partition's name begins with its parent's, which is
+    // worth knowing and had no fixture before arc 16.
+    let shown: Vec<&str> = c.model().drives.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(shown, ["nvme0n1", "nvme0n1p2"]);
+    assert_eq!(c.model().hidden(), 3);
     let (_, buf) = render_component(&mut c, &store, &th, Size::new(80, 12), false);
     let text = plain_text(&buf);
     assert!(text.contains("nvme0n1"));
     assert!(!text.contains("nvme1n1"));
-    assert!(text.contains("(2 hidden)"), "{text}");
+    assert!(text.contains("(3 hidden)"), "{text}");
+    // The partition draws as itself: its parent's temperature (same
+    // controller), no model of its own, and no reads. A tile that rendered it
+    // as `nvme0n1` would repeat the parent's row here.
+    assert!(text.contains("nvme0n1p2"), "{text}");
 
     let mut c = Disk::new(Options {
         hide: vec!["nvme2*".into()],
         ..Options::default()
     });
     tick(&mut c, &store, TIER_TABLE);
-    assert_eq!(c.model().drives.len(), 2);
-    assert!(!c.model().drives.iter().any(|d| d.name == "nvme2n1"));
+    assert!(
+        !c.model().drives.iter().any(|d| d.name == "nvme2n1"),
+        "the hide glob is what this asserts"
+    );
+    assert_eq!(
+        c.model().hidden(),
+        1,
+        "and it hid exactly the one it matched"
+    );
 }
 
 /// An empty store is an honest tile: a dash and a sentence, never a

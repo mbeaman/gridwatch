@@ -17,8 +17,8 @@
 <rect x="328" y="32" width="8" height="16" fill="#0b0324"/>
 <rect x="336" y="32" width="24" height="16" fill="#efe9ff"/>
 <rect x="360" y="32" width="8" height="16" fill="#0b0324"/>
-<rect x="368" y="32" width="400" height="16" fill="#efe9ff"/>
-<rect x="768" y="32" width="512" height="16" fill="#0b0324"/>
+<rect x="368" y="32" width="392" height="16" fill="#efe9ff"/>
+<rect x="760" y="32" width="520" height="16" fill="#0b0324"/>
 <rect x="0" y="48" width="1280" height="16" fill="#0b0324"/>
 <rect x="0" y="64" width="1280" height="16" fill="#0b0324"/>
 <rect x="0" y="80" width="1280" height="16" fill="#0b0324"/>
@@ -79,7 +79,7 @@
 <text x="232" y="44" fill="#0b0324" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   AGE</text>
 <text x="288" y="44" fill="#0b0324" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> DROP</text>
 <text x="336" y="44" fill="#0b0324" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">RST</text>
-<text x="368" y="44" fill="#0b0324" textLength="400" lengthAdjust="spacingAndGlyphs" xml:space="preserve">NOTE                                              </text>
+<text x="368" y="44" fill="#0b0324" textLength="392" lengthAdjust="spacingAndGlyphs" xml:space="preserve">NOTE                                             </text>
 <text x="1272" y="44" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="0" y="60" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="8" y="60" fill="#efe9ff" textLength="40" lengthAdjust="spacingAndGlyphs" xml:space="preserve">audio</text>
@@ -106,7 +106,7 @@
 <text x="264" y="92" fill="#8a7fb0" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0s</text>
 <text x="320" y="92" fill="#8a7fb0" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
 <text x="352" y="92" fill="#8a7fb0" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
-<text x="368" y="92" fill="#3d2a63" textLength="248" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · scan 0.30 ms</text>
+<text x="368" y="92" fill="#3d2a63" textLength="248" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · scan 0.40 ms</text>
 <text x="1272" y="92" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="0" y="108" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="8" y="108" fill="#efe9ff" textLength="24" lengthAdjust="spacingAndGlyphs" xml:space="preserve">gpu</text>
@@ -133,7 +133,7 @@
 <text x="264" y="140" fill="#8a7fb0" textLength="16" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0s</text>
 <text x="320" y="140" fill="#8a7fb0" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
 <text x="352" y="140" fill="#8a7fb0" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
-<text x="368" y="140" fill="#3d2a63" textLength="400" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · scan 3.3 ms · 87/103 attributed</text>
+<text x="368" y="140" fill="#3d2a63" textLength="392" lengthAdjust="spacingAndGlyphs" xml:space="preserve">synthetic (demo) · scan 2.9 ms · 24/32 attributed</text>
 <text x="1272" y="140" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="0" y="156" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="8" y="156" fill="#efe9ff" textLength="32" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pins</text>

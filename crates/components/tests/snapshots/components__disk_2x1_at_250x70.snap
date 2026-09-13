@@ -16,9 +16,17 @@ view:
               - BUSY
             rows:
               - - ● nvme0n1
-                - 993M
-                - 202M
+                - 998M
+                - 200M
                 - 56%
+              - - ● sda
+                - 0B
+                - 40M
+                - 54%
+              - - ● nvme0n1p2
+                - 0B
+                - 4.0M
+                - 4%
               - - ● nvme1n1
                 - 78k
                 - 459k
@@ -34,5 +42,5 @@ view:
         - text:
             - - bold: false
                 role: TextMuted
-                s: 3 devices · sort traffic · s sort
+                s: 5 devices · sort traffic · s sort
     dir: V

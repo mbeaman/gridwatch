@@ -7,7 +7,7 @@ tier: chart
 view:
   stack:
     children:
-      - - Len(4)
+      - - Len(6)
         - table:
             columns:
               - DEVICE
@@ -19,12 +19,26 @@ view:
               - W/S
             rows:
               - - ● nvme0n1
-                - 993M
-                - 202M
+                - 998M
+                - 200M
                 - 56%
                 - 50°
-                - "7575"
-                - "3077"
+                - "7614"
+                - "3052"
+              - - ● sda
+                - 0B
+                - 40M
+                - 54%
+                - —
+                - "0"
+                - "615"
+              - - ● nvme0n1p2
+                - 0B
+                - 4.0M
+                - 4%
+                - 50°
+                - "0"
+                - "121"
               - - ● nvme1n1
                 - 78k
                 - 459k
@@ -69,6 +83,10 @@ view:
         - chart:
             - label: nvme0n1
               points: 39
+            - label: sda
+              points: 29
+            - label: nvme0n1p2
+              points: 39
             - label: nvme1n1
               points: 39
             - label: nvme2n1
@@ -87,6 +105,30 @@ view:
               - bold: false
                 role: AccentSecondary
                 s: "  w 5.40 ms"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "sda "
+              - bold: false
+                role: AccentPrimary
+                s: r —
+              - bold: false
+                role: AccentSecondary
+                s: "  w 13.50 ms"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "nvme0n1p2 "
+              - bold: false
+                role: AccentPrimary
+                s: r —
+              - bold: false
+                role: AccentSecondary
+                s: "  w 1.80 ms"
               - bold: false
                 role: TextGhost
                 s: " · "
@@ -115,5 +157,5 @@ view:
         - text:
             - - bold: false
                 role: TextMuted
-                s: 3 devices · sort traffic · s sort
+                s: 5 devices · sort traffic · s sort
     dir: V

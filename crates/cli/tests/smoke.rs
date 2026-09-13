@@ -265,12 +265,21 @@ fn frame_rows(w: u16, h: u16) -> Vec<Vec<char>> {
 /// eighty-seven cells apart. The defect these numbers were supposed to find
 /// was invisible to them.
 ///
-/// **The NETWORK number is fixture-shaped.** `demo::NetSynth` publishes five
-/// connections and three interfaces while reporting `scanned: 103`; torch's
-/// `/proc/net/{tcp,tcp6,udp,udp6}` hold 109 sockets and `/proc/net/dev` nine
-/// interfaces, so on a real machine the connection band fills and the demo
-/// leaves eighteen rows empty. This floor pins the synth as much as the tile
-/// (D65's own note; fixing the synths is a `BACKLOG.md` item).
+/// **The NETWORK number was fixture-shaped, and arc 16 proved it by changing
+/// only the fixture.** `demo::NetSynth` published five connections and three
+/// interfaces while *reporting* `scanned: 103` — a shape the real source
+/// cannot produce, since it sets `scanned = rows.len()` with no cap. With 32
+/// connections and six interfaces and **no change to `net/view.rs`**, the
+/// 480×135 numbers went from a tile that could barely clear a 0.09 cell floor
+/// to **cells 0.336, rows 0.951, cols 1.000**.
+///
+/// So the floor below is raised — not to flatter the tile, which did not
+/// change, but because 0.09 against a tile that now draws 0.336 pins nothing:
+/// the tile could lose two thirds of its ink and still pass. The new floor
+/// keeps real headroom under the measurement rather than hugging it, and the
+/// number it defends is a property of the *fixture* the tile is drawing.
+/// D67 §4 is the decision; the measured pair is recorded here so the next
+/// person can see which half moved.
 ///
 /// No floor for SOURCES, AUDIO or PINS: those numbers are content- or
 /// construction-bounded and a floor would pin the demo synth rather than the
@@ -282,7 +291,7 @@ fn a_wide_terminal_fills_its_tiles() {
     let floors = [
         ("CPU", 0.19, 0.71, 0.77),
         ("GPU", 0.11, 0.33, 0.80),
-        ("NETWORK", 0.09, 0.33, 0.80),
+        ("NETWORK", 0.25, 0.80, 0.95),
         ("SENSORS", 0.35, 0.67, 0.80),
     ];
     let mut sizes = vec![(480u16, 135u16)];

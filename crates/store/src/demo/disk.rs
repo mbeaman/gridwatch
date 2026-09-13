@@ -32,6 +32,31 @@ fn named(key: &crate::key::Key<f64>, label: &str) -> MetricId {
 /// The three drives, in the order the synth publishes them.
 pub const DEVICES: [&str; 3] = ["nvme0n1", "nvme1n1", "nvme2n1"];
 
+/// A **partition**, published as a device in its own right (arc 16, D67 §4).
+/// `nvme0n1p2` is named inside `nvme0n1`'s `DiskInfo.partitions` and, until
+/// this arc, appeared nowhere else — which is how a bug that rendered every
+/// partition as its parent drive stayed invisible to every snapshot, component
+/// test and pty case. A partition only reaches the store under
+/// `[sources.disk] partitions = true`; the synth publishes it always, because
+/// a fixture exists to be the harder case.
+pub const PARTITION: &str = "nvme0n1p2";
+
+/// A **removable drive that leaves mid-run** (arc 16, D67 §4). Present for the
+/// first 45 s of the synth's 60 s cycle and gone after it, so a replay crosses
+/// the boundary in both directions. This is D61's risk row — a device that
+/// vanishes is re-created from scratch after `max_age` with an empty chart —
+/// and nothing modelled it.
+pub const REMOVABLE: &str = "sda";
+/// When `sda` is unplugged, in seconds into the cycle.
+pub const REMOVABLE_LEAVES_S: f64 = 45.0;
+/// The synth's cycle, matching `demo::net`'s so a replay repeats as a whole.
+pub const CYCLE_S: f64 = 60.0;
+
+/// Is the removable drive plugged in at `at`?
+pub fn removable_present(at: Ts) -> bool {
+    at.as_secs_f64() % CYCLE_S < REMOVABLE_LEAVES_S
+}
+
 /// The inventory the synth publishes (also the journal exemplar).
 pub fn disk_infos() -> Vec<DiskInfo> {
     vec![
@@ -77,6 +102,36 @@ pub fn disk_infos() -> Vec<DiskInfo> {
             scheduler: "none".into(),
             nr_requests: 1023,
         },
+        // The partition, as its own device (arc 16). `device` is its parent's
+        // controller — a partition shares the drive's hwmon node, so the
+        // temperature join finds the same chip and both rows show it.
+        DiskInfo {
+            name: PARTITION.into(),
+            model: String::new(),
+            size_b: 3_000_000_000_000,
+            rotational: false,
+            removable: false,
+            kind: DiskKind::Partition,
+            device: "nvme0".into(),
+            partitions: Vec::new(),
+            scheduler: "none".into(),
+            nr_requests: 1023,
+        },
+        // The removable, which leaves at 45 s. Rotational and with a shallow
+        // queue, so the `BUSY`-versus-`Q` argument has a device where high
+        // `BUSY` and low `Q` genuinely means "slow", not "barely awake".
+        DiskInfo {
+            name: REMOVABLE.into(),
+            model: "SanDisk Extreme 55AE".into(),
+            size_b: 128_043_712_512,
+            rotational: false,
+            removable: true,
+            kind: DiskKind::Drive,
+            device: "0:0:0:0".into(),
+            partitions: vec!["sda1".into()],
+            scheduler: "mq-deadline".into(),
+            nr_requests: 64,
+        },
     ]
 }
 
@@ -104,6 +159,7 @@ struct Draw {
 pub struct DiskSynth {
     rng: XorShift,
     info_sent: bool,
+    removable_was_present: Option<bool>,
 }
 
 /// Round to a tenth, so a snapshot pins a number a person would read.
@@ -116,6 +172,7 @@ impl DiskSynth {
         DiskSynth {
             rng: XorShift::new(seed.wrapping_add(0x0064_7368)),
             info_sent: false,
+            removable_was_present: None,
         }
     }
 
@@ -169,10 +226,64 @@ impl DiskSynth {
         Draw::default()
     }
 
+    /// The partition carries a share of its parent's write load and none of
+    /// its reads — a mounted data partition under a drive whose reads are
+    /// mostly elsewhere. It must never be a *copy* of `nvme0n1`'s draw: a bug
+    /// that renders a partition as its parent is exactly what this device
+    /// exists to catch, and identical numbers would hide it (arc 16).
+    fn partition(&mut self, at: Ts) -> Draw {
+        let t = at.as_secs_f64();
+        let beat = 0.5 + 0.5 * ((t / 17.0) * std::f64::consts::TAU).sin();
+        let write_bps = 1.1e6 + 7.0e6 * beat + self.rng.f64() * 3.0e4;
+        Draw {
+            read_bps: 0.0,
+            write_bps: (write_bps / 4096.0).round() * 4096.0,
+            discard_bps: 0.0,
+            reads_ps: 0.0,
+            writes_ps: (write_bps / 32_768.0).round(),
+            busy_pct: t1(1.1 + 7.0 * beat),
+            queue: t1(0.03 + 0.5 * beat),
+            // Reads never complete here, so the read await is absent, not zero
+            // — the same rule the idle drive proves, on a device that is busy.
+            read_await_ms: None,
+            write_await_ms: Some(t1(0.9 + 2.2 * beat)),
+        }
+    }
+
+    /// The removable drive: a USB stick being written to, at USB 3 speeds and
+    /// with the queue depth of something far slower than an NVMe.
+    fn removable(&mut self, at: Ts) -> Draw {
+        let t = at.as_secs_f64();
+        let beat = 0.5 + 0.5 * ((t / 9.0) * std::f64::consts::TAU).cos();
+        let write_bps = 2.0e7 + 8.0e7 * beat + self.rng.f64() * 5.0e5;
+        Draw {
+            read_bps: 0.0,
+            write_bps: (write_bps / 4096.0).round() * 4096.0,
+            discard_bps: 0.0,
+            reads_ps: 0.0,
+            writes_ps: (write_bps / 65_536.0).round(),
+            busy_pct: t1(40.0 + 55.0 * beat),
+            queue: t1(0.8 + 1.4 * beat),
+            read_await_ms: None,
+            write_await_ms: Some(t1(8.0 + 22.0 * beat)),
+        }
+    }
+
     pub fn tick_at(&mut self, at: Ts) -> Batch {
-        let draws = [self.busy(at), self.light(at), DiskSynth::idle()];
-        let mut samples = Vec::with_capacity(DEVICES.len() * 9 + 4);
-        for (dev, d) in DEVICES.iter().zip(draws) {
+        // Drives first, then the partition, then the removable — the order the
+        // real source publishes in (drives, partitions, `extra`), so the
+        // fixture stays a thing that source could have produced.
+        let mut feed: Vec<(&str, Draw)> = DEVICES
+            .iter()
+            .copied()
+            .zip([self.busy(at), self.light(at), DiskSynth::idle()])
+            .collect();
+        feed.push((PARTITION, self.partition(at)));
+        if removable_present(at) {
+            feed.push((REMOVABLE, self.removable(at)));
+        }
+        let mut samples = Vec::with_capacity(feed.len() * 9 + 4);
+        for (dev, d) in feed {
             for (key, v) in [
                 (&disk::READ_BPS, d.read_bps),
                 (&disk::WRITE_BPS, d.write_bps),
@@ -205,9 +316,23 @@ impl DiskSynth {
             id: disk::SCAN_MS.id.clone(),
             datum: Datum::Scalar(t1(0.2 + self.rng.f64() * 0.2)),
         });
-        if !self.info_sent {
+        // `disk.info` is publish-once per device (D64 §5) — but a device that
+        // leaves and comes back is a *new* first sight, and without its Record
+        // the tile has rates for a device it cannot name. The real source
+        // classifies lazily on seeing a name it has forgotten, which is
+        // exactly this (arc 16).
+        let present = removable_present(at);
+        let returned = self.removable_was_present == Some(false) && present;
+        self.removable_was_present = Some(present);
+        if !self.info_sent || returned {
             self.info_sent = true;
             for info in disk_infos() {
+                if info.name == REMOVABLE && !present {
+                    continue;
+                }
+                if returned && info.name != REMOVABLE {
+                    continue;
+                }
                 samples.push(Sample {
                     id: MetricId {
                         name: disk::INFO.id.name,
@@ -323,13 +448,24 @@ mod tests {
                     && s.id.label == Label::Name(Arc::from("nvme2n1"))),
                 "the idle drive still publishes 0.0"
             );
-            // The inventory goes out once.
+            // The inventory goes out once — plus once more for the removable
+            // on the tick it comes back, because a device that left and
+            // returned is a *new* first sight and without its Record the tile
+            // has rates for a device it cannot name (arc 16).
             let infos = x
                 .samples
                 .iter()
                 .filter(|s| s.id.name == "disk.info")
                 .count();
-            assert_eq!(infos, if i == 1 { 3 } else { 0 });
+            let returned = !removable_present(Ts((i - 1) * 1_000_000_000)) && removable_present(at);
+            let expect = if i == 1 {
+                5 // three drives, a partition, the removable
+            } else if returned {
+                1 // the removable alone
+            } else {
+                0
+            };
+            assert_eq!(infos, expect, "disk.info at {i}s");
         }
         // The busy drive is actually busy.
         let mut s = DiskSynth::new(7);
@@ -353,26 +489,90 @@ mod tests {
         assert!(peak > 80.0, "the busy drive peaked at {peak}%");
     }
 
+    /// A partition is published as a device, not merely named inside its
+    /// parent's Record — the gap that let every partition render as its parent
+    /// drive with no snapshot, component test or pty case noticing (arc 16).
+    /// Its numbers must also *differ* from its parent's, or a tile that
+    /// confused the two would still look right.
+    #[test]
+    fn the_partition_is_a_device_with_numbers_of_its_own() {
+        let batch = DiskSynth::new(7).tick_at(Ts(3_000_000_000));
+        let of = |dev: &str, key: &str| {
+            batch
+                .samples
+                .iter()
+                .find(|s| s.id.name == key && s.id.label == Label::Name(Arc::from(dev)))
+                .and_then(|s| match s.datum {
+                    Datum::Scalar(v) => Some(v),
+                    _ => None,
+                })
+        };
+        assert!(
+            of(PARTITION, "disk.write_bps").is_some(),
+            "the partition publishes its own series"
+        );
+        assert!(
+            disk_infos()
+                .iter()
+                .any(|i| i.name == PARTITION && matches!(i.kind, DiskKind::Partition)),
+            "and its own DiskInfo, as a Partition"
+        );
+        assert_ne!(
+            of(PARTITION, "disk.write_bps"),
+            of("nvme0n1", "disk.write_bps"),
+            "a partition that copies its parent hides the bug it exists to catch"
+        );
+        // Reads never complete on it, so the read await is absent — the `—`
+        // path on a device that is otherwise busy.
+        assert!(of(PARTITION, "disk.read_await_ms").is_none());
+    }
+
+    /// A device that leaves mid-run: D61's risk row (re-created from scratch
+    /// after `max_age` with an empty chart), modelled nowhere until arc 16.
+    #[test]
+    fn the_removable_leaves_and_comes_back() {
+        let present = |s: u64| {
+            DiskSynth::new(7)
+                .tick_at(Ts(s * 1_000_000_000))
+                .samples
+                .iter()
+                .any(|x| x.id.label == Label::Name(Arc::from(REMOVABLE)))
+        };
+        assert!(present(10), "plugged in early in the cycle");
+        assert!(!present(50), "gone after it is unplugged");
+        assert!(present(70), "back on the next cycle");
+    }
+
     /// D64 §7: the join is a string equality between two Records that already
     /// exist. If either side is renamed, the demo stops exercising the join
     /// and no snapshot would notice — so it is asserted here, at the source.
+    ///
+    /// **It is not "every device has a chip", which is what this asserted
+    /// before arc 16.** A USB drive has no `drivetemp` and its cell is `—`
+    /// with the reason — D64's own degraded path, which the fixture now
+    /// exercises with `sda`. The rule is: every *nvme* device joins, and at
+    /// least one device deliberately does not, or the dash path has no fixture.
     #[test]
     fn every_demo_drive_has_a_matching_demo_hwmon_chip() {
         let chips = sensors_info();
+        let mut unjoined = 0;
         for info in disk_infos() {
-            let chip = chips
-                .chips
-                .iter()
-                .find(|c| c.device == info.device)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "no demo hwmon chip hangs off `{}` — the temperature join is not \
-                         exercised for {}",
-                        info.device, info.name
-                    )
-                });
+            let Some(chip) = chips.chips.iter().find(|c| c.device == info.device) else {
+                assert!(
+                    info.removable,
+                    "`{}` hangs off `{}` and no demo hwmon chip matches — the join is \
+                     silently not exercised for it. Only a removable may miss on purpose.",
+                    info.name, info.device
+                );
+                unjoined += 1;
+                continue;
+            };
             assert!(chip.name.starts_with("nvme"), "{chip:?}");
         }
+        assert_eq!(
+            unjoined, 1,
+            "exactly one device must fail the join, so the `—` path has a fixture"
+        );
         // And the numbering deliberately disagrees, so a build that joined by
         // index instead of by `device` would draw the wrong drive's
         // temperature and this fixture would catch it.
