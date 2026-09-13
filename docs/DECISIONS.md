@@ -755,3 +755,100 @@ This is the same defect `docs/JOURNAL.md` recorded for prose on 2026-09-12, one
 layer down: **an assertion against a number that happens to be true today is a
 recording, not a test.** Worth a sweep for `assert_eq!(.*\.len\(\), <int>)`
 across the suite, which is a `BACKLOG.md` item rather than this change's job.
+
+## D67 — arc 16: the instrument has to enumerate (2026-09-13)
+
+**Decision.** Arc 15's review ended on a sentence: *"a rule that ships with a
+list of the places it applies will be applied to the list. The instrument has to
+enumerate, not the brief."* It fixed that for the two sweeps it built and left
+every older instrument alone. Four `BACKLOG.md` items are the consequence, and
+they are one defect at three levels — **`net` has no snapshot and no chart has a
+cell snapshot** (`P2`), **the seven demo synths model only the happy path**
+(`P3`, Next-up #3), and **nothing checks hand-written prose against the tree**
+(`P2`). Pulled together because each one alone is a small fix and together they
+are the reason three arcs running shipped a bug that no test could see.
+
+Deliberately **not** a seam arc: no crate gains a public type. Split by what
+reverts alone and by the one genuine dependency — **16a** is the fixtures
+(`gridwatch-store`'s synths, which churn snapshots), **16b** is the instruments
+that then measure them.
+
+**1. The list that proves the point is in the file that fixed it.**
+`components.rs` already holds `every_registered_component()`, written in arc 15
+with the comment *"a new tile joins the two sweeps below by being registered
+rather than by being remembered"*. The sweeps below it enumerate. Forty lines
+above it, `view_snapshots_at_real_grid_sizes` is **ten hand-written blocks** and
+`net` is not one of them. Nor is it in `assert_renders_everywhere`'s list ten
+lines above, which is the same ten kinds in the same order — so the eleventh
+component is in **neither** sweep, which is why arc 15 rewrote `net/view.rs` by
+213 lines with zero snapshot churn.
+The mechanism to fix this was built in the same file, in the same arc, and not
+applied to the test forty lines away. That is the whole thesis of this arc and it
+needs no further argument.
+
+**2. The cell snapshot's own comment is the claim it fails.** `rendered_cells_snapshot_modern_only`
+opens with *"one per component at one representative size"* and covers **three of
+eleven** — clock, sources and htop. So arc 15's *global* renderer change, the
+gridlines and series labels now drawn in every `View::Chart`, is pinned in actual
+cells for **no chart at all**. Every charting tile (gpu, disk, net, sensors,
+pins, audio) renders braille the view tree cannot describe: a `View::Chart` node
+snapshot says "a chart with these series", not which cells got ink. Both are
+fixed by the same enumeration, and the comment becomes true.
+
+**3. The prose check is a *check*, not a generator.** `BACKLOG.md` phrased this
+as "generate the README's tile roster", and building that would be a mistake: the
+README's per-tile bullets and `wiki/Tiles.md`'s sections are hand-written prose
+explaining what each tile is *for*, which is the half no generated file holds and
+the whole value of both documents. Generating them would delete it. **The test is
+that every registered kind is named somewhere in `README.md` and in
+`wiki/Tiles.md`** — prose preserved, omission caught. It would have failed on the
+day arc 14 shipped, which is the standard any new instrument here has to meet.
+
+**4. The synths' happy path, and the two that matter.** `demo::DiskSynth`'s
+`DEVICES` is three whole drives; partitions appear only *inside* the `disk.info`
+Record, never as published series — which is why a bug rendering every partition
+as its parent drive was invisible to every snapshot, component test and pty case.
+`demo::NetSynth` publishes five connections and three interfaces while
+*reporting* `scanned: 103, attributed: 87`, against a real machine's 109 sockets
+and nine interfaces: the connection band looks two-thirds empty in every demo
+frame and full in life, and `a_wide_terminal_fills_its_tiles`'s NETWORK floor
+pins the synth as much as the tile. Both gain the shape they refuse to model.
+The other **six** synths — there are eight, not the seven `BACKLOG.md` claims — are **surveyed and reported, not changed** — the question
+"what does this synth refuse to model" is asked of each, the answers go in the
+arc's ROADMAP status, and anything real becomes its own item.
+
+**5. The trap, named because it makes the arc look done while making the suite
+worse.** `demo_store(seed, ticks)` is **one shared timeline**: every synth ticks
+together and the only parameter is how many ticks. The hand-written snapshot
+blocks exploit that with a per-component choice and a comment saying why — audio
+gets 3 ticks because 4.5 s is past the synth's 1.5 s of silence, pins and alerts
+get 40 because 60 s reaches the scripted overload's raise at 21.5 s **and** its
+resolve at 50 s, htop and gpu get 40 so the sparkline is real rather than three
+samples in one bucket. A naive enumeration hands every component one store and
+produces snapshots of unlit tiles, which are then accepted as correct and pin
+emptiness forever. **So the enumeration carries a per-kind tick count, and every
+existing comment moves with it rather than being dropped.** A kind with no entry
+gets a stated default, and adding a component makes that choice explicit.
+
+**6. The one ordering that matters.** Fixing `NetSynth` churns every net
+snapshot — and `net` has no snapshots yet. Write them first and they are
+invalidated by a change in the same arc; the baseline would be accepted twice and
+mean nothing the first time. **16a lands the synths, 16b writes the snapshots
+against them.** This is why the arc splits by crate rather than by theme.
+
+**Not in this arc, deliberately.** **The `assert_eq!(<x>.len(), <int>)` sweep**
+(`P3`, filed 2026-09-12 from D66) — the same defect one level further down, but
+it needs a judgment per instance (is the number the rule, or a souvenir of
+today?) and this arc already touches two synths, two snapshot instruments and two
+documents. Recorded here so the next session does not re-litigate it. **The
+general prose checker** — rejected in §3; only the enumerable claim is worth
+testing. **Re-fitting any coverage floor** to the new synth output: the NETWORK
+floor moves because the fixture moved, and the new number is recorded with a
+sentence saying it pins a richer fixture, not a better tile.
+
+**Model choice (D36).** No seam, so this is an implementation arc against its
+brief. The decision, the ROADMAP box and `docs/briefs/arc-16.md` were written by
+an Opus session, as for D64 and D65, under the standing rule that a seam question
+stops and escalates rather than being decided here. Nothing in the arc is near
+the line: `every_registered_component()` already exists and is already public to
+the test.
