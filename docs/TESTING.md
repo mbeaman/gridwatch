@@ -51,6 +51,8 @@ the ones below structurally cannot observe.
 
 ### A. Content oracles in the component sweeps (`gridwatch-ui` testkit)
 
+> **The sweeps enumerate the registry, never a list** (arc 16, D67). `renders_everywhere`, `tiers_are_well_formed`, `view_snapshots_at_real_grid_sizes` and the cell snapshots all run over `every_registered_component()`, so **a new tile joins every instrument by being registered**. This is not a style preference: the view-snapshot sweep and `renders_everywhere` were ten hand-written blocks each and `net` was in neither, so the eleventh component had no snapshot at all — and the moment it entered a sweep, the sweep found a bug its tier had carried for six arcs. Snapshot tick counts are per kind with **no default** (`demo_store` is one shared timeline; the wrong count snapshots an unlit tile and pins emptiness forever), and each count is asserted against the synth constant it exists for.
+
 `assert_never_panics` is now `assert_renders_everywhere`. For every size from
 0×0 to the richest tier's minimum plus margin, it asserts:
 

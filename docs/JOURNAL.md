@@ -6,6 +6,59 @@
 
 ---
 
+## 2026-09-13 — arc 16: the instrument has to enumerate
+
+**Models:** Opus 5 throughout (D67, the ROADMAP box and `docs/briefs/arc-16.md` written the same day). **Shipped:** arc 16, 16a in one commit and 16b in one. **Nothing tagged. No review yet** — that is the next session's, and the ROADMAP box's last line is still open.
+
+### What changed for Matt
+
+**The suite can see the tiles now, and the first thing it saw was a bug.** Arc 15's review ended on a sentence — *a rule that ships with a list of the places it applies will be applied to the list; the instrument has to enumerate* — and fixed that for the two sweeps it built while leaving every older one alone. So `view_snapshots_at_real_grid_sizes` and `renders_everywhere` were ten hand-written blocks each, forty lines above a helper called `every_registered_component()` written in the same arc, in the same file, for exactly this. **`net` was in neither.** That is how arc 15 rewrote `net/view.rs` by 213 lines with zero snapshot churn.
+
+The moment `net` entered a sweep it had never been in, the sweep found this: **the `conns` tier's declared signature was `"conns"`, and the only place that string appeared in the whole tile was the *placeholder* shown when there is no connection table** — `"connections: zoom or widen the tile"`. A tier drawing its table correctly **failed** its own signature. A tier drawing the apology **passed**. It had been that way since arc 7.
+
+**Two demo synths stopped describing machines that do not exist.** `NetSynth` reported `scanned: 103, attributed: 87` beside **five** published rows, and the sources tile printed it verbatim — `87/103 attributed` about a table of five. The real source sets `scanned = rows.len()` with no cap and no truncation, and `attributed` is the count that resolved to a pid, so both numbers were free-floating fiction. They are derived now and the tile reads **24/32**. The existing assertion, `attributed < scanned`, was true of the lie. `DiskSynth` gained a **partition published as a device** — the gap that let a bug render every partition as its parent drive with nothing noticing — and a **removable that leaves at 45 s and comes back**, which is D61's risk row and was modelled nowhere.
+
+**And a test now fails when the README or the wiki stops naming a tile.** It was watched to fail against a `README.md` with `disk` renamed before it was trusted. It would have failed the day arc 14 shipped, which is when the README started naming ten tiles while its own generated screenshot showed the eleventh.
+
+### The proof that the enumeration did not flatten anything
+
+`demo_store` is **one shared timeline** parameterised only by a tick count, and the hand-written blocks exploited that per component with a comment each: audio at 3 ticks because 4.5 s is past the synth's silence, pins and alerts at 40 because 60 s reaches the scripted overload's raise *and* its resolve, htop at 40 so the sparkline is a line rather than three samples in one bucket. The brief called a naive enumeration the trap that makes the arc look done while making the suite worse — every tile handed one store, half of them snapshotting nothing, and those snapshots then accepted as correct.
+
+So the enumeration carries `snapshot_ticks(kind)`, and the evidence it worked is that **replacing ten hand-written blocks changed zero existing snapshots** and added six for the component that had none. `snapshot_ticks` has no default: an unknown kind panics with the reason, so the next component chooses rather than inheriting 40 and pinning an empty tile. And each count is asserted against the synth's **own constant** — `AUDIO_SILENT_UNTIL_S`, `OVERLOAD_RESOLVE_S`, `DISK_REMOVABLE_LEAVES_S` — so moving an event fails there instead of silently emptying a snapshot.
+
+### Four tests broke, and every one of them broke for the wrong reason
+
+This is the arc's second finding and it rhymes with D66's. Each of these asserted a number that happened to be true rather than the rule it existed for, so a fixture change — not a behaviour change — broke it:
+
+- `every_demo_drive_has_a_matching_demo_hwmon_chip` required **every** drive to join an hwmon chip. A USB drive has no `drivetemp`; that is D64's own `NoTemp::NoChip` path, and it had **no fixture at all**. The rule is now "every nvme joins, and exactly one device deliberately does not", so the `—` path is exercised rather than assumed away.
+- The disk name-sort test pinned a literal three-element list; it asserts sortedness now.
+- `partial_config_layers` and the picker round-trip were the same shape and were fixed in D66 two days earlier.
+- And `net`'s own `the_table_shows_states_rates_and_the_probe_strip` caught **me**: the first draft of the connection table grouped rows by process, which pushed every unattributed socket past the fold. `/proc/net/tcp` is ordered by hash bucket, not by process, and a fixture grouped by process cannot show on its first page that `attributed < scanned` is a thing the tile draws. The rows are interleaved now, with a test pinning it.
+
+### The number that moved without the code moving
+
+`net/table`'s growth ratio went **1.54× → 1.46×** on the height axis. No line of `net/view.rs` changed; three interfaces became six and the content-sized band took the rows. Arc 15 had asserted both axes and called them "close to the bar".
+
+An assertion that moves 1.54 → 1.46 on a *fixture* change is measuring the fixture. The tier is a content-sized band over a braille chart, and D65 §4 already writes down why the chart cannot rescue it — a line lights about one cell per column however tall the band. Height growth here is bounded by the interface count and always was; three interfaces hid it. The axis is excluded with the numbers recorded, and the width axis is asserted and *improved* to 1.57×.
+
+The NETWORK coverage floor moved the other way, 0.09 → 0.25 cells, and the temptation there is the opposite one. At 480×135 the tile now measures 0.336 with no component change, and a 0.09 floor under it pins nothing — the tile could lose two thirds of its ink and pass. Raised, with both halves recorded in `smoke.rs` so the next reader can see which one moved.
+
+### The survey found a branch that looks alive and is not
+
+D67 asked one sentence per remaining synth. Two are findings rather than observations:
+
+- **`GpuSynth`'s throttle branch is unreachable.** It sets `SW_POWER_CAP` when `power > 590.0`, and `power = 300 + util * 6 + jitter` with `util_at` bounded at roughly 10–24 — so power peaks near **445 W**. `gpu.throttle` is always `bits: 0`, the throttle chip has never had a fixture, and the code reads as coverage while providing none.
+- **`CpuSynth`'s swap is a literal `0.0`**, so htop's `SWP` meter is an empty bar in every snapshot, every generated screenshot and the README.
+
+Plus: no demo sensor ever crosses warn or crit (bases 44–52 °C against the one crit of 84.85), so arc 15's warn/crit gauges are green in every fixture that exists. All four are `P3`s.
+
+### What is owed to Matt
+
+- **The arc-end adversarial review**, with a lens that greps every test file for a hand-written list of component kinds — the defect this arc exists to end, in the places it did not look.
+- **`v0.16.0`**, and every tag from `v0.1.0`.
+
+---
+
 ## 2026-09-11 → 13 — the zero line, five reviews the docs said were owed, a README that did not know about a tile, and a wiki
 
 **Models:** Opus 5. **Shipped:** one renderer fix (`48fc924`, 09-11) and this reconciliation (09-12). *The 09-11 half of this entry is reconstructed from the commit and its diff, because no entry was written for it — the first time that has happened in fifteen arcs. Why is not knowable from here: the `Stop` hook that exists to catch this has been in place since 09-07 (`6011293`), and it both may not have fired and may have been answered with the "does not warrant one" the hook text permits. What is observable is that the entry was missing and the hook caught it on this session's first stop.*
@@ -185,9 +238,8 @@ command from a clean tree.
 
 ### What is owed to Matt
 
-Nothing new from this session. The list is unchanged: every tag from `v0.1.0` to `v0.15.0`, and the whole owed-to-a-human section at the top of `PLAN.md`. The three `P2`/`P3` items arc 15's review filed — `net` has no snapshot, no chart has a *cell* snapshot, and the seven demo synths model only the happy path — are still open and are the strongest candidate for arc 16, because all three are the same defect: a suite that cannot see a tile cannot catch a bug in it.
+Nothing new from this session. The list is unchanged: every tag from `v0.1.0` to `v0.15.0`, and the whole owed-to-a-human section at the top of `PLAN.md`. The three `P2`/`P3` items arc 15's review filed — `net` has no snapshot, no chart has a *cell* snapshot, and the demo synths model only the happy path — are the strongest candidate for arc 16, because all three are the same defect: a suite that cannot see a tile cannot catch a bug in it. *(They became arc 16 the next day — D67, the entry above.)*
 
----
 
 ## 2026-09-09 — arc 15: what a tile draws with the room
 
