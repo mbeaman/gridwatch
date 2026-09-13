@@ -4,3 +4,6 @@
 
 # nfpm copies the built binary here at package time (release.yml)
 /packaging/gridwatch
+
+# scripts/wiki-publish.sh --dry-run converts wiki/ here for inspection
+/build

@@ -40,12 +40,31 @@ described in prose and marked as such.
 ## Publishing to the GitHub wiki
 
 These pages live in the repo so they are reviewed, diffed and drift-checked like
-everything else. Publishing them to `github.com/mbeaman/gridwatch/wiki` is a
-separate, outward-facing step and has not been done. It needs two mechanical
-changes, because a GitHub wiki is a different git repository:
+everything else. `scripts/wiki-publish.sh` pushes them to
+`github.com/mbeaman/gridwatch/wiki`:
 
-1. **Links** lose their `.md` — a link written `[Installing](Installing.md)`
+```sh
+scripts/wiki-publish.sh --dry-run   # convert into build/wiki-out and stop
+scripts/wiki-publish.sh             # convert and push
+```
+
+It is a script rather than a copy because a GitHub wiki is a **separate git
+repository**, and three things have to change on the way out:
+
+1. **Page links lose their `.md`** — a link written `[Installing](Installing.md)`
    here has to become `[Installing](Installing)` there.
-2. **Images** must be committed into the wiki repo. A wiki page cannot render an
-   SVG from `raw.githubusercontent.com`: GitHub serves it as `text/plain` and
-   the image proxy will not draw it.
+2. **Links into `docs/` become absolute.** A wiki page cannot relative-link into
+   the code repo at all, so `../docs/ARCHITECTURE.md` becomes a `blob/main` URL.
+3. **Images are copied in, flat, under `img/`.** A wiki page cannot render an SVG
+   from `raw.githubusercontent.com` — it is served as `text/plain` and the image
+   proxy will not draw it — so every picture has to live in the wiki repo itself.
+
+`wiki/README.md` (this file) is about the directory rather than the product, so
+it is not published. A `_Sidebar.md` is generated, and says on it that the wiki
+is a copy: anyone who edits a page there loses it on the next publish.
+
+**Before the first publish, somebody has to create one page in the browser.**
+GitHub does not create `<repo>.wiki.git` until a page exists, and there is no
+API for it — so the script stops with that instruction rather than a git error.
+Open the repo's Wiki tab, click *Create the first page*, save anything; the
+script overwrites it.
