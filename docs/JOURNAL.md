@@ -130,14 +130,55 @@ link.
 described in prose with a note saying the picture cannot show them. A recorded
 journal with `--record-input` could probably reach them; not attempted.
 
+### Proceeding: the tile got a page, and the publish got as far as it can
+
+**`disk` is on page 3 of the shipped layout** (D66). Matt took the call D64 left
+him, and the version that costs nothing won: the Overview is full, every slot the
+tile could take belongs to something a test or the performance protocol depends
+on, and **the `disk` source already ran in the shipped default** — so a third
+page adds no source, no thread and no wake-ups, only a cadence rising from 2 s to
+1 s while page 3 is the page you are looking at. Eight overview SVGs and the
+README frame gain one banner word; `dense-120x40.svg` and the per-tile wiki shots
+are byte-identical.
+
+**The two tests that broke are the more interesting half, and they broke for the
+wrong reason.** A one-line default change failed `partial_config_layers`
+(`components.len() == 7`) and the picker round-trip (the literal string
+`"layout.toml saved (2 pages)"`). Neither was checking its own subject. The first
+exists to prove a config naming no components inherits the **whole default
+list**, so it now asserts exactly that — which would catch a reordered or
+substituted list, something a length never could. The second exists to prove the
+save message reports **what was written**, so it now counts `[[pages]]` in the
+file it just wrote. Both are stronger and neither will rot.
+
+That is the day's subject one layer down. The morning's finding was that nothing
+checks hand-written prose against the tree; this is the same defect inside the
+test suite — **an assertion against a number that happens to be true today is a
+recording, not a test.** The general sweep for `assert_eq!(….len(), <int>)` is a
+`P3`, because doing it properly means asking of each one whether the number is
+the rule or a souvenir, and that is not a find-and-replace.
+
+**The wiki publish is built and cannot run.** `scripts/wiki-publish.sh` converts
+`wiki/` for the GitHub wiki and pushes it — page links lose their `.md`, links
+into `docs/` become absolute `blob/main` URLs because a wiki page cannot
+relative-link into the code repo, and images are copied in flat because a wiki
+page **cannot render an SVG from `raw.githubusercontent.com`** (served as
+`text/plain`; the image proxy will not draw it). Verified end to end through
+`--dry-run`, including the nested `[![alt](x)](x)` form every tile page uses,
+which the first version of the regex converted only on the inner link.
+
+What stops it is not code: **GitHub does not create `<repo>.wiki.git` until one
+page exists, and there is no API for it.** Auth is fine and the main repo pushes
+normally; the wiki repo simply is not there. So the script exits with the three
+lines that fix it rather than a git error. One click in the browser, once, and
+the script does everything else.
+
 ### What is owed to Matt
 
-**Publishing the wiki to `github.com/mbeaman/gridwatch/wiki` is his call** — it
-is outward-facing on a public repo and has not been done. `wiki/README.md`
-records the two mechanical changes it needs: links lose their `.md`, and images
-must be committed into the wiki repo, because a GitHub wiki page cannot render
-an SVG from `raw.githubusercontent.com` (it is served as `text/plain` and the
-image proxy will not draw it).
+**One click to create the wiki's first page** — `github.com/mbeaman/gridwatch/wiki`
+→ *Create the first page* → save anything. Then `scripts/wiki-publish.sh`
+overwrites it with all eleven pages, the images and a generated sidebar. This is
+the only thing in the session that a person has to do and a script cannot.
 
 Otherwise nothing new. The list is unchanged: every tag from `v0.1.0` to `v0.15.0`, and the whole owed-to-a-human section at the top of `PLAN.md`. The three `P2`/`P3` items arc 15's review filed — `net` has no snapshot, no chart has a *cell* snapshot, and the seven demo synths model only the happy path — are still open and are the strongest candidate for arc 16, because all three are the same defect: a suite that cannot see a tile cannot catch a bug in it.
 
