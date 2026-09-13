@@ -75,6 +75,8 @@ jobs:
       - run: cargo build --release --locked
       - name: Regenerate docs/img/*.svg, docs/KEYS.md, docs/COMPONENTS.md and fail on drift
         run: GRIDWATCH_BIN=target/release/gridwatch scripts/shots.sh --check
+      - name: Regenerate wiki/'s per-tile screenshots and fail on drift
+        run: GRIDWATCH_BIN=target/release/gridwatch scripts/wiki-shots.sh --check
       - name: Third-party licences are current
         run: scripts/third-party.sh --check
 
