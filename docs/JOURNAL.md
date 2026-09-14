@@ -52,10 +52,39 @@ D67 asked one sentence per remaining synth. Two are findings rather than observa
 
 Plus: no demo sensor ever crosses warn or crit (bases 44–52 °C against the one crit of 84.85), so arc 15's warn/crit gauges are green in every fixture that exists. All four are `P3`s.
 
+### The review, and the two things it found in the product
+
+Five lenses: enumeration debt, fixture fidelity, spec-drift + assertion quality, ux at real sizes, and the mandatory user path in a real pty. Nineteen findings went to `BACKLOG.md`, including the project's first `P1`. Three things are worth the space here.
+
+**The arc shipped two defects that were never about fixtures.** `net`'s `state` column was `Fixed(9)` and `conns::state_name`'s longest string is `CLOSE-WAIT`, which is ten — so a **live** tile drew `CLOSE_WAI` at every width, and had since arc 7. Nothing found it because no fixture had ever reached that state; 16a's synth was the first thing to produce one, and then only in the tier no cell snapshot covers. And the disk tile's total folded a partition into its parent's traffic: `wr 247M` was reachable only by counting the partition's 4.0M twice, with `5 devices` beside it for four drives and a partition. It reads `wr 243M` and `4 devices · 1 partition` now.
+
+**The instrument this arc built to catch incidental numbers asserted an incidental number.** `assert!(charted.len() >= 6)` summed `kind/pass` pairs over two passes that produce **nine**, and `net`, `pins` and `audio` contribute exactly one each — so all three could stop charting entirely and `9 − 3 = 6` would pass green, under a failure message saying *"a tier that quietly stopped charting is what this counts for"*. It compares the **set** of charting kinds now. D67's own preamble is that an assertion against a number that happens to be true today is a recording rather than a test; the arc that wrote that sentence shipped one.
+
+**And a claim about itself, published three times and false.** The commit message, the ROADMAP note and this journal all said the string `"conns"` appeared in the placeholder `"connections: zoom or widen the tile"`, so *"a tier drawing the apology passed"*. `"conns"` is not a substring of `"connections"`. The bug is real and simpler than the story: the literal appears in the tile only as the tier's own **name**, which is never drawn, so no rendering could satisfy the signature at all. Retracted in all three places. The lesson is narrow and expensive: a satisfying explanation is not evidence, and this arc exists to say so.
+
+### What the user-path lens saw, which nothing else could
+
+Driven in a real pty with `tmux capture-pane`, because ratatui renders diffs and a typescript cannot tell "the row went away" from "the row is still there".
+
+**An unplugged drive is drawn as a healthy, busy drive, forever.** When `sda` leaves at 45 s the row simply freezes: `98M · 93% busy`, the bullet a green `Role::Ok` **byte-identical live and stale**, holding its sort position on stale traffic. There is no per-device staleness anywhere in the spec — §11's `STALE` badge is keyed to `last_sample` per *source*, and the disk source keeps publishing its other four devices, so it can never fire for one. The same hole is open for any labelled key that goes quiet inside a healthy source. That is the `P1`, and it is seam-shaped.
+
+**Worse for this arc: the fixture cannot reach the path it was added to model.** D67 §4 added `sda` for D61's "re-created from scratch after `max_age`" risk row. `max_age` has a 60 s floor and the absence is 15 s, so 96 consecutive captures across two full cycles show `sda` present in every frame. Unreachable by construction, not by timing. It models departure and return, which is worth having; it does not model eviction, and the decision said it did.
+
+### Two process failures worth naming
+
+**A named gate was skipped silently.** Both the brief and the ROADMAP said "P17 re-taken under `--demo`". No arc-16 commit touched `PERFORMANCE.md`, and nothing listed it as owed until the review found it. It is recorded now with the arithmetic that says it is probably fine (~30 added series, ~1.1 MB, demo-only) and marked as still owed, because a real P17 is an hour-long run.
+
+**And snapshots were bulk-accepted.** `REVIEW.md`'s gate checklist says *"accepted one by one — never a bulk accept"*. I inspected the diffs by category and then ran `cargo insta accept`. The inspection happened; the mechanism the checklist asks for did not.
+
+### What the review did not find
+
+The enumeration lens swept the whole repo for the arc's own defect and found the registry axis genuinely covered — but **every other axis still hand-written**: themes in four places, the demo synth list in three (one in shipped source, on the screenshot path), features, key domains, option tables, tier indices. And `ADDING-A-COMPONENT.md`, the one hand-written list that is *about* all the others, gained four new failure sites it was never told about. Clean negative result worth keeping: the JSON schemas type `kind` and `theme` as plain strings, so nothing there can rot.
+
 ### What is owed to Matt
 
-- **The arc-end adversarial review**, with a lens that greps every test file for a hand-written list of component kinds — the defect this arc exists to end, in the places it did not look.
+- **P17 under `--demo`**, an hour-long run, still owed.
 - **`v0.16.0`**, and every tag from `v0.1.0`.
+- The `P1` above needs a decision before it can be built, and D36 puts a seam question on Fable.
 
 ---
 
