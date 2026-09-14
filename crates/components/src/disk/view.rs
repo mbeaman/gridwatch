@@ -380,14 +380,21 @@ fn drive_table(d: &Disk, cx: &RenderCx<'_>, body: usize) -> View {
 
 /// The footer: what the tile is showing, and the keys that change it.
 fn footer(d: &Disk, below: usize) -> Line {
-    let n = d.model().drives.len();
+    // Devices and partitions counted apart: a partition is not a device, and
+    // "5 devices" beside four drives and a partition is the same class of
+    // untrue number as a total that sums both (arc 16 review, S3).
+    let n = d.model().device_count();
+    let parts = d.model().partition_count();
+    let mut label = format!("{n} device{}", if n == 1 { "" } else { "s" });
+    if parts > 0 {
+        label.push_str(&format!(
+            " · {parts} partition{}",
+            if parts == 1 { "" } else { "s" }
+        ));
+    }
     let mut line: Line = vec![Span::new(
         Role::TextMuted,
-        format!(
-            "{n} device{} · sort {} · s sort",
-            if n == 1 { "" } else { "s" },
-            d.sort().name()
-        ),
+        format!("{label} · sort {} · s sort", d.sort().name()),
     )];
     let hidden = d.model().hidden();
     if hidden > 0 {

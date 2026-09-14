@@ -199,6 +199,33 @@ fn view_snapshots_at_real_grid_sizes() {
 ///   shape; at 100x24 the panes already fill it and a taller rect draws the
 ///   drives that were below the fold, which is a handful of rows and not a
 ///   proportional gain.
+///
+/// **Re-measured 2026-09-14 (arc 16 review).** The numbers quoted in the
+/// comment above are the ones recorded when each exclusion was argued, and
+/// five had gone stale — three of them moved by arc 16's own fixture change,
+/// which nobody re-ran the diagnostic after. Current, from
+/// `cargo test -p gridwatch-components --test components -- --ignored growth_ratios`:
+///
+/// ```text
+/// htop/cores        1.70x  1.61x
+/// gpu/charts        1.78x  1.51x  <- height excluded, and the exclusion cited 1.13x
+/// pins/trend        1.76x  1.53x
+/// net/sparks        1.78x  1.85x
+/// net/table         1.57x  1.46x  <- height excluded (arc 16)
+/// audio/spectrum    1.38x  1.52x  <- width excluded
+/// sensors/chart     2.14x  1.85x  <- height excluded
+/// winamp/main+art   1.76x  1.17x  <- height excluded
+/// disk/rates        1.44x  1.00x  <- height excluded
+/// disk/sparks       1.92x  1.82x
+/// disk/table        1.97x  1.00x  <- height excluded
+/// disk/chart        1.70x  1.43x  <- height excluded
+/// disk/full         1.08x  1.93x  <- width excluded
+/// ```
+///
+/// **`gpu`/`charts`' height is the one worth acting on**: it is excluded on a
+/// recorded 1.13x and now measures **1.51x**, above the bar it was excluded
+/// for. Re-asserting it is a `BACKLOG.md` item rather than a drive-by, because
+/// the number must be shown to be stable before an assertion rests on it.
 #[test]
 fn drawings_grow_with_the_rect() {
     let store = demo_store(42, 40);
@@ -570,15 +597,13 @@ fn rendered_cells_snapshot_modern_only() {
     // always in the tier a 6x3 rect selects: `pins`' braille trend lives in
     // its zoom-only pane and `audio`'s scope sits below `spectrum` in the
     // ladder, so a grid-only sweep finds four of the six and calls it done.
-    let mut charted: Vec<String> = Vec::new();
+    let mut charted: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for (zoomed, size, suffix) in [
         (false, Size::new(122, 31), "chart"),
         (true, Size::new(200, 50), "chart_zoom"),
     ] {
         for (kind, mk) in every_registered_component() {
             let store = demo_store(42, snapshot_ticks(kind));
-            let mut probe = mk();
-            let (_, _) = render_component(probe.as_mut(), &store, &th, size, zoomed);
             let mut c = mk();
             let (_, buf) = render_component(c.as_mut(), &store, &th, size, zoomed);
             // `view_snapshot` cannot be told to zoom, so the tree is read from
@@ -593,13 +618,27 @@ fn rendered_cells_snapshot_modern_only() {
                 continue;
             }
             insta::assert_snapshot!(format!("{kind}_cells_{suffix}"), dump);
-            charted.push(format!("{kind}/{suffix}"));
+            charted.insert(kind);
         }
     }
+    // **The set of kinds, not a count of snapshots.** This was
+    // `charted.len() >= 6` over `kind/pass` pairs, and the two passes produce
+    // nine — so `net`, `pins` and `audio`, which contribute one entry each,
+    // could *all* stop charting and 9 - 3 = 6 would still pass green, under a
+    // failure message claiming to catch exactly that. An assertion against a
+    // number that happens to be true today is a recording, not a test — which
+    // is this arc's own preamble, and this instrument was shipped breaking it
+    // (arc 16 review, finding 1).
+    let expected: std::collections::BTreeSet<&str> =
+        ["gpu", "disk", "net", "sensors", "pins", "audio"]
+            .into_iter()
+            .collect();
+    let dark: Vec<&&str> = expected.difference(&charted).collect();
     assert!(
-        charted.len() >= 6,
-        "six components draw a chart somewhere (gpu, disk, net, sensors, pins, audio); \
-         found {charted:?} — a tier that quietly stopped charting is what this counts for"
+        dark.is_empty(),
+        "these components draw no chart at either size and did before: {dark:?} \
+         (found {charted:?}). A tier that quietly stops charting is what this catches, \
+         and a summed count could not."
     );
 }
 

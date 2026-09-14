@@ -381,7 +381,11 @@ fn conn_table(n: &Net, cx: &RenderCx<'_>, body: usize) -> View {
             },
             Column {
                 title: "state".into(),
-                width: ColWidth::Fixed(9),
+                // Ten, not nine: `conns::state_name`'s longest is `CLOSE-WAIT`
+                // and a `Fixed(9)` clipped it to `CLOSE-WAI` on a **live** tile
+                // at every width. No fixture had reached that state, so nothing
+                // drew it until arc 16's synth did (arc 16 review, S1).
+                width: ColWidth::Fixed(10),
                 right: false,
             },
             Column {

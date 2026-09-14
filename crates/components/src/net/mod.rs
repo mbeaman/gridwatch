@@ -405,12 +405,11 @@ impl Component for Net {
         match tier {
             TIER_RATES | TIER_SPARKS => &["↓"],
             TIER_TABLE => &["iface"],
-            // The connection table's own header, not the word "conns" — which
-            // appeared in exactly one place, the placeholder shown when there
-            // is **no** table ("connections: zoom or widen the tile"). So a
-            // tier drawing its table correctly failed its signature and one
-            // drawing the apology passed it. Nothing caught that because
-            // `net` was in neither component sweep until arc 16 (D67 §1).
+            // The connection table's own header. This was `"conns"` — a
+            // literal that appears in the tile only as the tier's own *name*
+            // (line 81), which is never drawn, so **no rendering could satisfy
+            // it**. Nothing caught that because `net` was in neither component
+            // sweep until arc 16 (D67 §1).
             TIER_CONNS => &["proto"],
             _ => &["route"],
         }

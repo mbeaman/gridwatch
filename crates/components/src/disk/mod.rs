@@ -271,6 +271,14 @@ pub struct Drive {
 }
 
 impl Drive {
+    /// A partition of a drive rather than a drive — its counters are a subset
+    /// of its parent's, so it must never be summed with them.
+    pub fn is_partition(&self) -> bool {
+        self.info
+            .as_ref()
+            .is_some_and(|i| matches!(i.kind, gridwatch_store::keys::disk::DiskKind::Partition))
+    }
+
     pub fn total(&self) -> f64 {
         self.read_bps + self.write_bps
     }
@@ -355,9 +363,26 @@ impl Model {
     /// (D64 §2: there is no published total, because one would change
     /// meaning under `extra` and disagree with this).
     pub fn totals(&self) -> (f64, f64) {
+        // **Partitions are excluded**: a partition's traffic is already inside
+        // its parent drive's counters, so folding both counted it twice — with
+        // `partitions = true` on a machine with nine of them, by a lot. The
+        // number the tile prints must be the machine's, not the row list's
+        // (arc 16 review, S3).
         self.drives
             .iter()
+            .filter(|d| !d.is_partition())
             .fold((0.0, 0.0), |(r, w), d| (r + d.read_bps, w + d.write_bps))
+    }
+
+    /// How many of the listed rows are whole devices rather than partitions —
+    /// what "N devices" in the footer has to count.
+    pub fn device_count(&self) -> usize {
+        self.drives.iter().filter(|d| !d.is_partition()).count()
+    }
+
+    /// How many listed rows are partitions.
+    pub fn partition_count(&self) -> usize {
+        self.drives.iter().filter(|d| d.is_partition()).count()
     }
 
     /// The drive the small tiers name: the busiest by traffic, else by

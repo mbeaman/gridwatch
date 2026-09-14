@@ -281,6 +281,16 @@ fn frame_rows(w: u16, h: u16) -> Vec<Vec<char>> {
 /// D67 §4 is the decision; the measured pair is recorded here so the next
 /// person can see which half moved.
 ///
+/// **All three numbers moved, and the first record of this named only two.**
+/// The column floor went `0.80` → **`0.95`** as well, which the commit
+/// message, the ROADMAP note and the journal all omitted (arc 16 review).
+/// It is the tightest floor in the table: `measure_coverage` prints NETWORK
+/// columns **0.951 at 250×70**, about 0.001 of margin, so it is a live
+/// trip-wire for the day `MATT_TERMINAL` below stops being `None`. Kept at
+/// 0.95 deliberately rather than loosened, because a column floor is what
+/// catches the stretched-table defect D65 existed for — but it is recorded
+/// here as tight, not discovered as tight later.
+///
 /// No floor for SOURCES, AUDIO or PINS: those numbers are content- or
 /// construction-bounded and a floor would pin the demo synth rather than the
 /// tile (AUDIO's ⅔ of columns is the bar-and-gap construction, SOURCES' rows

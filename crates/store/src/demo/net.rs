@@ -179,6 +179,16 @@ pub fn conns(scan_ms: f64) -> Conns {
     // hash bucket, and a fixture that lists eight firefox rows first puts
     // every unattributed socket past the fold, where the first page cannot
     // show that `attributed < scanned` is a thing the tile draws (arc 16).
+    // Where two rows share a prefix, the ports differ in their leading
+    // digits: `local` is elastic and truncates with no ellipsis below ~82
+    // cells, and the first draft's `:41022`/`:41026` rendered as one string
+    // at 80 columns — two sockets a reader cannot tell apart (arc 16 review).
+    // The eight firefox `:523xx` sockets collide the same way and are a
+    // backlog item, because the real fix is an ellipsis in the renderer.
+    // States are `conns::state_name`'s spelling — **hyphens, not underscores**.
+    // The first draft of this fixture wrote `TIME_WAIT`, `CLOSE_WAIT` and
+    // `SYN_SENT`, which no kernel path can produce; `CLOSE-WAIT` is also the
+    // one state that overran the tile's `state` column (arc 16 review, S1).
     let rows = vec![
         row(
             Proto::Tcp,
@@ -218,7 +228,7 @@ pub fn conns(scan_ms: f64) -> Conns {
             Proto::Tcp,
             "192.168.100.154:48802",
             "140.82.113.25:22",
-            "TIME_WAIT",
+            "TIME-WAIT",
             None,
             "",
         ),
@@ -300,7 +310,7 @@ pub fn conns(scan_ms: f64) -> Conns {
             Proto::Tcp,
             "192.168.100.154:48806",
             "140.82.113.25:22",
-            "CLOSE_WAIT",
+            "CLOSE-WAIT",
             None,
             "",
         ),
@@ -396,13 +406,13 @@ pub fn conns(scan_ms: f64) -> Conns {
             Proto::Tcp,
             "192.168.100.154:52400",
             "140.82.112.21:443",
-            "SYN_SENT",
+            "SYN-SENT",
             None,
             "",
         ),
         row(
             Proto::Tcp6,
-            "[2001:db8::154]:41026",
+            "[2001:db8::154]:49318",
             "[2606:4700::48]:443",
             "ESTAB",
             Some(4242),

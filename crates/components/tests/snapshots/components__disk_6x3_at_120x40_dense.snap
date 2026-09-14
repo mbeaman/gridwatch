@@ -1,6 +1,6 @@
 ---
 source: crates/components/tests/components.rs
-expression: "view_snapshot(di.as_mut(), &history, &th, size)"
+expression: "view_snapshot(c.as_mut(), &store, &th, size)"
 ---
 size: 59x18
 tier: chart
@@ -31,7 +31,7 @@ view:
                 - 54%
                 - —
                 - "0"
-                - "615"
+                - "611"
               - - ● nvme0n1p2
                 - 0B
                 - 4.0M
@@ -157,5 +157,5 @@ view:
         - text:
             - - bold: false
                 role: TextMuted
-                s: 5 devices · sort traffic · s sort
+                s: 4 devices · 1 partition · sort traffic · s sort
     dir: V

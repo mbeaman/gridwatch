@@ -107,7 +107,15 @@ pub fn disk_infos() -> Vec<DiskInfo> {
         // temperature join finds the same chip and both rows show it.
         DiskInfo {
             name: PARTITION.into(),
-            model: String::new(),
+            // **Its parent's model, not empty.** `sysfs::classify` builds a
+            // partition with `whole_disk(&parent, …)` and overrides only
+            // `size_b` and `partitions`, so the model, scheduler, queue depth
+            // and controller are the drive's by construction — the real
+            // source's own test asserts exactly this string. An empty model
+            // was a shape it cannot produce, and it left `MODEL`, the disk
+            // table's one *elastic* column, unexercised by the device type
+            // this arc added (arc 16 review).
+            model: "Samsung SSD 9100 PRO 4TB".into(),
             size_b: 3_000_000_000_000,
             rotational: false,
             removable: false,
@@ -117,8 +125,7 @@ pub fn disk_infos() -> Vec<DiskInfo> {
             scheduler: "none".into(),
             nr_requests: 1023,
         },
-        // The removable, which leaves at 45 s. Rotational and with a shallow
-        // queue, so the `BUSY`-versus-`Q` argument has a device where high
+        // The removable, which leaves at 45 s. Flash, with a shallow queue, so the `BUSY`-versus-`Q` argument has a device where high
         // `BUSY` and low `Q` genuinely means "slow", not "barely awake".
         DiskInfo {
             name: REMOVABLE.into(),
@@ -133,6 +140,24 @@ pub fn disk_infos() -> Vec<DiskInfo> {
             nr_requests: 64,
         },
     ]
+}
+
+/// What the source says about itself, counted from the inventory rather than
+/// written down — the real `Selection::reason()` recomputes it every tick.
+fn demo_reason() -> String {
+    let drives = disk_infos()
+        .iter()
+        .filter(|i| !matches!(i.kind, DiskKind::Partition))
+        .count();
+    let parts = disk_infos().len() - drives;
+    let mut s = format!("synthetic (demo) — {drives} drives");
+    if parts > 0 {
+        s.push_str(&format!(", {parts} partition"));
+        if parts > 1 {
+            s.push('s');
+        }
+    }
+    s
 }
 
 /// The Record the journal round-trip test uses.
@@ -278,10 +303,16 @@ impl DiskSynth {
             .copied()
             .zip([self.busy(at), self.light(at), DiskSynth::idle()])
             .collect();
-        feed.push((PARTITION, self.partition(at)));
+        // `sda` is a `Drive`, so it comes before the partition: the real
+        // source publishes drives first, then partitions, each in name order
+        // (`Sampler::select`). The first draft emitted the partition first
+        // under a comment claiming to follow that order — the brief's own
+        // trap 5, "a fixture that ignores that ordering tests a source that
+        // does not exist" (arc 16 review).
         if removable_present(at) {
             feed.push((REMOVABLE, self.removable(at)));
         }
+        feed.push((PARTITION, self.partition(at)));
         let mut samples = Vec::with_capacity(feed.len() * 9 + 4);
         for (dev, d) in feed {
             for (key, v) in [
@@ -380,7 +411,12 @@ impl Source for DiskDemoSource {
         let mut synth = DiskSynth::new(self.seed);
         cx.status(SourceStatus {
             state: SourceState::Ok,
-            reason: Some(Arc::from("synthetic (demo) — 3 drives")),
+            // Derived, not remembered: this said "3 drives" while the synth
+            // published five devices, and the sources tile printed it
+            // verbatim — the same defect as `scanned: 103` beside five rows,
+            // in the same file, uncorrected by the commit that fixed the
+            // other one (arc 16 review).
+            reason: Some(Arc::from(demo_reason())),
             hint: None,
             since: cx.clock.now(),
             last_sample: None,

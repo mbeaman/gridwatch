@@ -1,6 +1,6 @@
 ---
 source: crates/components/tests/components.rs
-expression: "view_snapshot(di.as_mut(), &history, &th, size)"
+expression: "view_snapshot(c.as_mut(), &store, &th, size)"
 ---
 size: 17x8
 tier: rates
@@ -33,5 +33,5 @@ view:
                 s: "wr "
               - bold: true
                 role: Text
-                s: 245M
+                s: 241M
     dir: V
