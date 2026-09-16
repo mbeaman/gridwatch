@@ -195,7 +195,7 @@ Two notes for anyone auditing this:
 | `rustc-demangle` | 0.1.28 | MIT/Apache-2.0 |
 | `rustfft` | 6.4.1 | MIT OR Apache-2.0 |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| `rustls` | 0.23.43 | Apache-2.0 OR ISC OR MIT |
+| `rustls` | 0.23.45 | Apache-2.0 OR ISC OR MIT |
 | `rustls-pki-types` | 1.15.1 | MIT OR Apache-2.0 |
 | `rustls-webpki` | 0.103.15 | ISC |
 | `rustversion` | 1.0.23 | MIT OR Apache-2.0 |
