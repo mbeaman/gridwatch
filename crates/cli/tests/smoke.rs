@@ -114,10 +114,22 @@ fn dense_hides_tab_bar() {
 
 // ---------------------------------------------------------------- D62: wide
 
-/// Matt's Ptyxis size, once `MACHINE.md` records it: the same assertion runs
-/// at it. `None` until then — nobody has measured the real terminal, and a
-/// guessed size would pin nothing (D62 §4).
-const MATT_TERMINAL: Option<(u16, u16)> = None;
+/// The terminal shapes the coverage floors are asserted at.
+///
+/// This replaced a `MATT_TERMINAL: Option<(u16, u16)>` that had sat at `None`
+/// since arc 12, waiting for somebody to measure "the real terminal". There is
+/// no such thing — **a terminal is resizable and has been for forty years**,
+/// so a single remembered size pins nothing and rots the moment the window
+/// changes. The question the test asks is about a range: wide and short, tall
+/// and narrow, and the middle. (Matt, 2026-09-15.)
+const SWEEP: [(u16, u16); 6] = [
+    (250, 70),  // the reference
+    (160, 48),  // a comfortable half-screen
+    (320, 90),  // a large monitor
+    (480, 135), // the size Matt's original report reproduced at
+    (600, 100), // wide and short — the other shape in that report
+    (800, 120), // wider still
+];
 
 /// The rows a tile's frame encloses, found by walking its border from the
 /// title. The shell draws a titled box per placement; the focused tile's is
@@ -281,15 +293,13 @@ fn frame_rows(w: u16, h: u16) -> Vec<Vec<char>> {
 /// D67 §4 is the decision; the measured pair is recorded here so the next
 /// person can see which half moved.
 ///
-/// **All three numbers moved, and the first record of this named only two.**
-/// The column floor went `0.80` → **`0.95`** as well, which the commit
-/// message, the ROADMAP note and the journal all omitted (arc 16 review).
-/// It is the tightest floor in the table: `measure_coverage` prints NETWORK
-/// columns **0.951 at 250×70**, about 0.001 of margin, so it is a live
-/// trip-wire for the day `MATT_TERMINAL` below stops being `None`. Kept at
-/// 0.95 deliberately rather than loosened, because a column floor is what
-/// catches the stretched-table defect D65 existed for — but it is recorded
-/// here as tight, not discovered as tight later.
+/// **Superseded 2026-09-15.** Arc 16 raised NETWORK to `(0.25, 0.80, 0.95)`
+/// from a measurement at 480x135 alone, and recorded only two of the three
+/// numbers it changed. Replacing the single size with `SWEEP` showed all
+/// three of those floors failing at other shapes — and SENSORS' row floor
+/// failing at the reference size. The floors below are set from the worst
+/// size in the sweep with margin, and the measurement that produced each is
+/// in the table beside them.
 ///
 /// No floor for SOURCES, AUDIO or PINS: those numbers are content- or
 /// construction-bounded and a floor would pin the demo synth rather than the
@@ -298,15 +308,32 @@ fn frame_rows(w: u16, h: u16) -> Vec<Vec<char>> {
 #[test]
 fn a_wide_terminal_fills_its_tiles() {
     // (title, cell floor, lit-row floor, lit-column floor)
+    // Set from the **worst** size in `SWEEP`, with margin, not from one size.
+    // Measured 2026-09-15 by `measure_coverage` over the same spread — the
+    // minimum of each column and the size that produces it:
+    //
+    //   CPU      cells 0.302 @600x100  rows 0.892 @480x135  cols 0.984 @250x70
+    //   GPU      cells 0.183 @480x135  rows 0.415 @480x135  cols 1.000 everywhere
+    //   NETWORK  cells 0.186 @800x120  rows 0.769 @160x48   cols 0.938 @250x70
+    //   SENSORS  cells 0.411 @320x90   rows 0.625 @250x70   cols 0.870 @250x70
+    //
+    // A floor has to hold at every shape, so it is governed by the worst one.
+    // The previous NETWORK triple (0.25/0.80/0.95) was calibrated on 480x135
+    // alone and **failed at three other sizes** the moment the sweep existed;
+    // SENSORS' row floor failed at the reference size. That is what a
+    // one-size test hides, and why the placeholder for "the real terminal"
+    // was the wrong idea rather than an unfilled one.
     let floors = [
-        ("CPU", 0.19, 0.71, 0.77),
-        ("GPU", 0.11, 0.33, 0.80),
-        ("NETWORK", 0.25, 0.80, 0.95),
-        ("SENSORS", 0.35, 0.67, 0.80),
+        ("CPU", 0.22, 0.80, 0.92),
+        ("GPU", 0.13, 0.33, 0.92),
+        ("NETWORK", 0.14, 0.68, 0.88),
+        ("SENSORS", 0.32, 0.55, 0.78),
     ];
-    let mut sizes = vec![(480u16, 135u16)];
-    sizes.extend(MATT_TERMINAL);
-    for (w, h) in sizes {
+    // A spread of real terminal shapes, not one size and a placeholder for
+    // somebody's. A terminal is resizable and always has been, so "does this
+    // fill the screen" is a question about a *range*: wide and short, tall
+    // and narrow, and the square-ish middle. (Matt, 2026-09-15.)
+    for (w, h) in SWEEP {
         let rows = frame_rows(w, h);
         for (title, cells, r_floor, c_floor) in floors {
             let (c, lr, lc) = coverage(&rows, title);
@@ -378,7 +405,9 @@ fn measure_coverage() {
     const TILES: [&str; 7] = [
         "CPU", "GPU", "PINS", "NETWORK", "AUDIO", "SOURCES", "SENSORS",
     ];
-    for (w, h) in [(480u16, 135u16), (250, 70)] {
+    // The same spread the assertion runs at, so the numbers a floor is set
+    // from and the numbers it is checked against cannot disagree.
+    for (w, h) in SWEEP {
         let rows = frame_rows(w, h);
         for title in TILES {
             let (c, lr, lc) = coverage(&rows, title);

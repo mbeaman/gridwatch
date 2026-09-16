@@ -7,7 +7,7 @@
 
 Nine arcs of rows that an agent could not honestly take, collected here because this file is what a session reads first. Nothing below has ever been faked or asserted from a plausible number.
 
-**Tags and versions.** Every tag from `v0.1.0` to `v0.10.0`. And the crate **version**: `Cargo.toml` still says `0.1.0`, so an installed binary reports `gridwatch 0.1.0` while the README says v0.9.0 is in progress — bumping it is part of cutting a release, so it waits.
+**Tags.** Every tag from `v0.1.0` to `v0.16.0`. The crate **version** no longer waits on them: `Cargo.toml` tracks the work, one minor per arc, so `gridwatch --version` says `0.16.0` and the README says the same. It had sat at `0.1.0` for sixteen arcs while every document said otherwise (Matt, 2026-09-15: keep these consistent, `major.minor.incremental` like everyone else). **Bumping the version is part of finishing an arc; tagging is still Matt's.**
 
 **Needs a real terminal (Ptyxis).** P9 and P10 — the load gridwatch imposes on the terminal, which is itself a GPU client (`pidstat` on Ptyxis, `nvidia-smi pmon`). P4/P21 confirmed interactively. The glyph check, braille and half-width katakana included. A README PNG from a real window.
 
