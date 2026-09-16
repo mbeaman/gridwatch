@@ -853,138 +853,192 @@ stops and escalates rather than being decided here. Nothing in the arc is near
 the line: `every_registered_component()` already exists and is already public to
 the test.
 
-## D68 — an entity can go quiet inside a healthy source (2026-09-15)
 
-**Decision.** A labelled key's label can stop arriving while its source stays perfectly
+## D68 — an entity can go quiet inside a healthy source (2026-09-15, revised 2026-09-16)
+
+**The defect.** A labelled key's label can stop arriving while its source stays perfectly
 healthy — a drive unplugged, an interface gone, a core offlined — and nothing notices.
 Measured in a real terminal: the disk tile's row for a removed drive **freezes and keeps
 reading as live**, `98M · 93% busy`, the bullet a green `Role::Ok` byte-identical live and
 stale, still holding second place in a traffic sort on bytes nobody has measured for half a
-minute. §11's `STALE` badge cannot fire: it is keyed to `SourceStatus.last_sample`, and the
-disk source is still publishing three other drives.
+minute. §11's `STALE` badge cannot fire — it is keyed to `SourceStatus.last_sample`, and the
+disk source is still publishing three other drives happily.
 
-Designed by three independent Fable passes (minimal / correctness-first / from-the-screen-
-back) and one adversarial critic, per `REVIEW.md` Template B. The critic broke four claims
-the synthesis made; what follows is the revision, and the broken claims are recorded because
-two of them are the interesting part.
+**Process.** Three independent Fable design passes (minimal / correctness-first /
+from-the-screen-back) and one Fable adversarial critic, per `REVIEW.md` Template B. Matt's
+call on 2026-09-15: design with Fable first. **Matt's second call, 2026-09-16: pick one of
+the three rather than blend them.** The first revision of this entry was a synthesis — the
+mechanism from one, the staging from another, the screen behaviour from the third — which is
+what Template B says to produce and is also the standard way to end up with a design none of
+its authors would defend. This entry is the minimal design, whole, with the other two
+recorded below as considered and rejected.
 
-**1. The rule: judge an entity against its own source's progress, never against a clock.**
+### The decision
 
-    behind = (the batch clock of the source that last carried it) − entity.last_seen
-    quiet  ⇔ behind > 3 × the entity's expected interval
+**A component judges each label it draws through one shared helper, and no contract
+changes.** `crates/ui/src/freshness.rs` — a new module in a crate components already depend
+on — exposing roughly:
 
-All three passes reached this independently. It needs no configuration — a source states its
-cadence by publishing — and it composes with §11 instead of duplicating it: when a source
-stalls, its `last_sample` stops advancing, `behind` freezes, nothing goes quiet, and the
-badge fires as today. It inherits the badge's four exemptions for free (paused, focus-lost,
-before the first sample, a finished replay), because store time stops in all of them;
-`app.rs`'s `stale_age` spells those cases out precisely because it uses the wall clock. And
-it reads no `now`, so replay and live agree. `K = 3` is §11's own constant, which two tiles
-had already reached independently.
+    pub const STALE_PERIODS: u32 = 3;         // §11's existing constant
+    pub struct Pulse { source: SourceId, seen: Option<Ts>, period: Duration }
+    pub enum Liveness { Live, Quiet { age: Duration } }
+    impl Pulse {
+        pub fn new(source: SourceId) -> Pulse;
+        pub fn observe(&mut self, store: &Store) -> Option<Ts>;  // call in `tick`
+        pub fn hold(&self) -> Duration;                          // period × STALE_PERIODS
+        pub fn of(&self, at: Ts) -> Liveness;
+    }
 
-**2. An entity is `(domain, label)` — never a series.** The critic's highest-cost finding:
-the synthesis never said, and every second claim in it was true under one reading and false
-under the other. Per-*series* freshness is R6's bug again — `sensor.max_c`, `net.speed_mbps`,
-the three static gpu clocks and `disk.info` are all published once and are perfectly current
-for as long as their entity is present. D61 already made eviction per label for this reason;
-freshness uses the same unit.
+Nothing in `store`, `sources`, `app`, `Msg`, `RenderCx`, `TickCx` or the journal moves. It is
+a component-side utility in the same sense as `ui::renderer::table_widths` (D65: "asks the
+renderer rather than copying the loop"), plus one sentence each in §4.6 and §11.
 
-**3. The entity's source is the one whose batch last carried it, not the catalogue's.** With
+**1. The rule: judge a label against its own source's progress, never against a clock.**
+
+    behind = (the batch clock of the source that last carried it) − label.last_seen
+    quiet  ⇔ behind > STALE_PERIODS × the observed period
+
+All three passes reached this independently, which is why it is the part of the design with
+no dissent. It needs no configuration — a source states its cadence by publishing — and it
+composes with §11 instead of duplicating it: when a source stalls its `last_sample` stops
+advancing, `behind` freezes, nothing goes quiet, and the badge fires as today. It inherits
+the badge's four exemptions for free (paused, focus-lost, before the first sample, a finished
+replay) because store time stops in all of them; `app.rs`'s `stale_age` spells those cases
+out precisely because it uses the wall clock. And it reads no `now`, so replay and live
+agree and `replaying_a_fixture_twice_is_byte_identical` is untouched.
+
+`Store::last` already returns `(Ts, f64)` and `RenderCx` already carries `now`. **The age has
+been computable since arc 1; nothing computed it.**
+
+**2. The unit is `(domain, label)`, never a series.** The critic's highest-cost finding
+against the first revision, which had left it undefined. Per-*series* freshness is R6's bug
+again: `sensor.max_c`, `net.speed_mbps`, the three static gpu clocks and `disk.info` are all
+published once and are perfectly current for as long as their device is present. D61 already
+made eviction per label for this reason.
+
+**3. The source is the one whose batch last carried it, not the catalogue's.** With
 `[sources.cpu] k10temp = true` — the default — the **cpu** source publishes
-`sensor.temp_c{k10temp:*}`. An entity in the `sensor` domain judged against
-`last_sample(sensors)` would flicker quiet whenever cpu's cadence exceeded three times
-sensors'. `Store::apply` records the publishing `SourceId` from the batch.
+`sensor.temp_c{k10temp:*}`. Judged against `last_sample(sensors)` that label would flicker
+quiet whenever cpu's cadence exceeded three times sensors'. A `Pulse` is constructed for the
+source the component actually reads from, which for the sensors tile means the handover has
+to be honoured rather than assumed.
 
-**4. This does not become one rule. It becomes two, and that is the honest claim.** The
-synthesis said it would retire three incompatible copies of the rule. It retires two —
-sensors' hard-coded `STALE_AFTER = 5 s` and the *threshold* half of disk's observed-cadence
-estimator. It does **not** retire the per-series holds, because those ask a different
-question: a drive doing one I/O a second publishes `read_bps` every tick (its entity is
-alive) and `read_await_ms` on almost none, and an unreachable probe target publishes
-`loss_pct` every tick and `rtt_ms` never. Those are series-within-a-live-entity holds and
-they stay. **Do not delete disk's cadence observer** — a builder who reads "one rule" and
-removes it makes the await columns strobe (D64 trap 7). The decision is justified only
-because both remaining mechanisms retire into one exposed query rather than four private
-constants; if an implementation leaves either in place privately, it has added a fourth copy
-with a decision number.
+**4. This retires two private copies of the rule and leaves a third, which is a different
+question.** The rule exists in-tree three times today: `disk/mod.rs:121–131` observes its
+source's cadence from consecutive `last_sample` gaps ("a component cannot read
+`[sources.disk]`"); `sensors/mod.rs:130` hard-codes `STALE_AFTER = 5 s` and silently drops
+the row, its comment recording that an earlier review found this exact bug and fixed it for
+that one tile; `rules.rs:333` has a third threshold on `Series::last_at`.
 
-**5. Two states, two stages.** **Quiet** is the heuristic the store derives from §1.
-**Gone** is the truth, and the sources already have it: `sources/disk/mod.rs:260` computes
-`sent.retain(|k, _| counters.contains_key(k))` — exactly the departed set — every tick, and
-discards it because nothing can carry it. Stage 1 ships Quiet alone and fixes the reported
-defect. Stage 2 makes gone sharp.
+`STALE_AFTER` goes. Disk's *threshold* moves into `Pulse`. **Disk's cadence observer stays**,
+because the per-series await hold asks a different question: a drive doing one I/O a second
+publishes `read_bps` every tick (its device is present) and `read_await_ms` on almost none
+(D64 trap 7), and an unreachable probe target publishes `loss_pct` every tick and `rtt_ms`
+never. A builder who reads "one rule" and deletes the observer makes the await columns
+strobe. Two mechanisms, not one — stated here so the implementation does not "simplify" it.
 
-**Stage 2 is not `Datum::Gone`.** The correctness pass proposed a new `Datum` variant; the
-critic showed that is a `Msg` variant *and* a journal grammar change *and* a v2 replay path —
-a seam session, not "one commit per source". The framing all three passes missed is
-**presence as data**: a `disk.devices` / `net.ifaces` Record under `Label::None`, published
-on change, exactly as `sensor.info` already publishes its chip inventory. It says *gone* at
-the tick the name leaves, journals and replays through the path every source already uses,
-needs no protocol change, and `[[rules]]` can read it. That is the stage-2 candidate. The
-`Datum::Gone` form is recorded as **rejected on cost**, not on correctness.
+**5. What a person sees.** The row stays, its numbers become `—`, its bullet changes glyph,
+and it sinks below every live row under every sort: a row with no measurement cannot hold a
+place in a table ranked by measurements, which was the second half of the reported defect.
 
-**6. What a person sees.** The row stays, its numbers become `—`, its bullet changes glyph,
-and it sinks below every live row under every sort — a row with no measurement cannot hold a
-place in a table ranked by measurements, which was the second half of the reported bug.
+The argument for dashes is **not** "greying is invisible in `mono`". That claim was made
+twice in this session and is false — `overlay::dim` inserts `Modifier::DIM` precisely so mono
+and the 16-colour palette get a cue where `TextMuted` and `Text` are the same colour, and its
+comment says so. The real argument: **a dimmed `98M` still reads as a number at a glance, and
+a `—` cannot be misread as a measurement.** Dashes are already the tile's word for "not
+measured" (`°C —`, `await —`), and the glyphs are already vocabulary — `net/view.rs:39–46`
+runs `● Ok / ◍ Warn / ○ TextMuted / · TextGhost`, where `·` means "nothing known".
 
-The argument for dashes is **not** "greying is invisible in mono". That claim was made twice
-in this session and is false: `overlay::dim` inserts `Modifier::DIM` precisely so that mono
-and the 16-colour palette get a cue where `TextMuted` and `Text` are the same colour, and
-its comment says so. The real argument is that **a dimmed `98M` still reads as a number at a
-glance and a `—` cannot be misread as a measurement**. Dashes are already the tile's word for
-"not measured" (`°C —`, `await —`), and the glyphs are already vocabulary:
-`net/view.rs:39–46` runs `● Ok / ◍ Warn / ○ TextMuted / · TextGhost`, where `·` means
-"nothing known". Quiet takes `○`, gone takes `·`.
+**A quiet row shows no age while its tile's `STALE` badge is up.** The critic's sharpest
+catch: the badge counts wall time and a quiet row counts store time, so when a source stalls
+after a device leaves the two ages diverge on one tile — fourfold under `--replay --speed 4`.
+Sharing the formatter, the role and the multiplier would make that read as one system that
+lies.
 
-**The row's lifetime must be written down**: it stays until retention evicts the label, which
-is `history` — as little as one minute under `history = "1m"` (D63) — and then it vanishes
-with no transition. An entity pinned by a raised `absent` alert (D61) survives the sweep and
-reads `gone 47m` for as long as the alert is raised, which is consistent and should be said
-rather than discovered. At the 8×3 chip a gone entity is excluded from the totals — the
-frozen `98M` is currently *inside* the summed rate, so exclusion is a correction rather than
-D64 §2's objection, but at that tier there is no room to say so and §8 must name the blank
-(D65 §9).
+**The row's lifetime**: it stays until retention evicts the label, which is `history` — as
+little as a minute under `history = "1m"` — and then vanishes with no transition. A label
+pinned by a raised `absent` alert (D61) survives the sweep and reads quiet for as long as the
+alert is raised, which is consistent and is said here rather than discovered.
 
-**7. The two ages must not disagree on one tile.** The critic's sharpest catch. Unplug a
-drive, then let the source stall: `STALE` counts on the wall clock while `gone 30s` is store
-time and freezes — and under `--replay --speed 4` gone ages four times faster than the badge.
-Sharing the formatter, the role and the multiplier makes that read as *one system that lies*,
-which is worse than two systems. **A gone row shows no age while its tile's `STALE` badge is
-up.** A third clock already exists and stays: `absent` rules run on the frame clock with
-`for_s` and fire for a stalled source, which Quiet by construction never does; whether
-`absent` adopts Quiet's semantics is its own decision and not this one.
+**Per tile**: disk and net as above; sensors switches from silent drop to the same treatment;
+gpu, pins, audio, winamp, alerts, clock get nothing — their labels are static or unlabelled
+and cannot go quiet without the source going quiet. At the 8×3 chip a quiet device is
+excluded from the totals, because the frozen `98M` is currently *inside* the summed rate; at
+that tier there is no room to say so and §8 must name the blank (D65 §9).
 
-**8. `cpu{core}` is out of scope, and there is a real bug under it.** D61 E2 made
-`cpu{core}` `LabelSet::Static` on the reasoning that hotplug is restart-worthy, so the
-catalogue cannot both "decide which tiles need this" and have htop draw an offlined core.
-Static wins and htop's core block is not in this work. Underneath it:
-`cpu/sampler.rs:292` numbers cores by **position** over `procfs`'s `cpu_time`, which
-discards the `cpuN` name, so an offlined core does not blank its own row — it shifts every
-core after it onto the wrong label, and `sysfs::cpu_count` counts present-including-offline
-so `topology` is sized 32 against 31 active. That is its own bug and bigger than one commit.
+**6. Cost.** One `last_sample` lookup per `tick` — already paid today by the same
+short-circuit — and a subtraction per drawn label inside a rebuild that only runs when the
+source publishes. Zero per frame: a tile short-circuits on an unchanged `last_sample` and the
+render cache keys on source generations. Nothing is added to `Store::apply`, which is the
+single largest advantage of this design over the rejected ones: the first revision of this
+entry claimed ~8 % of P18's per-batch budget for a store-side index and the critic measured
+it at **40–70 %**.
 
-**9. Cost, corrected.** The synthesis said 2–3 µs per batch and ~8 % of P18's budget. Under
-`(domain, label)` the map is touched **per sample**, not per entity, and a focused cpu batch
-is 32 cores × 3 keys ≈ 96 samples — measured neighbours are 110 ns for a series push and
-175 ns for a per-label sweep step, so **≈ 10–17 µs, or 40–70 % of the 24 µs** `sweep_every`
-treats as the batch budget. Not a gate break; the number in the synthesis was wrong and is
-retracted here rather than after it is measured. "Zero per frame" survives: a tile
-short-circuits on an unchanged `last_sample` and the render cache keys on source generations.
-The sweep gets cheaper **only if** the entity index *is* the map the sweep rebuilds today —
-make it so, which also settles §2.
+**7. Stage 1 ships unpinned unless a synth models a departure.** No demo synth publishes a
+label that leaves except `DiskSynth`'s removable, and arc 16's own review found that one
+cannot reach the path it was added for — the absence is 15 s against a 60 s retention floor.
+So the implementation must include a synth that unplugs for longer than the floor and a
+snapshot across the boundary, or the arc repeats the lesson of the arc it cites. Sensors
+snapshots will churn: rows the 5 s literal dropped come back under the 3 × 1 s rule.
 
-**10. Stage 1 ships unpinned unless a synth models a departure.** No demo synth publishes an
-entity that leaves except `DiskSynth`'s removable, and D67's own review found that one cannot
-reach the path it was added for (the absence is 15 s against a 60 s retention floor). So
-stage 1 must include a synth that unplugs and a snapshot across the boundary, or arc 16's
-entire lesson is repeated on the arc that cites it. Sensors snapshots will churn: rows the
-5 s literal dropped come back under the 3 × 1 s rule.
+### Considered and rejected
 
-**Not in this arc.** `Datum::Gone` (§5). htop's core block and the cpu numbering bug (§8).
-Whether `absent` adopts Quiet's semantics (§7). Name reuse — a re-plugged `sda` keeps the old
-drive's ring, so a chart splices two devices; Quiet cannot fix it and retraction must also
-truncate, which is stage 2's problem and is recorded here so stage 2 does not discover it.
+**A store-side presence index with explicit retraction** (the correctness-first pass). A
+`Datum::Gone`, a `Store::presence` map keyed by `(domain, label)`, four sources changed to
+retract, and `liveness` answered by the store. It is the better model and it is rejected on
+cost, not correctness: the critic showed "one commit per source" hides a `Msg` variant, a
+journal grammar change and a v2 replay path — a seam session — and measured the per-batch
+index at 40–70 % of the budget the first revision had claimed 8 % for. Its justification was
+"one rule instead of four"; per §4 it delivers two instead of three, which does not buy a
+file-format change.
 
-**Model choice (D36).** Matt's call, 2026-09-15: design with Fable first. Three Fable passes,
-one Fable critic, synthesised and revised here. The implementation is an Opus session against
-a brief.
+**Presence as ordinary data** (the framing all three passes missed, raised by the critic). A
+`disk.devices` / `net.ifaces` Record under `Label::None`, published on change exactly as
+`sensor.info` already publishes its chip inventory. It says *gone* at the tick the name
+leaves, journals and replays through the path every source already uses, needs no protocol
+change, and `[[rules]]` could read it. **This is the right stage 2** and is rejected only as
+*this* decision's scope — it is recorded in `BACKLOG.md` as the follow-up, because it makes
+"gone" a fact where §1 makes it an inference, and because name reuse (below) needs it.
+
+**A store judge fed by the app** (the from-the-screen-back pass's plumbing). `cx.freshness()`
+built from the same `cadence_of` the badge uses, so the two thresholds cannot drift. Rejected
+because `cadence_of` is the app's guesswork over `refresh_ms`, the pins live interval and the
+audio fps case, and feeding a component from it puts a component's correctness behind a
+function that is already documented as approximate. Observing the period is less clever and
+depends on less. **Its presentation specification is adopted in full** — §5 is that pass's
+work.
+
+### Known limits of the chosen design
+
+- **"Every source mentions every live label in every batch" is unenforced.** True for every
+  shipped source today; nothing makes it true. A source that publishes labels across separate
+  batches would flicker quiet. The implementation adds a test asserting it for the registry;
+  the real fix is the rejected stage 2.
+- **The observed period self-loosens.** A label that answers at 1 s, misses five, then
+  answers has a 5 s period and a 15 s threshold, so an intermittent device is never quiet.
+  Confined to one function; the tightening (`min` of the last two gaps, or a floor at the
+  source's batch gap) is internal and moves nothing.
+- **Sinking the row.** Under a traffic sort nothing notices; under `sort = name` the quiet row
+  is the only row that ever moves. Recorded as the thing most likely to be wrong about §5.
+
+### Not in this decision
+
+**htop's core block and the cpu numbering bug.** D61 E2 made `cpu{core}` `LabelSet::Static`
+on the reasoning that hotplug is restart-worthy, so the catalogue cannot both answer "which
+tiles need this" and have htop draw an offlined core. Static wins and htop is out. Underneath
+it is a real bug: `cpu/sampler.rs:292` numbers cores by **position** over `procfs`'s
+`cpu_time`, which discards the `cpuN` name, so an offlined core does not blank its own row —
+it shifts every core after it onto the wrong label, while `sysfs::cpu_count` counts
+present-including-offline so `topology` is sized 32 against 31 active. Its own item.
+
+**Name reuse.** A re-plugged `sda` is reclassified by the source (D64 §5) but the store's
+`disk.read_bps{sda}` ring keeps the previous drive's points, so a chart splices two devices
+into one line. §1 cannot fix it; a retraction must also truncate, which is stage 2's problem
+and is recorded so stage 2 does not rediscover it.
+
+**Whether `absent` rules adopt this rule.** They run on the frame clock with `for_s` and fire
+for a stalled source, which §1 by construction never does. Two notions of missing, left
+standing deliberately, with the reason written down.
+
+**Model choice (D36).** Design by Fable, three passes and a critic, at Matt's instruction.
+Implementation is an Opus session against a brief.
