@@ -51,7 +51,7 @@ prints that for every capability at once — what it found, why something is
 unavailable, and the command that would change it. **Run that first if a tile
 looks blank.** Everything else on this page is the detail behind it.
 
-**Status: v0.16.0, not yet tagged.** Everything below works; the
+**Status: v0.17.0, not yet tagged.** Everything below works; the
 tags wait on rows only a person can take (a real terminal, a running game, live
 i2c — [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) lists them). Fifteen arcs so
 far: the store, layout engine and theme system; **htop**, **nvtop** and

@@ -1134,7 +1134,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "gridwatch"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -1147,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "gridwatch-app"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "color-eyre",
  "criterion",
@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "gridwatch-components"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "gridwatch-store",
  "gridwatch-ui",
@@ -1184,7 +1184,7 @@ dependencies = [
 
 [[package]]
 name = "gridwatch-sources"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "astral-watch",
  "ebur128",
@@ -1208,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "gridwatch-store"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1219,7 +1219,7 @@ dependencies = [
 
 [[package]]
 name = "gridwatch-ui"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "gridwatch-store",
  "insta",
