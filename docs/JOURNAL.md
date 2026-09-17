@@ -6,6 +6,67 @@
 
 ---
 
+## 2026-09-14 → 16 — arc 16's review, and arc 17: a thing that goes quiet says so
+
+**Models:** Opus 5 throughout, with Fable for arc 16's review lenses and the whole of D68's design (three passes and a critic), at Matt's instruction. **Shipped:** arc 16's review and its fixes, D67's revision, D68, and arc 17 in four commits. **Nothing tagged.** Arc 17's own review is owed.
+
+### What changed for Matt
+
+**A drive you unplug now says it is gone instead of pretending to work.** Until this session it kept a green bullet, its last numbers and second place in a traffic sort — `98M · 93% busy` for hardware that had physically left the machine. The cause was that gridwatch tracked "when did I last hear anything?" per *source*, and the disk source was cheerfully still reporting three other drives, so nothing could ever notice.
+
+```
+before   ● sda   0B   40M   54%   —   0   611   1.2  SanDisk Extreme 55AE
+after    · sda    —    —     —    —   —    —     —   SanDisk Extreme 55AE  gone 16s
+```
+
+It sits below every live row now, including the idle drive, and it is out of the tile's summed rate — which at the 8×3 chip is the only thing on screen. `net` and `sensors` use the same rule; `sensors` had its own five-second version, which silently deleted the row.
+
+**This is the first defect in the project found by driving the binary in a real terminal rather than reading it.** Arc 16's user-path lens drove it under `tmux` with `capture-pane`, because ratatui renders *diffs* and a typescript cannot tell "the row went away" from "the row is still there". Nothing else would have seen it: the bullet is byte-identical live and stale.
+
+### The rule, and why the reference point is the whole design
+
+Judge a reading against **its own source's progress**, never against a clock. If the disk source has published three more times without mentioning a drive, the drive is gone.
+
+All three Fable design passes reached this independently, which is the strongest signal any of them gave. It needs no configuration — a source states its cadence by publishing — and every awkward case falls out for free: a stalled, paused, parked or replaying source stops advancing, so nothing goes quiet and §11's existing badge says the true thing instead. `app.rs`'s wall-clock `stale_age` spells those four exemptions out one by one; this needs none. And because it reads no clock, replay and live agree.
+
+**The rule already existed in the codebase three times, incompatibly**, and the sensors tile's comment gave the game away: *"the store has no retraction, so a removed NVMe would otherwise stay 'hottest' for ever (review)."* An earlier review found this exact bug, fixed it for one tile with a five-second literal, and nobody generalised it — so the disk tile shipped with it again. The design was codifying a convention the codebase had already reached twice, not inventing one.
+
+### Matt made two calls that changed the work
+
+**"Design with Fable first"** — so three passes and a critic, and the critic earned it. It broke four claims of the first write-up. The two that mattered: "this replaces three copies of the rule" was oversold (it replaces two, and the third asks a genuinely different question — a drive doing one I/O a second publishes its *rate* every tick and its *timing* almost never, so that hold must stay, and the decision now says **do not delete it** in bold); and a quiet row and the existing badge would have shown two ages on one tile counting on different clocks, diverging fourfold under `--replay --speed 4`.
+
+**"Pick one rather than blend"** — and that was the sharper correction. The first D68 was a synthesis: mechanism from one pass, staging from another, screen behaviour from the third. That is what `REVIEW.md` Template B asks for and it is also the standard way to produce a design none of its three authors would defend. Rewritten as the minimal design whole, with the other two recorded as considered and rejected with reasons. One rejected idea was promoted rather than buried — publish the device list as ordinary data, the way `sensor.info` already publishes its chip inventory, which turns an inference into a fact with no protocol change and is the only route to the re-plugged-device bug.
+
+### I asserted something false twice, and the critic caught it
+
+I told Matt, in two consecutive messages, that greying was invisible in the `mono` theme and that this *settled* how a quiet row should be drawn. It is false: `overlay::dim` inserts `Modifier::DIM` precisely so that mono and the sixteen-colour palette get a cue where muted and plain text are the same colour, and its comment says so.
+
+The conclusion survives on a better argument — **a dimmed `98M` still reads as a number at a glance and a `—` cannot** — but the reason I gave was invented, and I gave it as decisive. That is the same failure as arc 16's `"conns"` story, in the same session that retracted it.
+
+### What building it found that the design did not
+
+**A source that has never published is not a candidate.** `sensors` needed the multi-source judge, because with the default `k10temp = true` the *cpu* source publishes `sensor.temp_c{k10temp:*}` and the store does not record who published what — so a reading is quiet only when every candidate has moved on without it. What D68 missed is that `Pulse::of` answers `Live` before a source's first batch, correctly on its own and wrongly as a vote: counting a source that had never spoken meant nothing was ever quiet.
+
+**`sensors::refresh`'s `now: Ts` became dead**, and was removed rather than underscored. The design's own argument, made concrete: a component that cannot see a clock cannot start using one again by accident.
+
+**The fixture had to change before any of it could be pinned.** Arc 16 gave the demo's removable a 15-second absence against a 60-second retention floor, so the label never left the store — arc 16's own review measured 96 consecutive frames with the device still present. It leaves for 135 seconds now, which puts the disk synth out of step with `net`'s 60-second cycle; matching them was deliberate, so the reason is in the code.
+
+**And four tests changed from asserting a number to asserting a rule** — the arc-16 pattern arriving exactly on schedule. The sort test pinned the idle drive as last; the totals test summed every row; sensors' staleness test compared two timestamps nineteen seconds apart, and now makes the source genuinely move on, which is the only version that would notice a tile declaring a chip dead while its source was merely slow. Its first draft **sat exactly on the boundary**: the rule is strictly greater, so three periods is still live.
+
+### Arc 16's review, briefly, because it is where this came from
+
+Five lenses, nineteen findings. Two live product defects neither fixture nor test could see: `net`'s `state` column was one cell too narrow for `CLOSE-WAIT`, so a **live** tile had drawn `CLOSE_WAI` since arc 7; and the disk tile's total folded a partition into its parent's traffic, so `wr 247M` was only reachable by counting the same bytes twice.
+
+And the arc failed its own standard twice. The instrument it built to catch incidental numbers asserted one — `charted.len() >= 6` summed across two passes producing nine, so three components could all stop charting and it would pass green. And it published a false explanation of its own headline bug three times: `"conns"` is not a substring of `"connections"`.
+
+### What is owed to Matt
+
+- **Arc 17's adversarial review**, with the lens that found the defect in the first place: drive the binary in a pty across an unplug, and again with the source stalled.
+- **P17 under `--demo`**, an hour-long run, owed since arc 16 skipped it.
+- **`v0.1.0` through `v0.17.0`.** The version number itself no longer waits — `Cargo.toml` says `0.17.0` and the README agrees, per Matt's call on 2026-09-15.
+
+---
+
 ## 2026-09-13 — arc 16: the instrument has to enumerate
 
 **Models:** Opus 5 throughout (D67, the ROADMAP box and `docs/briefs/arc-16.md` written the same day). **Shipped:** arc 16, 16a in one commit and 16b in one. **Nothing tagged. No review yet** — that is the next session's, and the ROADMAP box's last line is still open.
