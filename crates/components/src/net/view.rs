@@ -37,6 +37,12 @@ pub fn rate(bps: f64) -> String {
 
 /// The dot beside an interface: up, no carrier, down.
 fn dot(i: &Iface) -> Span {
+    // An interface the source has stopped reporting takes `·` — which this
+    // function already uses below for "nothing known" (D68 §5). Distinct from
+    // `○`, a link that is down and still being reported.
+    if i.live.is_quiet() {
+        return Span::new(Role::TextGhost, "·");
+    }
     let (role, glyph) = match i.link.as_ref() {
         Some(l) if l.up && l.carrier => (Role::Ok, "●"),
         Some(l) if l.up => (Role::Warn, "◍"),

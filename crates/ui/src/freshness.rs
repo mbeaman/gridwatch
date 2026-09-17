@@ -93,6 +93,37 @@ impl Liveness {
     }
 }
 
+/// The kindest verdict among the sources that could have published a label,
+/// used where the store does not record which one did.
+///
+/// The concrete case: with `[sources.cpu] k10temp = true`, which is the
+/// default, the **cpu** source publishes `sensor.temp_c{k10temp:*}` (D68 §3).
+/// Judged against the sensors source's clock alone, those readings would go
+/// quiet whenever cpu's cadence exceeded three times sensors' — a row
+/// flickering for no reason anyone could see.
+///
+/// So a label is quiet only when **every** source that could have published it
+/// has moved on without it. That is the safe direction by construction: adding
+/// a candidate can only make a verdict *less* likely to be quiet, never more,
+/// so a mistake here shows a device a little too long rather than declaring a
+/// live one dead.
+/// A source that has **never published** is not a candidate: it cannot have
+/// "moved on without" anything, and counting it would mean nothing is ever
+/// quiet in a build where one of the two sources is absent — which is exactly
+/// what `--no-default-features` produces. Only advancing sources vote.
+pub fn judge(pulses: &[&Pulse], at: Ts) -> Liveness {
+    let mut quietest: Option<Duration> = None;
+    for p in pulses.iter().filter(|p| p.advancing()) {
+        match p.of(at) {
+            Liveness::Live => return Liveness::Live,
+            Liveness::Quiet { age } => {
+                quietest = Some(quietest.map_or(age, |w: Duration| w.min(age)));
+            }
+        }
+    }
+    quietest.map_or(Liveness::Live, |age| Liveness::Quiet { age })
+}
+
 impl Pulse {
     pub fn new(source: SourceId) -> Pulse {
         Pulse {

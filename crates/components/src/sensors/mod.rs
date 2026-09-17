@@ -127,6 +127,12 @@ pub const OPTION_NAMES: &[&str] = &["chips", "sort"];
 /// A reading older than this is not shown: the store has no retraction, so
 /// a removed NVMe would otherwise stay "hottest" for ever (review). Three
 /// times the source's 1 s cadence, with room for a slow re-walk.
+/// Retired by D68 (arc 17). It was a literal five seconds against `cx.now`,
+/// commented as "three times the source's 1 s cadence" — the right rule with
+/// the cadence written down instead of observed, and measured against a clock
+/// instead of the source's own progress. `gridwatch_ui::freshness` is that
+/// rule, shared, and correct when the source is slow, paused or replaying.
+#[deprecated(note = "D68: use gridwatch_ui::freshness::Pulse")]
 pub const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// One temperature reading as the tile sees it.
@@ -249,7 +255,14 @@ impl Model {
         store: &gridwatch_store::Store,
         chips: &[String],
         sort: Sort,
-        now: Ts,
+        // No clock: D68's rule is store time against the sources' own
+        // progress, so the `now: Ts` this used to take is dead. Removing it
+        // rather than silencing it, because a component that cannot see a
+        // clock cannot accidentally start using one again.
+        pulses: (
+            &gridwatch_ui::freshness::Pulse,
+            &gridwatch_ui::freshness::Pulse,
+        ),
     ) {
         let allowed = |chip: &str| chips.is_empty() || chips.iter().any(|p| glob(p, chip));
         let labels: Vec<Label> = store.labels(sensors::TEMP_C.id.name).cloned().collect();
@@ -266,9 +279,19 @@ impl Model {
             let Some((at, value)) = store.last(&key) else {
                 continue;
             };
-            // A chip that stopped answering keeps its last value in the
-            // store for ever; the tile drops it instead (review).
-            if now.since(at) > STALE_AFTER || !value.is_finite() {
+            // A chip that stopped answering keeps its last value in the store
+            // for ever. This used to drop the row on a 5 s literal; it now
+            // asks the shared rule, judged against the sources' own progress
+            // rather than a clock (D68).
+            //
+            // **Two pulses, not one.** With `[sources.cpu] k10temp = true` —
+            // the default — the *cpu* source publishes `sensor.temp_c{k10temp:*}`
+            // (D68 §3), and the store does not record which source published a
+            // given sample. A reading is quiet only when both candidates have
+            // moved on without it, which is the safe direction: it can hold a
+            // gone chip a little longer, never declare a live one dead.
+            let live = gridwatch_ui::freshness::judge(&[pulses.0, pulses.1], at);
+            if live.is_quiet() || !value.is_finite() {
                 continue;
             }
             self.temps.push(Reading {
@@ -328,6 +351,12 @@ pub struct Sensors {
     options: Options,
     model: Model,
     sort: Sort,
+    /// Both sources that can publish a `sensor.*` reading: the sensors source,
+    /// and the cpu source when it holds the k10temp keys (D68 §3).
+    pulses: (
+        gridwatch_ui::freshness::Pulse,
+        gridwatch_ui::freshness::Pulse,
+    ),
     seen: Option<Ts>,
     scroll: usize,
 }
@@ -335,6 +364,10 @@ pub struct Sensors {
 impl Sensors {
     pub fn new(options: Options) -> Sensors {
         Sensors {
+            pulses: (
+                gridwatch_ui::freshness::Pulse::new(sensors::SOURCE),
+                gridwatch_ui::freshness::Pulse::new(gridwatch_store::keys::cpu::SOURCE),
+            ),
             sort: options.sort,
             options,
             model: Model::default(),
@@ -397,6 +430,10 @@ impl Component for Sensors {
     }
 
     fn tick(&mut self, cx: &TickCx<'_>) -> Redraw {
+        // Both candidates, every tick: a reading may come from either and
+        // the store does not say which (D68 §3).
+        self.pulses.0.observe(cx.store);
+        self.pulses.1.observe(cx.store);
         let Some(at) = cx.store.last_sample(sensors::SOURCE) else {
             return Redraw::No;
         };
@@ -404,8 +441,12 @@ impl Component for Sensors {
             return Redraw::No;
         }
         self.seen = Some(at);
-        self.model
-            .refresh(cx.store, &self.options.chips, self.sort, cx.now);
+        self.model.refresh(
+            cx.store,
+            &self.options.chips,
+            self.sort,
+            (&self.pulses.0, &self.pulses.1),
+        );
         Redraw::Yes
     }
 
@@ -421,8 +462,12 @@ impl Component for Sensors {
             }
             KeyCode::Char('o') => {
                 self.sort = self.sort.next();
-                self.model
-                    .refresh(cx.store, &self.options.chips, self.sort, cx.store.latest());
+                self.model.refresh(
+                    cx.store,
+                    &self.options.chips,
+                    self.sort,
+                    (&self.pulses.0, &self.pulses.1),
+                );
                 self.scroll = 0;
                 Outcome::Consumed
             }

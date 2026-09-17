@@ -212,20 +212,67 @@ fn the_full_tier_carries_rapl_psi_and_the_gpu_row() {
     assert!(fan.ends_with('%') && fan.len() > 1, "the gpu fan: {fan:?}");
 }
 
-/// A chip that stops answering must not stay on the tile for ever: the
-/// store has no retraction, so the tile drops readings older than a few
-/// cadences (review).
+/// A chip that stops answering must not stay on the tile for ever: the store
+/// has no retraction, so the tile drops a reading its source has moved on
+/// without (review; the rule is D68's from arc 17).
+///
+/// **Driven through the source's own progress, not a timestamp.** This used to
+/// call `Model::refresh` twice with a `now` nineteen seconds apart and a 5 s
+/// literal decided it. The rule is now "the source published three more times
+/// without this chip", so the test has to make the source actually do that —
+/// which is also the only version of it that would notice the tile calling a
+/// chip dead while its source was merely slow.
 #[test]
 fn a_reading_that_stopped_arriving_leaves_the_tile() {
+    let mut store = store_with(&[
+        ("nvme:Composite", 80.0, Some(81.85), None),
+        ("k10temp:Tctl", 55.0, None, None),
+    ]);
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    assert_eq!(c.model().temps.len(), 2, "both chips while both report");
+
+    // The sensors source keeps going — the fixture stamps at 1 s, so batches
+    // through 6 s put the silent chip five periods behind, comfortably past
+    // the three the rule allows (it is strictly greater, so exactly three is
+    // still live — the first version of this test sat on that boundary).
+    for i in 2..=6u64 {
+        store.apply(&Msg::Batch(Batch {
+            source: sensors::SOURCE,
+            at: Ts(i * 1_000_000_000),
+            samples: vec![Sample {
+                id: MetricId {
+                    name: sensors::TEMP_C.id.name,
+                    label: Label::Name(Arc::from("nvme:Composite")),
+                },
+                datum: Datum::Scalar(80.0),
+            }],
+        }));
+    }
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    let names: Vec<&str> = c.model().temps.iter().map(|r| r.key.as_str()).collect();
+    assert_eq!(
+        names,
+        ["nvme:Composite"],
+        "the chip the source stopped mentioning is gone; the one it still \
+         reports stays"
+    );
+}
+
+/// And the case the old 5 s literal got wrong: a source that is merely slow
+/// must not have its readings declared dead. Nothing here advances, so
+/// nothing is quiet however much wall time passes (D68 §1).
+#[test]
+fn a_slow_source_does_not_lose_its_readings() {
     let store = store_with(&[("nvme:Composite", 80.0, Some(81.85), None)]);
     let mut c = tile();
     tick(&mut c, &store, TIER_TABLE);
     assert_eq!(c.model().temps.len(), 1);
-    let mut m = gridwatch_components::sensors::Model::default();
-    m.refresh(&store, &[], Sort::Hottest, Ts(1_000_000_000));
-    assert_eq!(m.temps.len(), 1, "fresh");
-    m.refresh(&store, &[], Sort::Hottest, Ts(20_000_000_000));
-    assert!(m.temps.is_empty(), "19 s old: gone");
+    // Tick again against the same store: the source has published nothing
+    // new, so the reading is exactly as old as the source and stays.
+    tick(&mut c, &store, TIER_TABLE);
+    assert_eq!(c.model().temps.len(), 1, "a stalled source kills nothing");
 }
 
 #[test]

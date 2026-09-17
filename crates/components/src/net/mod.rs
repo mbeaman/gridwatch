@@ -166,6 +166,12 @@ pub struct Iface {
     pub rx_err: f64,
     pub tx_err: f64,
     pub link: Option<Link>,
+    /// Whether the source is still reporting this interface (D68). An
+    /// interface that leaves `/proc/net/dev` — a USB NIC pulled, a VPN tunnel
+    /// closed — keeps its series until retention evicts it, so without this
+    /// its row draws its last rates as live. Distinct from a *down* link,
+    /// which is still reported and still has a row worth reading.
+    pub live: gridwatch_ui::freshness::Liveness,
 }
 
 impl Iface {
@@ -206,6 +212,7 @@ impl Model {
         options: &Options,
         sort: Sort,
         show_all: bool,
+        pulse: &gridwatch_ui::freshness::Pulse,
     ) {
         let labels: Vec<Label> = store.labels(net::RX_BPS.id.name).cloned().collect();
         self.ifaces.clear();
@@ -235,12 +242,23 @@ impl Model {
                 tx_err: last(&net::TX_ERR),
                 link: store.record(&net::LINK.named(name)).map(|(_, l)| l.clone()),
                 name: iface,
+                // The anchor key: published for every interface the source
+                // still sees, on every batch (D68 §2).
+                live: store
+                    .last(&net::RX_BPS.named(name))
+                    .map_or(gridwatch_ui::freshness::Liveness::Live, |(at, _)| {
+                        pulse.of(at)
+                    }),
             });
         }
         match sort {
+            // A quiet interface sinks below every reported one, whatever its
+            // last rates were (D68 §5).
             Sort::Traffic => self.ifaces.sort_by(|a, b| {
-                b.up()
-                    .cmp(&a.up())
+                a.live
+                    .is_quiet()
+                    .cmp(&b.live.is_quiet())
+                    .then(b.up().cmp(&a.up()))
                     .then(b.total().total_cmp(&a.total()))
                     .then(a.name.cmp(&b.name))
             }),
@@ -271,6 +289,9 @@ pub struct Net {
     sort: Sort,
     show_all: bool,
     scroll: usize,
+    /// The source's heartbeat, for judging whether an interface is still
+    /// being reported at all (D68).
+    pulse: gridwatch_ui::freshness::Pulse,
     seen: Option<Ts>,
 }
 
@@ -282,6 +303,7 @@ impl Net {
             model: Model::default(),
             show_all: false,
             scroll: 0,
+            pulse: gridwatch_ui::freshness::Pulse::new(net::SOURCE),
             seen: None,
         }
     }
@@ -312,7 +334,7 @@ impl Net {
 
     fn rebuild(&mut self, store: &gridwatch_store::Store) {
         self.model
-            .refresh(store, &self.options, self.sort, self.show_all);
+            .refresh(store, &self.options, self.sort, self.show_all, &self.pulse);
     }
 }
 
@@ -354,6 +376,7 @@ impl Component for Net {
     }
 
     fn tick(&mut self, cx: &TickCx<'_>) -> Redraw {
+        self.pulse.observe(cx.store);
         let Some(at) = cx.store.last_sample(net::SOURCE) else {
             return Redraw::No;
         };
