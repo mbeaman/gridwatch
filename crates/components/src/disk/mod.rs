@@ -268,6 +268,11 @@ pub struct Drive {
     /// the `full` pane.
     pub chip: Option<String>,
     pub no_temp: NoTemp,
+    /// Whether the source is still reporting this device at all (D68). A
+    /// drive that is unplugged keeps its series until retention evicts it,
+    /// so without this the row draws its last numbers as live — measured in
+    /// a real terminal at `98M · 93% busy` with a green bullet.
+    pub live: gridwatch_ui::freshness::Liveness,
 }
 
 impl Drive {
@@ -302,7 +307,13 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn refresh(&mut self, store: &gridwatch_store::Store, options: &Options, sort: Sort) {
+    pub fn refresh(
+        &mut self,
+        store: &gridwatch_store::Store,
+        options: &Options,
+        sort: Sort,
+        pulse: &gridwatch_ui::freshness::Pulse,
+    ) {
         let labels: Vec<Label> = store.labels(disk::READ_BPS.id.name).cloned().collect();
         // The chip inventory, read once per rebuild rather than per drive.
         let chips = store.record(&sensors::INFO).map(|(_, i)| i.clone());
@@ -343,19 +354,37 @@ impl Model {
                     .record(&disk::INFO.named(name))
                     .map(|(_, i)| i.clone()),
                 name: dev,
+                // Judged on the anchor key the source publishes for every
+                // present device on every tick (D68 §2) — not on any of the
+                // keys that are legitimately absent, like the awaits.
+                live: store
+                    .last(&disk::READ_BPS.named(name))
+                    .map_or(gridwatch_ui::freshness::Liveness::Live, |(at, _)| {
+                        pulse.of(at)
+                    }),
                 ..Drive::default()
             };
             join_temperature(&mut d, store, chips.as_ref(), &temp_labels);
             self.drives.push(d);
         }
+        // **Quiet devices sink under every sort** (D68 §5). A row with no
+        // measurement cannot outrank one that has: holding second place in a
+        // traffic sort on bytes nobody has measured for half a minute was the
+        // second half of the reported defect. Among themselves the quiet keep
+        // the sort's own order.
+        let quiet = |d: &Drive| d.live.is_quiet();
         match sort {
             Sort::Traffic => self.drives.sort_by(|a, b| {
-                b.total()
-                    .total_cmp(&a.total())
-                    .then(b.busy_pct.total_cmp(&a.busy_pct))
-                    .then(a.name.cmp(&b.name))
+                quiet(a).cmp(&quiet(b)).then_with(|| {
+                    b.total()
+                        .total_cmp(&a.total())
+                        .then(b.busy_pct.total_cmp(&a.busy_pct))
+                        .then(a.name.cmp(&b.name))
+                })
             }),
-            Sort::Name => self.drives.sort_by(|a, b| a.name.cmp(&b.name)),
+            Sort::Name => self
+                .drives
+                .sort_by(|a, b| quiet(a).cmp(&quiet(b)).then_with(|| a.name.cmp(&b.name))),
         }
     }
 
@@ -363,14 +392,16 @@ impl Model {
     /// (D64 §2: there is no published total, because one would change
     /// meaning under `extra` and disagree with this).
     pub fn totals(&self) -> (f64, f64) {
-        // **Partitions are excluded**: a partition's traffic is already inside
-        // its parent drive's counters, so folding both counted it twice — with
-        // `partitions = true` on a machine with nine of them, by a lot. The
-        // number the tile prints must be the machine's, not the row list's
-        // (arc 16 review, S3).
+        // **Partitions and quiet devices are excluded.** A partition's traffic
+        // is already inside its parent drive's counters, so folding both
+        // counted it twice (arc 16 review, S3). A device the source has
+        // stopped reporting has no traffic to count at all — leaving its last
+        // rate in the sum is the same lie as drawing it in the row, and at the
+        // 8x3 chip the sum is the only thing on screen (D68 §5). §8 names the
+        // blank that leaves.
         self.drives
             .iter()
-            .filter(|d| !d.is_partition())
+            .filter(|d| !d.is_partition() && !d.live.is_quiet())
             .fold((0.0, 0.0), |(r, w), d| (r + d.read_bps, w + d.write_bps))
     }
 
@@ -463,6 +494,10 @@ pub struct Disk {
     sort: Sort,
     series: SeriesKind,
     scroll: usize,
+    /// The source's heartbeat, for judging whether a *device* is still being
+    /// reported (D68). Distinct from `cadence` below, which answers a
+    /// different question and must not be folded into it — see `await_hold`.
+    pulse: gridwatch_ui::freshness::Pulse,
     seen: Option<Ts>,
     /// The gap between the two most recent samples: the source's cadence, as
     /// observed rather than configured.
@@ -472,6 +507,7 @@ pub struct Disk {
 impl Disk {
     pub fn new(options: Options) -> Disk {
         Disk {
+            pulse: gridwatch_ui::freshness::Pulse::new(disk::SOURCE),
             sort: options.sort,
             series: options.series,
             options,
@@ -507,12 +543,19 @@ impl Disk {
     }
 
     /// How long a service time may still be drawn (§11's 3 × cadence).
+    /// The source's heartbeat, for judging whether a device is still being
+    /// reported (D68). The view needs it to decide whether an age is honest.
+    pub fn pulse(&self) -> &gridwatch_ui::freshness::Pulse {
+        &self.pulse
+    }
+
     pub fn await_hold(&self) -> Duration {
         self.cadence * AWAIT_HOLD_TICKS
     }
 
     fn rebuild(&mut self, store: &gridwatch_store::Store) {
-        self.model.refresh(store, &self.options, self.sort);
+        self.model
+            .refresh(store, &self.options, self.sort, &self.pulse);
     }
 }
 
@@ -552,6 +595,12 @@ impl Component for Disk {
     }
 
     fn tick(&mut self, cx: &TickCx<'_>) -> Redraw {
+        // The pulse and the cadence observer watch the same clock and answer
+        // different questions (D68 §4): the pulse decides whether a *device*
+        // is still being reported, the cadence how long a *service time* may
+        // be held inside a device that is. Folding them together makes the
+        // await columns strobe (D64 trap 7).
+        self.pulse.observe(cx.store);
         let Some(at) = cx.store.last_sample(disk::SOURCE) else {
             return Redraw::No;
         };

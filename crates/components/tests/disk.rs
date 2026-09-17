@@ -423,18 +423,47 @@ fn traffic_sort_puts_the_busy_drive_first_and_the_idle_one_last() {
     tick(&mut c, &store, TIER_TABLE);
     let d = &c.model().drives;
     assert_eq!(d[0].name, "nvme0n1", "the synth's busy drive");
+    // **Among the devices still being reported.** A quiet one sinks below
+    // every live row whatever its last numbers were (D68 §5), and at this
+    // fixture's 60 s the removable has been gone fifteen seconds — so the
+    // idle drive is last of the live, not last of the list.
+    let live: Vec<&str> = d
+        .iter()
+        .filter(|x| !x.live.is_quiet())
+        .map(|x| x.name.as_str())
+        .collect();
     assert_eq!(
-        d.last().expect("three drives").name,
+        *live.last().expect("live drives"),
         "nvme2n1",
-        "the idle one"
+        "the idle one, of those still reporting"
+    );
+    assert!(
+        d.last().expect("drives").live.is_quiet(),
+        "and the quiet device is below all of them"
     );
     assert!(d[0].total() > d[1].total());
-    assert_eq!(d.last().expect("three").total(), 0.0);
-    // The tile sums what it shows and says over how many (D64 §2: there is
-    // no published total to disagree with).
+    // The quiet row's *last* rates are whatever they were when the device
+    // left — non-zero here. That is the point: the model keeps them, the sum
+    // and the drawing must not use them.
     let (rd, wr) = c.model().totals();
-    assert_eq!(rd, d.iter().map(|x| x.read_bps).sum::<f64>());
     assert!(wr > 0.0);
+    assert_eq!(
+        rd,
+        d.iter()
+            .filter(|x| !x.live.is_quiet() && !x.is_partition())
+            .map(|x| x.read_bps)
+            .sum::<f64>(),
+        "the total is over the devices still reporting, not over the rows"
+    );
+    let quiet_read: f64 = d
+        .iter()
+        .filter(|x| x.live.is_quiet())
+        .map(|x| x.read_bps)
+        .sum();
+    assert!(
+        rd < d.iter().map(|x| x.read_bps).sum::<f64>() || quiet_read == 0.0,
+        "a device nobody is reporting is out of the sum (D68 §5)"
+    );
 }
 
 /// The view options filter what is drawn without touching what the source
@@ -548,5 +577,86 @@ fn the_manifest_asks_for_nothing_and_borrows_the_sensors_source() {
     assert!(
         m.optional.is_empty(),
         "no capability: /proc is world-readable"
+    );
+}
+
+/// **The defect D68 exists for, driven through the fixture.** A drive that is
+/// unplugged keeps its series until retention evicts it, so before arc 17 its
+/// row drew its last numbers with a green bullet and held its place in a
+/// traffic sort — measured in a real terminal at `98M · 93% busy`.
+///
+/// `demo::DiskSynth`'s `sda` leaves at 45 s and stays gone for 135 s. One tick
+/// is 1.5 s, so 20 ticks is 30 s (present) and 60 ticks is 90 s (gone, and
+/// well past the three periods the rule allows).
+#[test]
+fn a_device_that_stops_being_reported_draws_no_numbers_and_sinks() {
+    let present = store_without_sensors(20); // 30 s — sda is plugged in
+    let gone = store_without_sensors(60); // 90 s — sda left 60 s ago
+
+    let row = |store: &Store| {
+        let mut c = tile();
+        tick(&mut c, store, TIER_TABLE);
+        c.model()
+            .drives
+            .iter()
+            .position(|d| d.name == "sda")
+            .map(|i| (i, c.model().drives[i].clone()))
+    };
+
+    let (was_at, live) = row(&present).expect("sda is in the fixture while plugged in");
+    assert!(!live.live.is_quiet(), "a reported device is not quiet");
+    assert!(live.write_bps > 0.0, "and it is doing work");
+
+    let (now_at, quiet) = row(&gone).expect("its series outlive the device, which is the bug");
+    assert!(
+        quiet.live.is_quiet(),
+        "the source has moved on {} batches without sda and the tile still calls it live",
+        60 - 30
+    );
+    assert!(
+        now_at > was_at,
+        "a device with no measurement must not outrank one that has: sda was row {was_at} \
+         while reporting and is row {now_at} after leaving"
+    );
+    assert_eq!(
+        now_at,
+        c_len(&gone) - 1,
+        "and it sinks below every live row, not just one"
+    );
+}
+
+fn c_len(store: &Store) -> usize {
+    let mut c = tile();
+    tick(&mut c, store, TIER_TABLE);
+    c.model().drives.len()
+}
+
+/// The same, on screen: the row must draw dashes rather than a dimmed number,
+/// because a dimmed `98M` still reads as a measurement and a `—` cannot
+/// (D68 §5).
+#[test]
+fn a_quiet_row_draws_dashes_where_its_numbers_were() {
+    let gone = store_without_sensors(60);
+    let th = theme("modern");
+    let mut c = tile();
+    tick(&mut c, &gone, TIER_TABLE);
+    // A rect that picks `table` and not `chart`: at a charting size the chart
+    // prints its own series labels, and "sda" appears on a braille line that
+    // is not the row under test. (The first version of this test found that
+    // line and read as a failure of the fix.)
+    let (tier, buf) = render_component(&mut c, &gone, &th, Size::new(50, 10), false);
+    assert_eq!(c.tiers()[tier].name, "table");
+    let text = plain_text(&buf);
+    let line = text
+        .lines()
+        .find(|l| l.contains("sda"))
+        .expect("the row is still drawn — it says the device was here");
+    assert!(
+        line.contains('—'),
+        "a device nobody is reporting draws no numbers: {line}"
+    );
+    assert!(
+        !line.contains('%'),
+        "and no percentage, which is the cell that read `93%` for an unplugged drive: {line}"
     );
 }

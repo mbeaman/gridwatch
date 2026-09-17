@@ -1589,3 +1589,59 @@ fn an_idle_drive_keeps_its_awaits_and_a_vanished_one_loses_everything() {
         "an unplugged drive's Record goes with its dead label"
     );
 }
+
+/// **D68 rests on an unenforced premise**: every source names every live label
+/// of its anchor key in *every* batch. If one published labels across separate
+/// batches, each would look quiet on the batches that omitted it and the tile
+/// would flicker. It holds for every shipped source and nothing makes it hold,
+/// so it is asserted here rather than discovered in front of someone.
+///
+/// The real fix is the backlogged presence Record, which makes "gone" a fact
+/// the source states instead of an inference. Until then, this.
+#[test]
+fn every_demo_source_names_every_live_label_in_every_batch() {
+    use gridwatch_store::demo;
+    use gridwatch_store::key::Label;
+    use std::collections::BTreeSet;
+
+    // (anchor key, a synth that publishes it) — the keys D68's tiles judge on.
+    type Tick = Box<dyn FnMut(Ts) -> Batch>;
+    let mut disk = demo::DiskSynth::new(7);
+    let mut net = demo::NetSynth::new(7);
+    let cases: Vec<(&str, Tick)> = vec![
+        ("disk.read_bps", Box::new(move |at| disk.tick_at(at))),
+        (
+            "net.rx_bps",
+            Box::new(move |at| net.tick_at(at, gridwatch_store::Detail::Table)),
+        ),
+    ];
+
+    for (anchor, mut tick) in cases {
+        // Collect the label set per batch over a window with no membership
+        // change, then require every batch to carry the same set.
+        let mut sets: Vec<BTreeSet<String>> = Vec::new();
+        for i in 1..=8u64 {
+            let b = tick(Ts(i * 1_000_000_000));
+            sets.push(
+                b.samples
+                    .iter()
+                    .filter(|s| s.id.name == anchor)
+                    .filter_map(|s| match &s.id.label {
+                        Label::Name(n) => Some(n.to_string()),
+                        _ => None,
+                    })
+                    .collect(),
+            );
+        }
+        let first = &sets[0];
+        for (i, s) in sets.iter().enumerate() {
+            assert_eq!(
+                s, first,
+                "`{anchor}` batch {i} carries a different label set from batch 0 — D68 \
+                 judges a label by the batches that omit it, so a source that publishes \
+                 labels across separate batches makes every tile flicker"
+            );
+            assert!(!s.is_empty(), "`{anchor}` publishes nothing at all");
+        }
+    }
+}

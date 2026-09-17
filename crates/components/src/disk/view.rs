@@ -154,6 +154,12 @@ fn temp_role(d: &Drive) -> Role {
 
 /// The dot beside a drive: how hard it is working, at a glance.
 fn dot(d: &Drive) -> Span {
+    // A device the source has stopped reporting takes `·` — the vocabulary
+    // `net/view.rs` already uses for "nothing known" — and never a bullet
+    // that says it is working (D68 §5).
+    if d.live.is_quiet() {
+        return Span::new(Role::TextGhost, "·");
+    }
     let (role, glyph) = if d.busy_pct >= 90.0 {
         (Role::Warn, "●")
     } else if d.total() > 0.0 || d.busy_pct > 0.0 {
@@ -321,13 +327,22 @@ fn sparks(d: &Disk, cx: &RenderCx<'_>) -> View {
 }
 
 /// One row per drive, in the column set the width allows.
-fn rows(d: &Disk, cols: &[Col]) -> Vec<Vec<Line>> {
+fn rows(d: &Disk, cols: &[Col], pulse: &gridwatch_ui::freshness::Pulse) -> Vec<Vec<Line>> {
     d.model()
         .drives
         .iter()
         .map(|dr| {
             cols.iter()
                 .map(|c| match c {
+                    // **A device the source has stopped reporting draws no
+                    // numbers.** Dashes rather than dimming, because a dimmed
+                    // `98M` still reads as a measurement at a glance and a `—`
+                    // cannot be misread as one — and `—` is already this
+                    // tile's word for "not measured" (`°C —`, `await —`).
+                    // D68 §5; the argument is the screen-first design pass's.
+                    _ if dr.live.is_quiet() && !matches!(c, Col::Device | Col::Model) => {
+                        vec![Span::new(Role::TextGhost, "—".to_string())]
+                    }
                     Col::Device => vec![dot(dr), Span::new(Role::Text, format!(" {}", dr.name))],
                     Col::Read => vec![Span::bold(Role::Text, rate(dr.read_bps))],
                     Col::Write => vec![Span::bold(Role::Text, rate(dr.write_bps))],
@@ -347,14 +362,30 @@ fn rows(d: &Disk, cols: &[Col]) -> Vec<Vec<Line>> {
                         vec![Span::new(Role::TextMuted, format!("{:.0}", dr.writes_ps))]
                     }
                     Col::Queue => vec![Span::new(Role::Text, format!("{:.1}", dr.queue))],
-                    Col::Model => vec![Span::new(
-                        Role::TextMuted,
-                        dr.info
+                    Col::Model => {
+                        let model = dr
+                            .info
                             .as_ref()
                             .map(|i| i.model.clone())
                             .filter(|m| !m.is_empty())
-                            .unwrap_or_else(|| "—".to_string()),
-                    )],
+                            .unwrap_or_else(|| "—".to_string());
+                        let mut line = vec![Span::new(Role::TextMuted, model)];
+                        // The age only while the source is still advancing —
+                        // i.e. exactly when the tile's own `STALE` badge is
+                        // down. Two ages on one tile would run on two clocks
+                        // and disagree, fourfold under `--replay --speed 4`
+                        // (D68 §5).
+                        if let Some(age) = dr.live.age(pulse) {
+                            line.push(Span::new(
+                                Role::TextGhost,
+                                format!(
+                                    "  gone {}",
+                                    gridwatch_ui::overlay::stale_age_text(age.as_secs())
+                                ),
+                            ));
+                        }
+                        line
+                    }
                 })
                 .collect()
         })
@@ -363,7 +394,7 @@ fn rows(d: &Disk, cols: &[Col]) -> Vec<Vec<Line>> {
 
 fn drive_table(d: &Disk, cx: &RenderCx<'_>, body: usize) -> View {
     let cols = columns_for(cx.inner.width);
-    let rows = rows(d, &cols);
+    let rows = rows(d, &cols, d.pulse());
     let body = body.max(1);
     let cursor = d.scroll().min(rows.len().saturating_sub(1));
     let top = cursor

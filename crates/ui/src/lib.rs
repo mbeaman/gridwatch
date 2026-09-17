@@ -6,6 +6,7 @@
 pub mod actions;
 pub mod component;
 pub mod dump;
+pub mod freshness;
 pub mod halfblock;
 pub mod keys;
 pub mod layout;

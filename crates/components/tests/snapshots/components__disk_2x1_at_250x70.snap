@@ -19,10 +19,6 @@ view:
                 - 998M
                 - 200M
                 - 56%
-              - - ● sda
-                - 0B
-                - 40M
-                - 54%
               - - ● nvme0n1p2
                 - 0B
                 - 4.0M
@@ -35,6 +31,10 @@ view:
                 - 0B
                 - 0B
                 - 0%
+              - - · sda
+                - —
+                - —
+                - —
             scroll: 0
             selected: ~
             sort: ~

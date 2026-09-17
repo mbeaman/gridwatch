@@ -33,5 +33,5 @@ view:
                 s: "wr "
               - bold: true
                 role: Text
-                s: 241M
+                s: 200M
     dir: V

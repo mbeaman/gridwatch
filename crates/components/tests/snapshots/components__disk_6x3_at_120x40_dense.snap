@@ -25,13 +25,6 @@ view:
                 - 50°
                 - "7614"
                 - "3052"
-              - - ● sda
-                - 0B
-                - 40M
-                - 54%
-                - —
-                - "0"
-                - "611"
               - - ● nvme0n1p2
                 - 0B
                 - 4.0M
@@ -53,6 +46,13 @@ view:
                 - 37°
                 - "0"
                 - "0"
+              - - · sda
+                - —
+                - —
+                - —
+                - —
+                - —
+                - —
             scroll: 0
             selected: ~
             sort: ~
@@ -83,14 +83,14 @@ view:
         - chart:
             - label: nvme0n1
               points: 39
-            - label: sda
-              points: 29
             - label: nvme0n1p2
               points: 39
             - label: nvme1n1
               points: 39
             - label: nvme2n1
               points: 39
+            - label: sda
+              points: 29
       - - Len(1)
         - text:
             - - bold: false
@@ -105,18 +105,6 @@ view:
               - bold: false
                 role: AccentSecondary
                 s: "  w 5.40 ms"
-              - bold: false
-                role: TextGhost
-                s: " · "
-              - bold: false
-                role: Text
-                s: "sda "
-              - bold: false
-                role: AccentPrimary
-                s: r —
-              - bold: false
-                role: AccentSecondary
-                s: "  w 13.50 ms"
               - bold: false
                 role: TextGhost
                 s: " · "
@@ -147,6 +135,18 @@ view:
               - bold: false
                 role: Text
                 s: "nvme2n1 "
+              - bold: false
+                role: AccentPrimary
+                s: r —
+              - bold: false
+                role: AccentSecondary
+                s: "  w —"
+              - bold: false
+                role: TextGhost
+                s: " · "
+              - bold: false
+                role: Text
+                s: "sda "
               - bold: false
                 role: AccentPrimary
                 s: r —

@@ -49,8 +49,20 @@ pub const PARTITION: &str = "nvme0n1p2";
 pub const REMOVABLE: &str = "sda";
 /// When `sda` is unplugged, in seconds into the cycle.
 pub const REMOVABLE_LEAVES_S: f64 = 45.0;
-/// The synth's cycle, matching `demo::net`'s so a replay repeats as a whole.
-pub const CYCLE_S: f64 = 60.0;
+/// The synth's cycle.
+///
+/// **Deliberately no longer `demo::net`'s 60 s** (arc 17). Arc 16 matched them
+/// so a replay repeated as a whole, and arc 16's own review then measured that
+/// the removable's 15 s absence could never reach the path it was added for:
+/// `[store] history` clamps to a **60 s** floor, so the label is still in the
+/// store — and still drawn — for the whole gap. Ninety-six consecutive frames
+/// across two cycles showed `sda` present in every one.
+///
+/// The absence is now 105 s against that floor, so a device genuinely leaves
+/// the store and D68's quiet path has a fixture. The cost is that a replay no
+/// longer repeats on a single 60 s period; that was worth less than a fixture
+/// which reaches the thing it exists for.
+pub const CYCLE_S: f64 = 180.0;
 
 /// Is the removable drive plugged in at `at`?
 pub fn removable_present(at: Ts) -> bool {
@@ -576,7 +588,19 @@ mod tests {
         };
         assert!(present(10), "plugged in early in the cycle");
         assert!(!present(50), "gone after it is unplugged");
-        assert!(present(70), "back on the next cycle");
+        assert!(
+            !present(100),
+            "still gone a minute later — the point of arc 17"
+        );
+        assert!(present(190), "back on the next cycle");
+        // The absence must outlast the retention floor, or the label never
+        // leaves the store and the quiet path has no fixture (arc 16's review
+        // measured exactly that failure).
+        let absent = CYCLE_S - REMOVABLE_LEAVES_S;
+        assert!(
+            absent > 60.0,
+            "the absence is {absent}s against a 60s `[store] history` floor"
+        );
     }
 
     /// D64 §7: the join is a string equality between two Records that already
