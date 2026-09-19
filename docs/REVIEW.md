@@ -26,6 +26,7 @@ Workflow shape: N finder lenses in parallel → per-finding adversarial verify (
 - **parity** — the arc's `PARITY.md` rows against the real tool's behaviour (htop/nvtop side-by-side where possible)
 - **ux-theme** — tiers at real sizes, theme roles only (no literals), readability pins, degraded modes. `shot` is a supplement here, never the only instrument (D46)
 - **user-path** (**mandatory every arc, D46**) — launch the built binary in a pty (`script -qfec "stty rows R cols C; gridwatch run" file`) and try to break it: no tty, one row, 40 columns, resize mid-run, `q`, a killed source, a corrupt `config.toml`. Report *what the user saw* on screen and on stderr — a finding that cites a buffer instead of a terminal is not a user-path finding
+  - **Parallel pty lenses each use their own tmux socket** (`tmux -L <lens> new-session …`) **and never `kill-server`** — arc 17's stall lens opened with `kill-server` on the shared default server and silently killed three of the unplug lens's sessions mid-run (2026-09-18)
 
 Verify stage per finding: "Adversarially verify: <finding>. Try to REFUTE it; default to refuted when uncertain; state exactly how you checked." Keep findings that survive ≥2 of 3 verifiers (or 1 of 1 for cheap arcs), then reproduce by hand.
 
