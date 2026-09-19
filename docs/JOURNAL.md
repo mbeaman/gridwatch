@@ -6,6 +6,53 @@
 
 ---
 
+## 2026-09-18 — arc 17's review: the claim was true for one tile
+
+**Models:** Sonnet 5 ran the session; the five review lenses were Fable (D36), all read-only, on a tree committed and tagged first. **Shipped:** arc **17b** — four code commits, one docs commit, the D68 review amendments. **Nothing tagged, no seam moved.**
+
+### What changed for Matt
+
+**Arc 17 had told you all three tiles were fixed. One was.** Read as a claim it was ticked in the ROADMAP, repeated in the CHANGELOG and PLAN, and written into a commit message. Read as a tree: `disk`'s table rows were right; `net` had changed a bullet and nothing else, so a vanished interface still read `· eth0  up  98M  12M` — the bug you reported, on the second tile; and `sensors` had swapped a five-second literal for the shared rule and *kept the `continue`*, so a vanished chip still left no trace. The two lenses that drove the binary in a terminal produced captures, and the three that read produced the same list, which is the strongest evidence the review gave.
+
+```
+net     before  · eth0  up   98M   12M   0   0        after  · eth0  gone   —    —   —   —
+disk    before  queue  busy 93% · q 2.2 of 64          after  queue  busy — · q — · r — · w —
+sensors before  (the row vanishes, no trace)           after  a dashed row below every live one
+```
+
+**"No age while the STALE badge is up" was never built, and cannot be without a clock.** The gate was `seen.is_some()`, true for ever after the first batch. In a real terminal, with the disk source silenced after a drive left: `gone 14s` (frozen) beside `STALE 30s` (counting), on one tile. The brief's own fallback was "draw no age at all, and say so", and the first pass did neither. Now a quiet row says `gone` and never how long. **This is the one thing I chose that you may want to overrule**: the age is worth having, and the honest form puts a clock inside a module whose whole argument is that it has none — that is a design decision (a Fable session's under D36), so it is in the backlog with the question written down and not decided by drift.
+
+**D68's own §3 was wrong about your machine.** It said the cpu source publishes the k10temp readings "by default", and built a two-source judge on it. It only does when the `sensors` feature is compiled *out*, and `sensors` is a default feature, so in the binary you run the second source did nothing but veto: a slow cpu source could hold a *gone* chip live, and I reproduced it as the gone chip being named the hottest. The cpu source is now a candidate for `k10temp:*` only.
+
+### What I need from you
+
+- **Overrule or accept "no age".** Accepting costs nothing; overruling means a Fable session on where the clock may live.
+- **The chart bridging a returning device's absence** is the most visible thing left, and it is a *lie*: after `sda` comes back, the chart draws one straight line at full-tilt I/O across the 135 s it was gone — produced by the fixture's own unplug and return. It needs a gap-aware `Series` (a contract change, so Fable's) and is the top of the backlog.
+- **`space` then `space` permanently clears a stalled source's `STALE` badge** (a rule from arc 3b, not this arc's): the badge is what says a tile is dead, and one pause makes a dead tile look alive. Second in the backlog; a bounded grace fixes it.
+- Owed to you, unchanged: every tag (`v0.1.0`…`v0.17.0`), republishing the wiki (public, stale, one command — I added a paragraph to its source), the Ptyxis rows, the game fixture, live i2c rows, P16 with sound, the live Wi-Fi row, P17's runs.
+
+### How the proof was made trustworthy, and where it was not
+
+The review's sharpest finding was about the arc's *tests*: `judge` had none, the implausible-gap test never called the function it named, the totals test used its own filter as its oracle, and `net` had no test at all. So every fix here was written **test first against the unchanged code and watched to fail** — and then twenty-two mutations of the code (the ones the lenses nominated, five of which had survived) were applied to copy-asides of each file. **All twenty-two are now killed.** No git was used to revert; the harness copies the file aside and back, per the working-practice note.
+
+Three of my first drafts failed for *test* bugs, which is why watching a test fail matters and not just seeing it pass: one put the cursor on the wrong drive, one used a size that picked a different tier, and one ticked a tile once when the code under test learns a source's period from *two* observations — so it passed on the very bug it was written for until I fed it the way the shell does.
+
+### What went wrong
+
+- **My mutation harness lied, once.** It restored each file with its original modification time, so cargo believed the last *mutated* build was fresh, and the baseline run after it failed on code that was correct. I chased two "flaky" tests for several minutes before seeing that the source was intact and the binary was not. Per-mutation verdicts were never affected (each build recompiles from current sources), but a run after a mutation session has to `touch` what it restored. The harness does now.
+- **One of my own edits regressed the pane** and a snapshot review caught it: I had replaced the temperature line's reason ("no hwmon chip hangs off this controller — a SATA drive needs drivetemp") with a dash, throwing away a fact that stays true when the drive is gone. Only a *reading* is dashed now.
+- **`cargo insta accept --snapshot <one file>` accepted the whole pending set on its first call.** I had read all five diffs first, so nothing wrong was accepted, but it means what enforced "one by one" was reading, not the tool — the same thing the last entry said about the two arcs before this.
+- **One review lens ran `tmux kill-server`** on a server another lens was using and killed three of its sessions mid-run. It disclosed it; the other lens noticed, checked the log for a panic, and re-ran. `REVIEW.md` now says each pty lens uses its own socket.
+- **The stop hook fired mid-session**, before the reports were in, asking for an entry that could only have been guesses. I declined then and wrote it now.
+
+The advisor was consulted once, before the fix approach hardened, and changed three things: to say the scope plainly (this is 17b, not a patch round), to correct the false ticks *first* so that a session dying mid-fix leaves honest docs, and to take the brief's fallback for the age instead of inventing a clock.
+
+### What is still not fixed, and where it is written
+
+`BACKLOG.md`: the chart bridge, the pause/resume badge, `space` not pausing a replay, cursor-by-index under a sinking row, the quiet device's chart label colliding with live ones, the footer still counting a quiet drive, the two observers of one number, packaging still at `0.9.0`, and — the one that limits what this arc can claim — **the `net` and `sensors` synths still drop nothing**, so no sweep or snapshot can reach their quiet paths; they are pinned by hand-built stores and mutation-tested, which is the honest floor and not the ceiling.
+
+---
+
 ## 2026-09-14 → 16 — arc 16's review, and arc 17: a thing that goes quiet says so
 
 **Models:** Opus 5 throughout, with Fable for arc 16's review lenses and the whole of D68's design (three passes and a critic), at Matt's instruction. **Shipped:** arc 16's review and its fixes, D67's revision, D68, and arc 17 in four commits. **Nothing tagged.** Arc 17's own review is owed.
