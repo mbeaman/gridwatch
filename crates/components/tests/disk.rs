@@ -585,9 +585,10 @@ fn the_manifest_asks_for_nothing_and_borrows_the_sensors_source() {
 /// row drew its last numbers with a green bullet and held its place in a
 /// traffic sort — measured in a real terminal at `98M · 93% busy`.
 ///
-/// `demo::DiskSynth`'s `sda` leaves at 45 s and stays gone for 135 s. One tick
-/// is 1.5 s, so 20 ticks is 30 s (present) and 60 ticks is 90 s (gone, and
-/// well past the three periods the rule allows).
+/// `demo::DiskSynth`'s `sda` leaves at 45 s and stays gone for 135 s.
+/// `store_without_sensors` ticks once a second, so 20 ticks is 20 s (plugged
+/// in) and 60 ticks is 60 s (`sda` last reported at 44 s: fifteen batches
+/// behind, well past the three the rule allows).
 #[test]
 fn a_device_that_stops_being_reported_draws_no_numbers_and_sinks() {
     let present = store_without_sensors(20); // 30 s — sda is plugged in
@@ -610,8 +611,7 @@ fn a_device_that_stops_being_reported_draws_no_numbers_and_sinks() {
     let (now_at, quiet) = row(&gone).expect("its series outlive the device, which is the bug");
     assert!(
         quiet.live.is_quiet(),
-        "the source has moved on {} batches without sda and the tile still calls it live",
-        60 - 30
+        "the source has moved on fifteen batches without sda and the tile still calls it live"
     );
     assert!(
         now_at > was_at,
@@ -652,11 +652,211 @@ fn a_quiet_row_draws_dashes_where_its_numbers_were() {
         .find(|l| l.contains("sda"))
         .expect("the row is still drawn — it says the device was here");
     assert!(
-        line.contains('—'),
-        "a device nobody is reporting draws no numbers: {line}"
+        line.trim_start().starts_with('·'),
+        "the bullet is the ghost `·`, not a live `●`: {line}"
+    );
+    // Every column after the name is a dash — asserted per cell, so removing
+    // the dash from any one column (not only the busy one) fails here.
+    let cells: Vec<&str> = line.split_whitespace().skip(2).collect();
+    assert!(!cells.is_empty(), "the row has measured columns: {line}");
+    assert!(
+        cells.iter().all(|c| *c == "—"),
+        "a device nobody is reporting draws a dash in every measured cell: {line}"
     );
     assert!(
         !line.contains('%'),
         "and no percentage, which is the cell that read `93%` for an unplugged drive: {line}"
+    );
+}
+
+// ---- Arc 17 review (2026-09-18): the pieces the first pass left drawing a
+// vanished drive as live, pinned with stores built by hand so that each
+// assertion names the one thing it is about (a synth shifts every number).
+
+/// A store fed by hand: `batches[i]` lists the `(name, read, write, busy)` the
+/// disk source reports at second `i + 1`. A device missing from a later batch
+/// is a device that left; its series stay in the store, which is the bug.
+fn store_by_hand(batches: &[&[(&str, f64, f64, f64)]]) -> Store {
+    let mut store = Store::default();
+    for (i, devices) in batches.iter().enumerate() {
+        let mut samples = Vec::new();
+        for (name, read, write, busy) in devices.iter() {
+            let id = |k: &gridwatch_store::Key<f64>| MetricId {
+                name: k.id.name,
+                label: Label::Name(Arc::from(*name)),
+            };
+            for (k, v) in [
+                (&disk::READ_BPS, *read),
+                (&disk::WRITE_BPS, *write),
+                (&disk::BUSY_PCT, *busy),
+            ] {
+                samples.push(Sample {
+                    id: id(k),
+                    datum: Datum::Scalar(v),
+                });
+            }
+        }
+        store.apply(&Msg::Batch(Batch {
+            source: disk::SOURCE,
+            at: Ts((i as u64 + 1) * 1_000_000_000),
+            samples,
+        }));
+    }
+    store
+}
+
+/// `aaa` — alphabetically first, and the busiest thing on the machine when it
+/// was last heard from — leaves after the first batch; `zzz` reports on. Both
+/// sorts would put `aaa` first if liveness were ignored, so neither can pass
+/// by accident. Six batches: `aaa` is five periods behind against a hold of
+/// three.
+fn aaa_leaves() -> Store {
+    const BOTH: &[(&str, f64, f64, f64)] = &[("aaa", 50e6, 60e6, 93.0), ("zzz", 1e6, 2e6, 3.0)];
+    const ONE: &[(&str, f64, f64, f64)] = &[("zzz", 1e6, 2e6, 3.0)];
+    store_by_hand(&[BOTH, ONE, ONE, ONE, ONE, ONE])
+}
+
+/// D68 §5 and the brief's "done when" both name **both sorts**. The first pass
+/// pinned only the default — the `Sort::Name` arm could lose its sink and
+/// nothing failed (arc 17 review, lens E).
+#[test]
+fn a_quiet_drive_sinks_under_every_sort_the_tile_offers() {
+    let store = aaa_leaves();
+    let caps = CapSet::default();
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    let order =
+        |c: &Disk| -> Vec<String> { c.model().drives.iter().map(|d| d.name.clone()).collect() };
+    assert!(
+        c.model().drives[1].live.is_quiet(),
+        "the fixture must actually make `aaa` quiet"
+    );
+    assert_eq!(c.sort(), Sort::Traffic);
+    assert_eq!(
+        order(&c),
+        ["zzz", "aaa"],
+        "traffic: the frozen 110 MB/s must not outrank a live 3 MB/s"
+    );
+    c.on_key(key(KeyCode::Char('s')), &cx(&store, &caps));
+    assert_eq!(c.sort(), Sort::Name);
+    assert_eq!(
+        order(&c),
+        ["zzz", "aaa"],
+        "name: alphabetical would put `aaa` first; a quiet row sinks under every sort"
+    );
+}
+
+/// The total is over the devices still reporting. The first pass's version of
+/// this compared the total with a filter that was the total's own filter, and
+/// its second half was true because the fixture's removable reads 0 B/s — so
+/// removing the exclusion changed nothing it could see. This fixture's quiet
+/// drive reads **and** writes, so either half of a mistake shows.
+#[test]
+fn the_summed_rate_leaves_out_a_drive_nobody_is_reporting() {
+    let store = aaa_leaves();
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    assert_eq!(
+        c.model().totals(),
+        (1e6, 2e6),
+        "zzz alone: aaa's frozen 50 MB/s read and 60 MB/s write are not being measured"
+    );
+}
+
+/// The chip tiers name "the busiest" drive. A drive that left with the biggest
+/// frozen number on the machine must not keep the title (lens C, F6: the
+/// 8x3 head read `· 93%  sda`).
+#[test]
+fn the_small_tiers_do_not_name_a_vanished_drive_as_the_busiest() {
+    let store = aaa_leaves();
+    let mut c = tile();
+    tick(&mut c, &store, TIER_RATES);
+    assert_eq!(
+        c.model().busiest().map(|d| d.name.as_str()),
+        Some("zzz"),
+        "the busiest of the drives still reporting"
+    );
+    let th = theme("modern");
+    for (tier_name, size) in [("rates", Size::new(17, 8)), ("sparks", Size::new(30, 6))] {
+        let (tier, buf) = render_component(&mut c, &store, &th, size, false);
+        let text = plain_text(&buf);
+        assert_eq!(c.tiers()[tier].name, tier_name);
+        assert!(
+            text.contains("zzz"),
+            "{tier_name} names the live drive:\n{text}"
+        );
+        assert!(
+            !text.contains("aaa") && !text.contains("93%"),
+            "{tier_name} still names the vanished one or its frozen busy:\n{text}"
+        );
+    }
+}
+
+/// The zoomed `full` pane sat directly under a `—` table row and printed the
+/// drive's last `busy 93% · q 2.2` and `r/s 0 · w/s 1493` as live — captured
+/// in a real terminal (lens A, F1) and accepted into a snapshot hunk (lens E,
+/// F7). The pane belongs to the drive it is about.
+#[test]
+fn the_zoomed_pane_of_a_quiet_drive_says_no_numbers() {
+    let store = aaa_leaves();
+    let th = theme("modern");
+    let caps = CapSet::default();
+    let mut c = tile();
+    tick(&mut c, &store, TIER_FULL);
+    // The pane describes the drive under the cursor; put it on the quiet one
+    // (row two: it sank), as the person in the terminal did.
+    c.on_key(key(KeyCode::Down), &cx(&store, &caps));
+    let (tier, buf) = render_component(&mut c, &store, &th, Size::new(248, 66), true);
+    assert_eq!(c.tiers()[tier].name, "full");
+    let text = plain_text(&buf);
+    // The pane's `queue` line and the `scheduler` line under it. No digit may
+    // follow `busy`, `r/s`, `w/s` or `q`. (A hand-built store has no
+    // `disk.info`, so the header is the bare name; the two lines below it are
+    // what a person reads.)
+    let lines: Vec<&str> = text.lines().collect();
+    let queue = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with("queue") && l.contains("busy"))
+        .unwrap_or_else(|| panic!("the pane's queue line is drawn:\n{text}"));
+    for line in &lines[queue..(queue + 2).min(lines.len())] {
+        for label in ["busy ", "r/s ", "w/s ", "q "] {
+            if let Some(at) = line.find(label) {
+                let next = line[at + label.len()..].chars().next();
+                assert!(
+                    !next.is_some_and(|c| c.is_ascii_digit()),
+                    "a vanished drive's pane draws `{label}` with a number: {line}"
+                );
+            }
+        }
+    }
+}
+
+/// The age is not drawn at all (arc 17b). `gone 14s` was the store-time age at
+/// the instant the source last spoke; once the source stalls, it froze beside
+/// a `STALE` badge that kept counting wall time — two ages on one tile, on two
+/// clocks (lens B, captured in a pty at 90 s). Knowing "the badge is down"
+/// needs a clock this module deliberately does not read, so the brief's own
+/// fallback applies: *draw no age at all*. `BACKLOG.md` keeps the clock
+/// question for a Fable session.
+#[test]
+fn a_quiet_row_says_gone_and_never_how_long() {
+    // One store stands for both cases on purpose: at a single instant the
+    // store cannot tell a stalled source from an advancing one (that needs a
+    // clock), which is precisely why the age cannot be drawn honestly.
+    let store = store_without_sensors(60);
+    let th = theme("modern");
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    let (_, buf) = render_component(&mut c, &store, &th, Size::new(90, 10), false);
+    let text = plain_text(&buf);
+    let line = text
+        .lines()
+        .find(|l| l.contains("sda"))
+        .unwrap_or_else(|| panic!("the row is drawn:\n{text}"));
+    assert!(line.contains("gone"), "the row says it is gone: {line}");
+    let after = line.split("gone").nth(1).unwrap_or("");
+    assert!(
+        !after.trim_start().starts_with(|c: char| c.is_ascii_digit()),
+        "a quiet row must not draw an age (D68 §5, brief seam 4): {line}"
     );
 }

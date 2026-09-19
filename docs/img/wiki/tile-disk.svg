@@ -21,8 +21,8 @@
 <rect x="424" y="32" width="8" height="16" fill="#0b0324"/>
 <rect x="432" y="32" width="48" height="16" fill="#efe9ff"/>
 <rect x="480" y="32" width="8" height="16" fill="#0b0324"/>
-<rect x="488" y="32" width="240" height="16" fill="#efe9ff"/>
-<rect x="728" y="32" width="552" height="16" fill="#0b0324"/>
+<rect x="488" y="32" width="208" height="16" fill="#efe9ff"/>
+<rect x="696" y="32" width="584" height="16" fill="#0b0324"/>
 <rect x="0" y="48" width="1280" height="16" fill="#0b0324"/>
 <rect x="0" y="64" width="1280" height="16" fill="#0b0324"/>
 <rect x="0" y="80" width="1280" height="16" fill="#0b0324"/>
@@ -83,7 +83,7 @@
 <text x="320" y="44" fill="#0b0324" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   R/S</text>
 <text x="376" y="44" fill="#0b0324" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   W/S</text>
 <text x="432" y="44" fill="#0b0324" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     Q</text>
-<text x="488" y="44" fill="#0b0324" textLength="240" lengthAdjust="spacingAndGlyphs" xml:space="preserve">MODEL                         </text>
+<text x="488" y="44" fill="#0b0324" textLength="208" lengthAdjust="spacingAndGlyphs" xml:space="preserve">MODEL                     </text>
 <text x="1272" y="44" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="0" y="60" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="8" y="60" fill="#05ffa1" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">●</text>
@@ -144,7 +144,7 @@
 <text x="416" y="124" fill="#3d2a63" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">—</text>
 <text x="472" y="124" fill="#3d2a63" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">—</text>
 <text x="488" y="124" fill="#8a7fb0" textLength="160" lengthAdjust="spacingAndGlyphs" xml:space="preserve">SanDisk Extreme 55AE</text>
-<text x="648" y="124" fill="#3d2a63" textLength="80" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  gone 16s</text>
+<text x="648" y="124" fill="#3d2a63" textLength="48" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  gone</text>
 <text x="1272" y="124" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="0" y="140" fill="#ff2975" textLength="8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┃</text>
 <text x="8" y="140" fill="#8a7fb0" textLength="56" lengthAdjust="spacingAndGlyphs" xml:space="preserve">series </text>

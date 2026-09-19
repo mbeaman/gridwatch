@@ -30,6 +30,16 @@
 //! *anchor* key its source publishes for every live label on every batch —
 //! `disk.read_bps`, `net.rx_bps`, `sensor.temp_c`.
 //!
+//! **There is no age here, and that is deliberate.** A quiet row says `gone`
+//! and never *how long*. The age the first pass drew was the store-time gap
+//! at the instant the source last spoke; once the source stalls it froze
+//! beside the `STALE` badge, which counts wall time, so one tile showed two
+//! ages on two clocks (arc 17 review, captured in a pty: `gone 14s` beside
+//! `STALE 30s`). Drawing the age only while the badge is down needs to know
+//! whether the source is *currently* publishing, which is a clock — the one
+//! thing this module's correctness argument says it does not have. `BACKLOG.md`
+//! keeps the question of where that clock may live for a design session.
+//!
 //! What this is **not**: the per-series holds inside a live label. A drive
 //! doing one I/O a second publishes `read_bps` every tick and `read_await_ms`
 //! on almost none (D64 trap 7); an unreachable probe publishes `loss_pct`
@@ -75,45 +85,33 @@ impl Liveness {
     pub fn is_quiet(self) -> bool {
         matches!(self, Liveness::Quiet { .. })
     }
-
-    /// The age to print, or `None` when there is nothing honest to print.
-    ///
-    /// **A quiet row must not show an age while its tile's `STALE` badge is
-    /// up** (D68 §5): the badge counts wall time and this counts store time,
-    /// so once the source stalls they diverge — fourfold under `--replay
-    /// --speed 4` — and two disagreeing ages on one tile read as one system
-    /// that lies. A component cannot see the badge, so the test is the
-    /// condition that puts the badge *down*: the source is still advancing,
-    /// which `Pulse::advancing` answers.
-    pub fn age(self, pulse: &Pulse) -> Option<Duration> {
-        match self {
-            Liveness::Quiet { age } if pulse.advancing() => Some(age),
-            _ => None,
-        }
-    }
 }
 
 /// The kindest verdict among the sources that could have published a label,
 /// used where the store does not record which one did.
 ///
-/// The concrete case: with `[sources.cpu] k10temp = true`, which is the
-/// default, the **cpu** source publishes `sensor.temp_c{k10temp:*}` (D68 §3).
-/// Judged against the sensors source's clock alone, those readings would go
-/// quiet whenever cpu's cadence exceeded three times sensors' — a row
-/// flickering for no reason anyone could see.
+/// A label is quiet only when **every** candidate source that has published
+/// has moved on without it; one that still names it keeps it live. Adding a
+/// candidate can therefore only make a verdict *less* likely to be quiet, so a
+/// mistake in the candidate list holds a gone device a little too long rather
+/// than declaring a live one dead.
 ///
-/// So a label is quiet only when **every** source that could have published it
-/// has moved on without it. That is the safe direction by construction: adding
-/// a candidate can only make a verdict *less* likely to be quiet, never more,
-/// so a mistake here shows a device a little too long rather than declaring a
-/// live one dead.
+/// **Who is a candidate is the caller's decision, and it must be narrow.**
+/// D68 §3 said the cpu source publishes `sensor.temp_c{k10temp:*}` "by
+/// default"; it does not. `k10temp = true` is the default only when the
+/// `sensors` feature is compiled *out*, and `sensors` is a default feature, so
+/// in the shipped build the sensors source carries every reading. A wider
+/// candidate list is not free: a source that never carried the label still
+/// votes, and a slow one (`refresh_ms` up to a minute) votes "live" for a gone
+/// chip for as long as its next batch is far off. Name a second source only for the labels it
+/// can actually publish.
+///
 /// A source that has **never published** is not a candidate: it cannot have
 /// "moved on without" anything, and counting it would mean nothing is ever
-/// quiet in a build where one of the two sources is absent — which is exactly
-/// what `--no-default-features` produces. Only advancing sources vote.
+/// quiet in a build where one of the sources is absent.
 pub fn judge(pulses: &[&Pulse], at: Ts) -> Liveness {
     let mut quietest: Option<Duration> = None;
-    for p in pulses.iter().filter(|p| p.advancing()) {
+    for p in pulses.iter().filter(|p| p.has_published()) {
         match p.of(at) {
             Liveness::Live => return Liveness::Live,
             Liveness::Quiet { age } => {
@@ -160,9 +158,14 @@ impl Pulse {
         self.period * STALE_PERIODS
     }
 
-    /// Is this source still producing? False before its first batch — which is
-    /// also when a tile has nothing to draw and must not call anything dead.
-    pub fn advancing(&self) -> bool {
+    /// Has this source published at all? False before its first batch — which
+    /// is also when a tile has nothing to draw and must not call anything dead.
+    ///
+    /// This is **not** "is the source still producing": once true it stays
+    /// true, and nothing here can say a source has *stopped* without a clock.
+    /// It was named `advancing` and used to decide whether a quiet row could
+    /// show an age beside the tile's `STALE` badge, which it cannot decide.
+    pub fn has_published(&self) -> bool {
         self.seen.is_some()
     }
 
@@ -179,29 +182,22 @@ impl Pulse {
             _ => Liveness::Live,
         }
     }
-
-    /// The newest point of `key`, judged. `None` when the label has no series
-    /// at all — absent, not quiet, and the row should not exist.
-    pub fn scalar(
-        &self,
-        store: &Store,
-        key: &gridwatch_store::Key<f64>,
-    ) -> Option<(Liveness, f64)> {
-        let (at, v) = store.last(key)?;
-        Some((self.of(at), v))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use gridwatch_store::keys::disk;
+    use gridwatch_store::{Batch, Msg};
 
     fn at(secs: u64) -> Ts {
         Ts(secs * 1_000_000_000)
     }
 
-    /// The whole correctness argument is that this module reads no clock: that
+    /// The whole correctness argument is that this module reads no clock. **This
+    /// is a tripwire on spellings, not a proof** — a `now: Ts` parameter or an
+    /// aliased import would pass it — which is why `judge` and `observe` are
+    /// also tested with `Ts` values no clock could have produced. That
     /// is what makes pause, focus-loss, a parked source and a finished replay
     /// correct without a single special case, and what keeps replay and live
     /// in agreement. `app.rs`'s wall-clock `stale_age` needs four exemptions
@@ -215,7 +211,17 @@ mod tests {
         // string literals.)
         let whole = include_str!("freshness.rs");
         let src = whole.split("#[cfg(test)]").next().expect("a module body");
-        for forbidden in ["Instant::now", "SystemTime::now", "cx.now", "clock.now"] {
+        for forbidden in [
+            "Instant::now",
+            "SystemTime::now",
+            "UNIX_EPOCH",
+            ".elapsed()",
+            "Clock::",
+            "Ts::now",
+            "cx.now",
+            "clock.now",
+            "now()",
+        ] {
             assert!(
                 !src.contains(forbidden),
                 "`{forbidden}` in freshness.rs — the design rests on this module \
@@ -230,7 +236,7 @@ mod tests {
     #[test]
     fn an_empty_store_makes_nothing_quiet() {
         let p = Pulse::new(disk::SOURCE);
-        assert!(!p.advancing());
+        assert!(!p.has_published());
         assert_eq!(p.of(at(0)), Liveness::Live);
         assert_eq!(p.of(at(9_999)), Liveness::Live);
     }
@@ -288,29 +294,98 @@ mod tests {
         assert_eq!(before, Liveness::Live);
     }
 
-    /// And no second age on screen while the badge is up (D68 §5).
+    /// The period is **observed**, and only credible gaps are believed. This
+    /// used to assign `seen` by hand and assert a field it had just set, so
+    /// deleting the clamp — or the period update altogether — left it green
+    /// (arc 17 review, lens E). It runs `observe` against a real store now.
     #[test]
-    fn a_quiet_row_shows_no_age_before_the_source_has_ever_published() {
-        let p = Pulse::new(disk::SOURCE);
-        let q = Liveness::Quiet {
-            age: Duration::from_secs(9),
+    fn the_observed_period_follows_credible_gaps_and_ignores_implausible_ones() {
+        let mut store = Store::default();
+        let mut p = Pulse::new(disk::SOURCE);
+        let mut feed = |p: &mut Pulse, ms: u64| {
+            store.apply(&Msg::Batch(Batch {
+                source: disk::SOURCE,
+                at: Ts(ms * 1_000_000),
+                samples: vec![],
+            }));
+            p.observe(&store)
         };
-        assert_eq!(q.age(&p), None, "no source progress, no age");
-        let mut advancing = Pulse::new(disk::SOURCE);
-        advancing.seen = Some(at(10));
-        assert_eq!(q.age(&advancing), Some(Duration::from_secs(9)));
+        assert_eq!(p.observe(&Store::default()), None, "nothing published yet");
+        assert!(feed(&mut p, 1_000).is_some());
+        assert_eq!(p.period(), DEFAULT_PERIOD, "one batch is not a gap");
+        feed(&mut p, 3_000);
+        assert_eq!(p.period(), Duration::from_secs(2), "a 2 s gap is credible");
+        assert_eq!(p.hold(), Duration::from_secs(6));
+        feed(&mut p, 3_100);
+        assert_eq!(
+            p.period(),
+            Duration::from_secs(2),
+            "a 100 ms gap is below the floor: two batches in one burst are not a cadence"
+        );
+        feed(&mut p, 3_100 + 86_400_000);
+        assert_eq!(
+            p.period(),
+            Duration::from_secs(2),
+            "a day-long gap is not a one-day cadence"
+        );
+        feed(&mut p, 3_100 + 86_400_000 + 1_500);
+        assert_eq!(
+            p.period(),
+            Duration::from_millis(1_500),
+            "and it follows a faster cadence"
+        );
+        assert_eq!(p.observe(&store), None, "nothing new since the last batch");
     }
 
-    /// An implausible gap is ignored rather than trusted: a source whose two
-    /// newest batches are a day apart has not got a one-day cadence.
-    #[test]
-    fn an_implausible_gap_keeps_the_last_credible_period() {
+    fn pulse(seen: u64, period_s: u64) -> Pulse {
         let mut p = Pulse::new(disk::SOURCE);
-        p.seen = Some(at(0));
-        p.period = Duration::from_secs(2);
-        // 86 400 s is outside MIN..=MAX, so the period must not move.
-        p.seen = Some(at(1));
-        let kept = p.period;
-        assert_eq!(kept, Duration::from_secs(2));
+        p.seen = Some(at(seen));
+        p.period = Duration::from_secs(period_s);
+        p
+    }
+
+    /// `judge` is the kindest verdict, and this is the arc's one subtle
+    /// function. It had no test at all in the first pass — replacing
+    /// `return Live` with `continue` left every test green.
+    #[test]
+    fn judge_is_the_kindest_verdict_among_the_sources_that_have_spoken() {
+        // Both are 9 s / 19 s behind their own progress, but the slow source's
+        // hold is 30 s.
+        let fast = pulse(10, 1); // hold 3 s: `at(1)` is 9 s behind → quiet
+        let slow = pulse(10, 10); // hold 30 s: `at(1)` is 9 s behind → live
+        assert!(fast.of(at(1)).is_quiet() && !slow.of(at(1)).is_quiet());
+        assert_eq!(
+            judge(&[&fast, &slow], at(1)),
+            Liveness::Live,
+            "one live voice is enough"
+        );
+        assert!(judge(&[&fast], at(1)).is_quiet());
+
+        // Everyone has moved on: quiet, and the *smallest* age is reported
+        // (the least alarming true statement).
+        let other = pulse(20, 1);
+        assert_eq!(
+            judge(&[&fast, &other], at(1)),
+            Liveness::Quiet {
+                age: Duration::from_secs(9)
+            }
+        );
+    }
+
+    #[test]
+    fn judge_ignores_a_source_that_has_never_spoken_and_an_empty_list() {
+        let fast = pulse(10, 1);
+        let silent = Pulse::new(disk::SOURCE);
+        assert!(
+            judge(&[&fast, &silent], at(1)).is_quiet(),
+            "a source that never published cannot have moved on without anything, \
+             and must not veto"
+        );
+        assert_eq!(judge(&[], at(1)), Liveness::Live);
+        assert_eq!(
+            judge(&[&silent], at(1)),
+            Liveness::Live,
+            "no votes is not a verdict"
+        );
     }
 }

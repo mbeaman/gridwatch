@@ -122,9 +122,13 @@ fn the_snapshot_tick_counts_reach_the_events_they_exist_for() {
              pins one line instead of two"
         );
     }
+    // Gone is not quiet: D68's rule needs the source to move on three periods
+    // past the device, so the snapshot must be taken at least that far after
+    // the removable leaves (three ticks of this shared timeline) — or it pins
+    // an absent-but-still-live row (arc 17 review, lens E).
     assert!(
-        secs("disk") > gridwatch_store::demo::DISK_REMOVABLE_LEAVES_S,
-        "the disk snapshot never sees the removable leave"
+        secs("disk") > gridwatch_store::demo::DISK_REMOVABLE_LEAVES_S + 3.0 * 1.5,
+        "the disk snapshot is taken before the removable's row is quiet"
     );
 }
 

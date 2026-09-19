@@ -417,10 +417,16 @@ impl Model {
     }
 
     /// The drive the small tiers name: the busiest by traffic, else by
-    /// `busy_pct`, else the first shown.
+    /// `busy_pct`, else the first shown — of those still being reported, and
+    /// only when every one has gone quiet, the first row (which is then quiet
+    /// and drawn as such).
     pub fn busiest(&self) -> Option<&Drive> {
+        // Of the drives still being reported: a device that left carrying the
+        // biggest frozen number on the machine must not keep the title, or the
+        // chip tiers name hardware that is not there (arc 17 review).
         self.drives
             .iter()
+            .filter(|d| !d.live.is_quiet())
             .max_by(|a, b| {
                 a.total()
                     .total_cmp(&b.total())
@@ -543,12 +549,6 @@ impl Disk {
     }
 
     /// How long a service time may still be drawn (§11's 3 × cadence).
-    /// The source's heartbeat, for judging whether a device is still being
-    /// reported (D68). The view needs it to decide whether an age is honest.
-    pub fn pulse(&self) -> &gridwatch_ui::freshness::Pulse {
-        &self.pulse
-    }
-
     pub fn await_hold(&self) -> Duration {
         self.cadence * AWAIT_HOLD_TICKS
     }

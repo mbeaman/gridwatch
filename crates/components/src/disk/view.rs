@@ -327,7 +327,7 @@ fn sparks(d: &Disk, cx: &RenderCx<'_>) -> View {
 }
 
 /// One row per drive, in the column set the width allows.
-fn rows(d: &Disk, cols: &[Col], pulse: &gridwatch_ui::freshness::Pulse) -> Vec<Vec<Line>> {
+fn rows(d: &Disk, cols: &[Col]) -> Vec<Vec<Line>> {
     d.model()
         .drives
         .iter()
@@ -370,19 +370,13 @@ fn rows(d: &Disk, cols: &[Col], pulse: &gridwatch_ui::freshness::Pulse) -> Vec<V
                             .filter(|m| !m.is_empty())
                             .unwrap_or_else(|| "—".to_string());
                         let mut line = vec![Span::new(Role::TextMuted, model)];
-                        // The age only while the source is still advancing —
-                        // i.e. exactly when the tile's own `STALE` badge is
-                        // down. Two ages on one tile would run on two clocks
-                        // and disagree, fourfold under `--replay --speed 4`
-                        // (D68 §5).
-                        if let Some(age) = dr.live.age(pulse) {
-                            line.push(Span::new(
-                                Role::TextGhost,
-                                format!(
-                                    "  gone {}",
-                                    gridwatch_ui::overlay::stale_age_text(age.as_secs())
-                                ),
-                            ));
+                        // **No age**, only the word (arc 17b). The age the
+                        // first pass drew froze when the source stalled and
+                        // sat beside a `STALE` badge that kept counting — two
+                        // ages, two clocks, on one tile. Telling the two cases
+                        // apart needs a clock (`freshness.rs`, `BACKLOG.md`).
+                        if dr.live.is_quiet() {
+                            line.push(Span::new(Role::TextGhost, "  gone"));
                         }
                         line
                     }
@@ -394,7 +388,7 @@ fn rows(d: &Disk, cols: &[Col], pulse: &gridwatch_ui::freshness::Pulse) -> Vec<V
 
 fn drive_table(d: &Disk, cx: &RenderCx<'_>, body: usize) -> View {
     let cols = columns_for(cx.inner.width);
-    let rows = rows(d, &cols, d.pulse());
+    let rows = rows(d, &cols);
     let body = body.max(1);
     let cursor = d.scroll().min(rows.len().saturating_sub(1));
     let top = cursor
@@ -601,6 +595,13 @@ fn pane(d: &Disk, dr: &Drive, cx: &RenderCx<'_>) -> Vec<Line> {
         None => "—".to_string(),
     };
     let info = dr.info.as_ref();
+    // A device the source has stopped reporting has no measurement to print.
+    // The table row above says so with dashes; this pane sat directly under it
+    // and printed `busy 93% · q 2.2 of 64` for hardware that had left (arc 17
+    // review, captured in a pty). What the device *is* — its model, size,
+    // scheduler — is still true and stays.
+    let quiet = dr.live.is_quiet();
+    let dash = || Span::new(Role::TextGhost, "—".to_string());
     let mut head: Line = vec![dot(dr), Span::bold(Role::Text, format!(" {}", dr.name))];
     if let Some(i) = info {
         head.push(Span::new(
@@ -639,6 +640,12 @@ fn pane(d: &Disk, dr: &Drive, cx: &RenderCx<'_>) -> Vec<Line> {
         ),
     ];
     match (dr.temp_c, dr.chip.as_ref()) {
+        // Only a *reading* is dashed: "no hwmon chip hangs off this
+        // controller" is a fact about the drive and stays true when it is gone.
+        (Some(_), Some(_)) if quiet => {
+            ctrl.push(Span::new(Role::TextMuted, " · temperature "));
+            ctrl.push(dash());
+        }
         (Some(t), Some(chip)) => {
             ctrl.push(Span::new(Role::TextMuted, format!(" · hwmon {chip} ")));
             ctrl.push(Span::new(temp_role(dr), format!("{t:.1} °C")));
@@ -653,44 +660,61 @@ fn pane(d: &Disk, dr: &Drive, cx: &RenderCx<'_>) -> Vec<Line> {
         }
     }
     out.push(ctrl);
-    out.push(vec![
-        Span::new(Role::TextMuted, "  queue      "),
-        Span::new(busy_role(dr.busy_pct), format!("busy {:.0}%", dr.busy_pct)),
-        Span::new(
-            Role::Text,
-            format!(
-                " · q {:.1} of {}",
-                dr.queue,
-                info.map(|i| i.nr_requests).unwrap_or(0)
+    if quiet {
+        out.push(vec![
+            Span::new(Role::TextMuted, "  queue      "),
+            Span::new(Role::TextGhost, "busy — · q — · r — · w —"),
+        ]);
+        out.push(vec![
+            Span::new(Role::TextMuted, "  scheduler  "),
+            Span::new(
+                Role::Text,
+                info.map(|i| i.scheduler.clone())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "—".to_string()),
             ),
-        ),
-        Span::new(
-            Role::TextMuted,
-            format!(
-                " · r {} · w {}",
-                ms(dr.await_ms(SeriesKind::Read, cx.now, hold)),
-                ms(dr.await_ms(SeriesKind::Write, cx.now, hold))
+            Span::new(Role::TextGhost, " · r/s — · w/s — · discard —/s"),
+        ]);
+    } else {
+        out.push(vec![
+            Span::new(Role::TextMuted, "  queue      "),
+            Span::new(busy_role(dr.busy_pct), format!("busy {:.0}%", dr.busy_pct)),
+            Span::new(
+                Role::Text,
+                format!(
+                    " · q {:.1} of {}",
+                    dr.queue,
+                    info.map(|i| i.nr_requests).unwrap_or(0)
+                ),
             ),
-        ),
-    ]);
-    out.push(vec![
-        Span::new(Role::TextMuted, "  scheduler  "),
-        Span::new(
-            Role::Text,
-            info.map(|i| i.scheduler.clone())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "—".to_string()),
-        ),
-        Span::new(
-            Role::TextMuted,
-            format!(
-                " · r/s {:.0} · w/s {:.0} · discard {}/s",
-                dr.reads_ps,
-                dr.writes_ps,
-                dr.discard_bps.map(rate).unwrap_or_else(|| "—".into())
+            Span::new(
+                Role::TextMuted,
+                format!(
+                    " · r {} · w {}",
+                    ms(dr.await_ms(SeriesKind::Read, cx.now, hold)),
+                    ms(dr.await_ms(SeriesKind::Write, cx.now, hold))
+                ),
             ),
-        ),
-    ]);
+        ]);
+        out.push(vec![
+            Span::new(Role::TextMuted, "  scheduler  "),
+            Span::new(
+                Role::Text,
+                info.map(|i| i.scheduler.clone())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "—".to_string()),
+            ),
+            Span::new(
+                Role::TextMuted,
+                format!(
+                    " · r/s {:.0} · w/s {:.0} · discard {}/s",
+                    dr.reads_ps,
+                    dr.writes_ps,
+                    dr.discard_bps.map(rate).unwrap_or_else(|| "—".into())
+                ),
+            ),
+        ]);
+    }
     if let Some(i) = info
         && !i.partitions.is_empty()
     {

@@ -42,7 +42,7 @@ pub const DEVICES: [&str; 3] = ["nvme0n1", "nvme1n1", "nvme2n1"];
 pub const PARTITION: &str = "nvme0n1p2";
 
 /// A **removable drive that leaves mid-run** (arc 16, D67 §4). Present for the
-/// first 45 s of the synth's 60 s cycle and gone after it, so a replay crosses
+/// first 45 s of the synth's 180 s cycle and gone after it, so a replay crosses
 /// the boundary in both directions. This is D61's risk row — a device that
 /// vanishes is re-created from scratch after `max_age` with an empty chart —
 /// and nothing modelled it.
@@ -58,7 +58,7 @@ pub const REMOVABLE_LEAVES_S: f64 = 45.0;
 /// store — and still drawn — for the whole gap. Ninety-six consecutive frames
 /// across two cycles showed `sda` present in every one.
 ///
-/// The absence is now 105 s against that floor, so a device genuinely leaves
+/// The absence is now 135 s against that floor, so a device genuinely leaves
 /// the store and D68's quiet path has a fixture. The cost is that a replay no
 /// longer repeats on a single 60 s period; that was worth less than a fixture
 /// which reaches the thing it exists for.
