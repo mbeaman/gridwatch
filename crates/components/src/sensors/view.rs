@@ -185,6 +185,25 @@ fn table_rows(temps: &[Reading], with_bar: bool) -> Vec<Vec<Line>> {
     temps
         .iter()
         .map(|r| {
+            // A reading nobody is reporting: its identity stays, every number
+            // is a dash, and the word says why (D68 §5). No age — see
+            // `gridwatch_ui::freshness` for why.
+            if r.live.is_quiet() {
+                let dash = || vec![Span::new(Role::TextGhost, "—")];
+                let mut row = vec![
+                    vec![Span::new(Role::Text, r.chip.clone())],
+                    vec![
+                        Span::new(Role::TextMuted, r.label.clone()),
+                        Span::new(Role::TextGhost, "  gone"),
+                    ],
+                    dash(),
+                    dash(),
+                ];
+                if with_bar {
+                    row.push(dash());
+                }
+                return row;
+            }
             let mut row = vec![
                 vec![Span::new(Role::Text, r.chip.clone())],
                 vec![Span::new(Role::TextMuted, r.label.clone())],
@@ -308,6 +327,19 @@ fn table_view(s: &Sensors, cx: &RenderCx<'_>, rows: Vec<Vec<Line>>, body: usize)
 fn gauge_pane(temps: &[Reading], top: usize, body: usize) -> View {
     let mut children: Vec<(Constraint, View)> = vec![(Constraint::Len(1), View::Empty)];
     for r in temps.iter().skip(top).take(body) {
+        if r.live.is_quiet() {
+            // An empty bar and a dash: a frozen `72 %` is not a measurement.
+            children.push((
+                Constraint::Len(1),
+                View::Gauge {
+                    label: Cow::Borrowed(""),
+                    value: 0.0,
+                    gradient: GradientId::Temp,
+                    text: Some(Cow::Borrowed("—")),
+                },
+            ));
+            continue;
+        }
         let heat = r.heat();
         children.push((
             Constraint::Len(1),
@@ -420,7 +452,9 @@ fn chart_span_text(cx: &RenderCx<'_>) -> String {
 /// The four hottest readings over the chart's window, as a braille chart.
 fn chart_view(s: &Sensors, cx: &RenderCx<'_>) -> View {
     let m = s.model();
-    let mut picks: Vec<&Reading> = m.temps.iter().collect();
+    // The hottest of what is being measured: a chip that left has a stopped
+    // line and a frozen legend number, neither of which the chart should name.
+    let mut picks: Vec<&Reading> = m.temps.iter().filter(|r| !r.live.is_quiet()).collect();
     picks.sort_by(|a, b| super::hottest_first(a, b));
     picks.truncate(4);
     let span = chart_span(cx);
@@ -467,7 +501,7 @@ fn chart_view(s: &Sensors, cx: &RenderCx<'_>) -> View {
 
 fn chart_legend(s: &Sensors, span: &str) -> Line {
     let m = s.model();
-    let mut picks: Vec<&Reading> = m.temps.iter().collect();
+    let mut picks: Vec<&Reading> = m.temps.iter().filter(|r| !r.live.is_quiet()).collect();
     picks.sort_by(|a, b| super::hottest_first(a, b));
     let mut line: Line = vec![Span::new(Role::TextMuted, format!("chart · {span} · "))];
     for (i, r) in picks.iter().take(4).enumerate() {

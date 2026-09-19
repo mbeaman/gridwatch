@@ -124,17 +124,6 @@ pub struct Options {
 
 pub const OPTION_NAMES: &[&str] = &["chips", "sort"];
 
-/// A reading older than this is not shown: the store has no retraction, so
-/// a removed NVMe would otherwise stay "hottest" for ever (review). Three
-/// times the source's 1 s cadence, with room for a slow re-walk.
-/// Retired by D68 (arc 17). It was a literal five seconds against `cx.now`,
-/// commented as "three times the source's 1 s cadence" — the right rule with
-/// the cadence written down instead of observed, and measured against a clock
-/// instead of the source's own progress. `gridwatch_ui::freshness` is that
-/// rule, shared, and correct when the source is slow, paused or replaying.
-#[deprecated(note = "D68: use gridwatch_ui::freshness::Pulse")]
-pub const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
-
 /// One temperature reading as the tile sees it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reading {
@@ -145,6 +134,10 @@ pub struct Reading {
     pub value: f64,
     pub max: Option<f64>,
     pub crit: Option<f64>,
+    /// Whether the source is still reporting this reading (D68). A chip that
+    /// stops answering keeps its series until retention removes it; a quiet
+    /// reading keeps its row — drawn as not measured — and never ranks.
+    pub live: gridwatch_ui::freshness::Liveness,
 }
 
 /// The limit assumed for a chip that exports none, so a reading without a
@@ -208,13 +201,17 @@ pub struct Other {
     pub value: f64,
 }
 
-/// Hottest first: anything past its critical threshold, then past its max,
+/// Live readings first, then hottest first: anything past its critical threshold, then past its max,
 /// then by how close it is to its limit, then by the raw value. A reading
 /// whose chip exports no threshold is ranked against `assumed_limit`, so a
 /// 62 °C `Tctl` outranks a 44 °C DIMM at 55 °C max (review).
 pub fn hottest_first(a: &Reading, b: &Reading) -> std::cmp::Ordering {
-    b.over_crit()
-        .cmp(&a.over_crit())
+    // A reading nobody is reporting sinks below every live one, whatever number
+    // it froze at (D68 §5) — a chip that left at 90 °C is not the hottest.
+    a.live
+        .is_quiet()
+        .cmp(&b.live.is_quiet())
+        .then(b.over_crit().cmp(&a.over_crit()))
         .then(b.over_max().cmp(&a.over_max()))
         .then(b.heat().total_cmp(&a.heat()))
         .then(b.value.total_cmp(&a.value))
@@ -280,18 +277,25 @@ impl Model {
                 continue;
             };
             // A chip that stopped answering keeps its last value in the store
-            // for ever. This used to drop the row on a 5 s literal; it now
-            // asks the shared rule, judged against the sources' own progress
-            // rather than a clock (D68).
+            // for ever. Judged against its source's own progress rather than
+            // a clock (D68), and **kept as a row** that draws as not measured:
+            // the first pass replaced the 5 s literal with the shared rule but
+            // kept the `continue`, so a vanished chip left no trace.
             //
-            // **Two pulses, not one.** With `[sources.cpu] k10temp = true` —
-            // the default — the *cpu* source publishes `sensor.temp_c{k10temp:*}`
-            // (D68 §3), and the store does not record which source published a
-            // given sample. A reading is quiet only when both candidates have
-            // moved on without it, which is the safe direction: it can hold a
-            // gone chip a little longer, never declare a live one dead.
-            let live = gridwatch_ui::freshness::judge(&[pulses.0, pulses.1], at);
-            if live.is_quiet() || !value.is_finite() {
+            // **Who can have carried it.** The sensors source carries every
+            // reading. The cpu source carries only `k10temp:*` — and only when
+            // `[sources.cpu] k10temp = true`, which is the default *only in a
+            // build without the `sensors` feature* (D68 §3 said it was the
+            // default; the shipped build says otherwise). Naming the cpu
+            // source as a candidate for any other label lets a slow cpu source
+            // hold a gone chip live for as long as retention keeps it.
+            let candidates: &[&gridwatch_ui::freshness::Pulse] = if chip.starts_with("k10temp") {
+                &[pulses.0, pulses.1]
+            } else {
+                &[pulses.0]
+            };
+            let live = gridwatch_ui::freshness::judge(candidates, at);
+            if !value.is_finite() {
                 continue;
             }
             self.temps.push(Reading {
@@ -301,11 +305,17 @@ impl Model {
                 chip,
                 label,
                 value,
+                live,
             });
         }
         match sort {
             Sort::Hottest => self.temps.sort_by(hottest_first),
-            Sort::Chip => self.temps.sort_by(|a, b| a.key.cmp(&b.key)),
+            Sort::Chip => self.temps.sort_by(|a, b| {
+                a.live
+                    .is_quiet()
+                    .cmp(&b.live.is_quiet())
+                    .then_with(|| a.key.cmp(&b.key))
+            }),
         }
         self.others.clear();
         for (kind, key) in [
@@ -330,13 +340,18 @@ impl Model {
 
     /// The hottest reading, whatever the tile's sort is.
     pub fn hottest(&self) -> Option<&Reading> {
-        self.temps.iter().min_by(|a, b| hottest_first(a, b))
+        self.temps
+            .iter()
+            .filter(|r| !r.live.is_quiet())
+            .min_by(|a, b| hottest_first(a, b))
     }
 
     /// One reading per chip, hottest first (the strip).
     pub fn per_chip(&self) -> Vec<&Reading> {
         let mut out: Vec<&Reading> = Vec::new();
-        let mut sorted: Vec<&Reading> = self.temps.iter().collect();
+        // The strip is what is being measured now; a chip that left is a row
+        // in the table, not a name in the summary.
+        let mut sorted: Vec<&Reading> = self.temps.iter().filter(|r| !r.live.is_quiet()).collect();
         sorted.sort_by(|a, b| hottest_first(a, b));
         for r in sorted {
             if !out.iter().any(|o| o.chip == r.chip) {
@@ -515,6 +530,7 @@ mod tests {
             value: 82.0,
             max: Some(81.85),
             crit: Some(84.85),
+            live: gridwatch_ui::freshness::Liveness::Live,
         };
         assert!(r.over_max() && !r.over_crit());
         assert!(r.margin() < 0.0);

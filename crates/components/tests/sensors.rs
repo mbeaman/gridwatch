@@ -10,7 +10,7 @@ use gridwatch_store::keys::sensors;
 use gridwatch_store::{
     Batch, Datum, KeyCode, KeyEvent, Label, MetricId, Mods, Msg, Sample, Store, Ts,
 };
-use gridwatch_ui::component::{Component, InputCx, Outcome, Size, pick_tier};
+use gridwatch_ui::component::{Component, InputCx, Outcome, Size, TickCx, pick_tier};
 use gridwatch_ui::testkit::{demo_store, plain_text, render_component, theme, tick};
 use ratatui_core::layout::Rect;
 
@@ -212,67 +212,242 @@ fn the_full_tier_carries_rapl_psi_and_the_gpu_row() {
     assert!(fan.ends_with('%') && fan.len() > 1, "the gpu fan: {fan:?}");
 }
 
-/// A chip that stops answering must not stay on the tile for ever: the store
-/// has no retraction, so the tile drops a reading its source has moved on
-/// without (review; the rule is D68's from arc 17).
-///
-/// **Driven through the source's own progress, not a timestamp.** This used to
-/// call `Model::refresh` twice with a `now` nineteen seconds apart and a 5 s
-/// literal decided it. The rule is now "the source published three more times
-/// without this chip", so the test has to make the source actually do that —
-/// which is also the only version of it that would notice the tile calling a
-/// chip dead while its source was merely slow.
-#[test]
-fn a_reading_that_stopped_arriving_leaves_the_tile() {
+/// One more temperature reading from `source`, at second `at`.
+fn push_temp(store: &mut Store, source: gridwatch_store::SourceId, at: u64, key: &str, v: f64) {
+    store.apply(&Msg::Batch(Batch {
+        source,
+        at: Ts(at * 1_000_000_000),
+        samples: vec![Sample {
+            id: MetricId {
+                name: sensors::TEMP_C.id.name,
+                label: Label::Name(Arc::from(key)),
+            },
+            datum: Datum::Scalar(v),
+        }],
+    }));
+}
+
+/// `hwmon0:Composite` — hottest thing on the machine (90 °C) and alphabetically
+/// first — is mentioned by the first batch and never again; `nvme:Composite`
+/// reports on. Six batches: the silent chip is five periods behind against a
+/// hold of three (the rule is *strictly* greater, so exactly three is still
+/// live — the first version of this test sat on that boundary). Both sorts
+/// would put it first if liveness were ignored, so neither can pass by
+/// accident.
+fn hwmon0_leaves() -> Store {
     let mut store = store_with(&[
-        ("nvme:Composite", 80.0, Some(81.85), None),
-        ("k10temp:Tctl", 55.0, None, None),
+        ("hwmon0:Composite", 90.0, Some(100.0), None),
+        ("nvme:Composite", 60.0, Some(100.0), None),
     ]);
+    for i in 2..=6u64 {
+        push_temp(&mut store, sensors::SOURCE, i, "nvme:Composite", 60.0);
+    }
+    store
+}
+
+/// A chip the source stopped mentioning **keeps its row and says so** (D68
+/// §5: "sensors switches from silent drop to the same treatment"). The first
+/// pass replaced the 5 s literal with the shared rule and kept the `continue`,
+/// so a vanished chip left no trace — the pre-arc behaviour on a different
+/// timer — and this test used to *assert* the drop.
+#[test]
+fn a_chip_the_source_stopped_mentioning_keeps_its_row_and_says_so() {
+    let store = hwmon0_leaves();
+    let caps = gridwatch_store::CapSet::default();
+    let th = theme("modern");
     let mut c = tile();
     tick(&mut c, &store, TIER_TABLE);
-    assert_eq!(c.model().temps.len(), 2, "both chips while both report");
+    let order =
+        |c: &Sensors| -> Vec<String> { c.model().temps.iter().map(|r| r.key.clone()).collect() };
+    assert_eq!(
+        order(&c),
+        ["nvme:Composite", "hwmon0:Composite"],
+        "hottest: a frozen 90° does not outrank a live 60°, and the row is still here"
+    );
+    assert!(matches!(
+        c.on_key(
+            KeyEvent {
+                code: KeyCode::Char('o'),
+                mods: Mods::NONE
+            },
+            &cx(&store, &caps)
+        ),
+        Outcome::Consumed
+    ));
+    assert_eq!(c.sort(), Sort::Chip);
+    assert_eq!(
+        order(&c),
+        ["nvme:Composite", "hwmon0:Composite"],
+        "chip order: alphabetical would put hwmon0 first; a quiet row sinks under every sort"
+    );
+    let (tier, buf) = render_component(&mut c, &store, &th, Size::new(60, 8), false);
+    assert_eq!(c.tiers()[tier].name, "table");
+    let text = plain_text(&buf);
+    let line = text
+        .lines()
+        .find(|l| l.contains("hwmon0"))
+        .unwrap_or_else(|| panic!("the row is drawn — it says the chip was here:\n{text}"));
+    assert!(
+        line.contains('—') && !line.contains("90"),
+        "a chip nobody is reporting draws dashes, not 90°: {line}"
+    );
+}
 
-    // The sensors source keeps going — the fixture stamps at 1 s, so batches
-    // through 6 s put the silent chip five periods behind, comfortably past
-    // the three the rule allows (it is strictly greater, so exactly three is
-    // still live — the first version of this test sat on that boundary).
+/// The summary tiers name the hottest reading. A chip that left carrying the
+/// biggest number on the machine must not keep the title.
+#[test]
+fn a_vanished_chip_is_not_the_hottest() {
+    let store = hwmon0_leaves();
+    let th = theme("modern");
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    assert_eq!(
+        c.model().hottest().map(|r| r.key.as_str()),
+        Some("nvme:Composite"),
+        "the hottest of the readings still arriving"
+    );
+    let (tier, buf) = render_component(&mut c, &store, &th, Size::new(17, 8), false);
+    assert_eq!(c.tiers()[tier].name, "hottest");
+    let text = plain_text(&buf);
+    assert!(text.contains("60"), "the live reading: {text}");
+    assert!(!text.contains("90"), "the frozen one: {text}");
+}
+
+/// When **every** reading has gone quiet there is no hottest one, and the
+/// summary tiers must not name the last frozen leader anyway (the sink in
+/// `hottest_first` only helps while a live reading exists to outrank it — the
+/// mutation that removed the filter from `hottest()` survived until this test).
+#[test]
+fn when_every_reading_is_quiet_nothing_is_the_hottest() {
+    let mut store = store_with(&[("nvme:Composite", 90.0, Some(100.0), None)]);
+    // The source keeps publishing — a fan, not a temperature — so it advances
+    // past the one chip that stopped.
     for i in 2..=6u64 {
         store.apply(&Msg::Batch(Batch {
             source: sensors::SOURCE,
             at: Ts(i * 1_000_000_000),
             samples: vec![Sample {
                 id: MetricId {
-                    name: sensors::TEMP_C.id.name,
-                    label: Label::Name(Arc::from("nvme:Composite")),
+                    name: sensors::FAN_RPM.id.name,
+                    label: Label::Name(Arc::from("fan1")),
                 },
-                datum: Datum::Scalar(80.0),
+                datum: Datum::Scalar(1200.0),
             }],
         }));
     }
+    let th = theme("modern");
     let mut c = tile();
     tick(&mut c, &store, TIER_TABLE);
-    let names: Vec<&str> = c.model().temps.iter().map(|r| r.key.as_str()).collect();
-    assert_eq!(
-        names,
-        ["nvme:Composite"],
-        "the chip the source stopped mentioning is gone; the one it still \
-         reports stays"
+    assert_eq!(c.model().temps.len(), 1, "the row is still there");
+    assert!(
+        c.model().hottest().is_none(),
+        "but it is not the hottest of anything: {:?}",
+        c.model().temps
+    );
+    let (tier, buf) = render_component(&mut c, &store, &th, Size::new(17, 8), false);
+    assert_eq!(c.tiers()[tier].name, "hottest");
+    let text = plain_text(&buf);
+    assert!(
+        !text.contains("90"),
+        "the summary names a frozen reading:\n{text}"
     );
 }
 
-/// And the case the old 5 s literal got wrong: a source that is merely slow
-/// must not have its readings declared dead. Nothing here advances, so
-/// nothing is quiet however much wall time passes (D68 §1).
+/// **The candidate rule.** D68 §3 said the cpu source publishes
+/// `sensor.temp_c{k10temp:*}` "by default", so a reading is judged against
+/// both sources and is live if either says so. It does not: the default is
+/// `k10temp = false` whenever the `sensors` feature is compiled in, which it is
+/// by default, so in the shipped build the cpu source carries *no* temperature
+/// and a slow cpu source only vetoed. At the default cadences that held a gone
+/// chip ~4.5 s too long; at `refresh_ms = 60000` for the whole retention
+/// window. Only `k10temp:*` labels have a second candidate.
 #[test]
-fn a_slow_source_does_not_lose_its_readings() {
-    let store = store_with(&[("nvme:Composite", 80.0, Some(81.85), None)]);
+fn the_cpu_source_cannot_hold_a_chip_it_never_carried() {
+    // Fed the way the shell feeds it: a tick after every batch, because a
+    // `Pulse` learns a source's period from two consecutive observations. (A
+    // first draft ticked once at the end, so the cpu pulse still assumed a
+    // 1 s period and the veto this test is about could not happen.)
+    let mut store = store_with(&[
+        ("hwmon0:Composite", 90.0, Some(100.0), None),
+        ("nvme:Composite", 60.0, Some(100.0), None),
+    ]);
     let mut c = tile();
     tick(&mut c, &store, TIER_TABLE);
-    assert_eq!(c.model().temps.len(), 1);
-    // Tick again against the same store: the source has published nothing
-    // new, so the reading is exactly as old as the source and stays.
+    for i in 2..=6u64 {
+        push_temp(&mut store, sensors::SOURCE, i, "nvme:Composite", 60.0);
+        // The cpu source, slowly (every 3 s), publishing no temperatures.
+        if i % 3 == 0 {
+            store.apply(&Msg::Batch(Batch {
+                source: gridwatch_store::keys::cpu::SOURCE,
+                at: Ts(i * 1_000_000_000),
+                samples: vec![],
+            }));
+        }
+        tick(&mut c, &store, TIER_TABLE);
+    }
+    assert_eq!(
+        c.model().hottest().map(|r| r.key.as_str()),
+        Some("nvme:Composite"),
+        "hwmon0 is not a k10temp label: only the sensors source could have carried it, \
+         it has moved on five periods, and a slower cpu source has no say"
+    );
+}
+
+/// And the leniency the second candidate exists for: with `k10temp = true` the
+/// cpu source carries `k10temp:*`, and judged against the sensors source alone
+/// those readings would go quiet whenever the cpu source is slower than three
+/// sensors periods. Here cpu publishes every 10 s and sensors every 1 s.
+#[test]
+fn a_k10temp_reading_the_cpu_carries_survives_the_sensors_clock() {
+    let mut store = store_with(&[("nvme:Composite", 40.0, Some(100.0), None)]);
+    for i in 2..=28u64 {
+        push_temp(&mut store, sensors::SOURCE, i, "nvme:Composite", 40.0);
+    }
+    for at in [10u64, 20] {
+        push_temp(
+            &mut store,
+            gridwatch_store::keys::cpu::SOURCE,
+            at,
+            "k10temp:Tctl",
+            55.0,
+        );
+    }
+    let mut c = tile();
     tick(&mut c, &store, TIER_TABLE);
-    assert_eq!(c.model().temps.len(), 1, "a stalled source kills nothing");
+    assert_eq!(
+        c.model().hottest().map(|r| r.key.as_str()),
+        Some("k10temp:Tctl"),
+        "sensors has moved on eight seconds, but the cpu source — which carries this \
+         label — spoke at 20 s and is current"
+    );
+}
+
+/// A source that is merely slow, or has stopped, must not have its readings
+/// declared dead. Nothing here advances, so nothing is quiet however much
+/// *wall* time passes — proven by ticking with a `now` an hour later. The
+/// first version ticked against `store.latest()`, so the pre-arc
+/// `now.since(at) > 5 s` drop stayed green (arc 17 review, lens E).
+#[test]
+fn a_stalled_source_does_not_lose_its_readings() {
+    let store = store_with(&[("nvme:Composite", 80.0, Some(81.85), None)]);
+    let mut c = tile();
+    for now in [store.latest(), Ts(3_600 * 1_000_000_000)] {
+        c.tick(&TickCx {
+            store: &store,
+            now,
+            visible: true,
+            tier: TIER_TABLE,
+        });
+        assert_eq!(
+            c.model().temps.len(),
+            1,
+            "an hour of wall time kills nothing"
+        );
+    }
+    assert_eq!(
+        c.model().hottest().map(|r| r.key.as_str()),
+        Some("nvme:Composite")
+    );
 }
 
 #[test]

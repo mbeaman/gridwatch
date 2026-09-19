@@ -1608,8 +1608,13 @@ fn every_demo_source_names_every_live_label_in_every_batch() {
     type Tick = Box<dyn FnMut(Ts) -> Batch>;
     let mut disk = demo::DiskSynth::new(7);
     let mut net = demo::NetSynth::new(7);
+    let mut sensors = demo::SensorsSynth::new(7);
     let cases: Vec<(&str, Tick)> = vec![
         ("disk.read_bps", Box::new(move |at| disk.tick_at(at))),
+        // The third tile's anchor. The first pass covered two of the three
+        // (arc 17 review, lens D and E: "a registry test" that covered
+        // synths, and not this one).
+        ("sensor.temp_c", Box::new(move |at| sensors.tick_at(at))),
         (
             "net.rx_bps",
             Box::new(move |at| net.tick_at(at, gridwatch_store::Detail::Table)),
