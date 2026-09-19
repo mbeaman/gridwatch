@@ -82,6 +82,17 @@ A device is classified the first time it is seen and forgotten when it leaves
 diskstats, with no periodic re-walk — so **a USB drive you plug in appears on the
 next tick**, within a second or two.
 
+**A drive you unplug says so.** Its row stays where you saw it, but every number
+becomes `—`, its bullet becomes a faint `·`, the word `gone` follows the model,
+and it drops below every live row whichever sort you use. It also stops counting
+toward the tile's totals, so the small tiles never keep reporting the last
+`98M` of hardware that has left. The row disappears on its own once the history
+window (`[store] history`, at least a minute) has passed. Judging this needs no
+setting: the tile compares the drive against how often the *source* is reporting,
+so a paused, stalled or replayed source never makes a drive look unplugged — the
+`STALE` badge on the tile's border is what reports that. The network and
+temperature tiles follow the same rule for interfaces and sensor chips.
+
 ## The temperature comes from somewhere else
 
 The `°C` column is not read by this tile. It is joined from the **sensors**
