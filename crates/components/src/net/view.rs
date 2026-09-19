@@ -52,6 +52,18 @@ fn dot(i: &Iface) -> Span {
     Span::new(role, glyph)
 }
 
+/// A measured rate — or, for an interface the source has stopped reporting, a
+/// `—`. Its last rate is not a measurement: the first pass changed the bullet
+/// and left every one of these drawing `98M` beside a green `up` (D68 §5; arc
+/// 17 review, lenses A, C and E).
+fn rate_span(i: &Iface, v: f64) -> Span {
+    if i.live.is_quiet() {
+        Span::new(Role::TextGhost, "—")
+    } else {
+        Span::bold(Role::Text, rate(v))
+    }
+}
+
 fn status_line(cx: &RenderCx<'_>) -> Option<Line> {
     let st = cx.store.status(net::SOURCE);
     match st.state {
@@ -96,13 +108,10 @@ fn rates(n: &Net, cx: &RenderCx<'_>) -> View {
     if w >= 14 {
         head.push(Span::new(Role::TextMuted, format!(" {}", i.name)));
     }
-    let down: Line = vec![
-        Span::new(Role::AccentPrimary, "↓ "),
-        Span::bold(Role::Text, rate(i.rx_bps)),
-    ];
+    let down: Line = vec![Span::new(Role::AccentPrimary, "↓ "), rate_span(i, i.rx_bps)];
     let up: Line = vec![
         Span::new(Role::AccentSecondary, "↑ "),
-        Span::bold(Role::Text, rate(i.tx_bps)),
+        rate_span(i, i.tx_bps),
     ];
     let mut children = vec![(Constraint::Len(1), View::Text(vec![head]))];
     if cx.inner.height >= 3 {
@@ -175,9 +184,9 @@ fn sparks(n: &Net, cx: &RenderCx<'_>) -> View {
         dot(i),
         Span::new(Role::TextMuted, format!(" {} ", i.name)),
         Span::new(Role::AccentPrimary, "↓ "),
-        Span::bold(Role::Text, rate(i.rx_bps)),
+        rate_span(i, i.rx_bps),
         Span::new(Role::AccentSecondary, "  ↑ "),
-        Span::bold(Role::Text, rate(i.tx_bps)),
+        rate_span(i, i.tx_bps),
     ];
     if let Some(l) = i.link.as_ref()
         && cx.inner.width >= 34
@@ -233,32 +242,43 @@ fn iface_rows(n: &Net, with_errors: bool) -> Vec<Vec<Line>> {
         .map(|i| {
             let mut row = vec![
                 vec![dot(i), Span::new(Role::Text, format!(" {}", i.name))],
-                vec![Span::new(
-                    if i.up() { Role::Ok } else { Role::TextMuted },
-                    i.state().to_string(),
-                )],
-                vec![Span::bold(Role::Text, rate(i.rx_bps))],
-                vec![Span::bold(Role::Text, rate(i.tx_bps))],
+                // The state cell is where the word goes: a quiet interface has
+                // no state to report, and `gone` is what it is.
+                vec![if i.live.is_quiet() {
+                    Span::new(Role::TextGhost, "gone")
+                } else {
+                    Span::new(
+                        if i.up() { Role::Ok } else { Role::TextMuted },
+                        i.state().to_string(),
+                    )
+                }],
+                vec![rate_span(i, i.rx_bps)],
+                vec![rate_span(i, i.tx_bps)],
             ];
             if with_errors {
                 let drops = i.rx_drop + i.tx_drop;
                 let errs = i.rx_err + i.tx_err;
-                row.push(vec![Span::new(
-                    if drops > 0.0 {
-                        Role::Warn
-                    } else {
-                        Role::TextMuted
-                    },
-                    format!("{drops:.0}"),
-                )]);
-                row.push(vec![Span::new(
-                    if errs > 0.0 {
-                        Role::Crit
-                    } else {
-                        Role::TextMuted
-                    },
-                    format!("{errs:.0}"),
-                )]);
+                if i.live.is_quiet() {
+                    row.push(vec![Span::new(Role::TextGhost, "—")]);
+                    row.push(vec![Span::new(Role::TextGhost, "—")]);
+                } else {
+                    row.push(vec![Span::new(
+                        if drops > 0.0 {
+                            Role::Warn
+                        } else {
+                            Role::TextMuted
+                        },
+                        format!("{drops:.0}"),
+                    )]);
+                    row.push(vec![Span::new(
+                        if errs > 0.0 {
+                            Role::Crit
+                        } else {
+                            Role::TextMuted
+                        },
+                        format!("{errs:.0}"),
+                    )]);
+                }
             }
             row
         })

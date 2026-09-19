@@ -3,7 +3,7 @@
 //! degraded note, the connection table's honest attribution, and the empty
 //! tile.
 
-use gridwatch_components::net::{Net, Options, Sort, TIER_TABLE};
+use gridwatch_components::net::{Net, Options, Sort, TIER_RATES, TIER_TABLE};
 use gridwatch_store::keys::net;
 use gridwatch_store::{Detail, KeyCode, KeyEvent, Mods, Msg, Store, Ts};
 use gridwatch_ui::component::{Component, InputCx, Outcome, Size, pick_tier};
@@ -515,4 +515,160 @@ fn the_full_tier_fills_its_connection_band() {
         drawn >= 40,
         "the connection band drew {drawn} of the 60 rows it has room for:\n{text}"
     );
+}
+
+// ---- Arc 17 review (2026-09-18). The first pass gave `net` a bullet and
+// nothing else, and no test, snapshot or synth could reach the difference —
+// the demo never drops an interface. Stores built by hand, so that each
+// assertion names the one thing it is about.
+
+use std::sync::Arc;
+
+use gridwatch_store::keys::net::{Link, Route};
+use gridwatch_store::{Batch, Datum, Label, MetricId, Sample};
+
+/// `(name, rx, tx)` reported at second `i + 1`; an interface missing from a
+/// later batch is one that left `/proc/net/dev` — a USB NIC pulled, a tunnel
+/// closed. Each reported interface also carries an `up` link record.
+fn store_by_hand(batches: &[&[(&str, f64, f64)]], default_iface: Option<&str>) -> Store {
+    let mut store = Store::default();
+    for (i, ifaces) in batches.iter().enumerate() {
+        let mut samples = Vec::new();
+        for (name, rx, tx) in ifaces.iter() {
+            let id = |k: &gridwatch_store::Key<f64>| MetricId {
+                name: k.id.name,
+                label: Label::Name(Arc::from(*name)),
+            };
+            samples.push(Sample {
+                id: id(&net::RX_BPS),
+                datum: Datum::Scalar(*rx),
+            });
+            samples.push(Sample {
+                id: id(&net::TX_BPS),
+                datum: Datum::Scalar(*tx),
+            });
+            samples.push(Sample {
+                id: MetricId {
+                    name: net::LINK.id.name,
+                    label: Label::Name(Arc::from(*name)),
+                },
+                datum: Datum::Record(Arc::new(Link {
+                    iface: (*name).into(),
+                    up: true,
+                    carrier: true,
+                    operstate: "up".into(),
+                    ..Link::default()
+                })),
+            });
+        }
+        if let Some(d) = default_iface {
+            samples.push(Sample {
+                id: net::ROUTE.id.clone(),
+                datum: Datum::Record(Arc::new(Route {
+                    default_iface: d.into(),
+                    ..Route::default()
+                })),
+            });
+        }
+        store.apply(&Msg::Batch(Batch {
+            source: net::SOURCE,
+            at: Ts((i as u64 + 1) * 1_000_000_000),
+            samples,
+        }));
+    }
+    store
+}
+
+/// `eth0` — alphabetically first and, when last heard from, carrying
+/// 98 MB/s — leaves after the first batch; `wlan0` reports on. Both sorts
+/// would put `eth0` first if liveness were ignored.
+fn eth0_leaves(default_iface: Option<&str>) -> Store {
+    const BOTH: &[(&str, f64, f64)] = &[("eth0", 98e6, 12e6), ("wlan0", 1e6, 2e6)];
+    const ONE: &[(&str, f64, f64)] = &[("wlan0", 1e6, 2e6)];
+    store_by_hand(&[BOTH, ONE, ONE, ONE, ONE, ONE], default_iface)
+}
+
+/// "Under every sort" (D68 §5). The first pass sank a quiet interface under
+/// `Sort::Traffic` only; the `Sort::Name` arm was a bare alphabetical sort.
+#[test]
+fn a_quiet_interface_sinks_under_every_sort_the_tile_offers() {
+    let store = eth0_leaves(None);
+    let caps = gridwatch_store::CapSet::default();
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    let order =
+        |c: &Net| -> Vec<String> { c.model().ifaces.iter().map(|i| i.name.clone()).collect() };
+    assert!(
+        c.model().ifaces.iter().any(|i| i.live.is_quiet()),
+        "the fixture must actually make `eth0` quiet"
+    );
+    assert_eq!(c.sort(), Sort::Traffic);
+    assert_eq!(
+        order(&c),
+        ["wlan0", "eth0"],
+        "traffic: 110 MB/s frozen is not 3 MB/s live"
+    );
+    assert!(matches!(
+        c.on_key(key('s'), &cx(&store, &caps)),
+        Outcome::Consumed
+    ));
+    assert_eq!(c.sort(), Sort::Name);
+    assert_eq!(
+        order(&c),
+        ["wlan0", "eth0"],
+        "name: alphabetical would put `eth0` first; a quiet row sinks under every sort"
+    );
+}
+
+/// The reported defect, verbatim, on the second tile: a row that read
+/// `· usb0  up  98M  12M` — a ghost dot beside a green `up` and rates nobody
+/// is measuring. Every measured cell is a dash (D68 §5).
+#[test]
+fn a_quiet_interface_row_draws_dashes_not_its_last_numbers() {
+    let store = eth0_leaves(None);
+    let th = theme("modern");
+    let mut c = tile();
+    tick(&mut c, &store, TIER_TABLE);
+    let (tier, buf) = render_component(&mut c, &store, &th, Size::new(60, 10), false);
+    assert_eq!(c.tiers()[tier].name, "table");
+    let text = plain_text(&buf);
+    let line = text
+        .lines()
+        .find(|l| l.trim_start().starts_with('·') && l.contains("eth0"))
+        .unwrap_or_else(|| panic!("a `·` row for eth0 is drawn:\n{text}"));
+    for stale in ["98M", "12M", "up"] {
+        assert!(
+            !line.contains(stale),
+            "a vanished interface still draws `{stale}` as if measured: {line}"
+        );
+    }
+    assert!(
+        line.contains("gone"),
+        "the state cell says what it is: {line}"
+    );
+    assert!(
+        line.contains('—'),
+        "and it draws dashes where the numbers were: {line}"
+    );
+}
+
+/// The chip and sparks tiers draw the default route's interface. When *that*
+/// one has gone quiet they must not print its last rates as live either
+/// (lens C F2, lens A F4).
+#[test]
+fn the_small_tiers_do_not_print_a_vanished_default_routes_rates() {
+    let store = eth0_leaves(Some("eth0"));
+    let th = theme("modern");
+    let mut c = tile();
+    tick(&mut c, &store, TIER_RATES);
+    for (tier_name, size) in [("rates", Size::new(17, 8)), ("sparks", Size::new(38, 8))] {
+        let (tier, buf) = render_component(&mut c, &store, &th, size, false);
+        let text = plain_text(&buf);
+        assert_eq!(c.tiers()[tier].name, tier_name);
+        assert!(
+            !text.contains("98M") && !text.contains("12M"),
+            "{tier_name} prints the vanished default route's frozen rates:\n{text}"
+        );
+        assert!(text.contains('—'), "{tier_name} says not-measured:\n{text}");
+    }
 }

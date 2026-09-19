@@ -262,7 +262,14 @@ impl Model {
                     .then(b.total().total_cmp(&a.total()))
                     .then(a.name.cmp(&b.name))
             }),
-            Sort::Name => self.ifaces.sort_by(|a, b| a.name.cmp(&b.name)),
+            // Under every sort (D68 §5): the first pass sank a quiet interface
+            // under `Traffic` and left this arm a bare alphabetical sort.
+            Sort::Name => self.ifaces.sort_by(|a, b| {
+                a.live
+                    .is_quiet()
+                    .cmp(&b.live.is_quiet())
+                    .then_with(|| a.name.cmp(&b.name))
+            }),
         }
         self.route = store.record(&net::ROUTE).map(|(_, r)| r.clone());
         self.probes = store.record(&net::PROBE).map(|(_, p)| p.clone());
